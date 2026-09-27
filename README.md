@@ -26,8 +26,8 @@ else's card, send them your link:
 
 1. On `settings.html`, enter your email (and an optional name) under **Send
    Schedule**. The link is built as you type.
-2. **Copy link** copies it; **Send email** opens your mail app with the link
-   filled in and addressed to whoever you put in **Send to**.
+2. **Copy link** copies it to your clipboard, and you send it however you like
+   (email, message, whatever).
 3. When they open the link, your schedule is added to their card and saved under
    your email. It appears in their **Friends** list, where they can reorder or
    remove it.
@@ -46,9 +46,9 @@ How it works, and its limits:
 - The link is the credential: anyone who has it can add that schedule. Do not
   post it publicly.
 - This is a static site with **no backend and no accounts**, so there is no
-  server-side email and no sync. "Send email" uses your own mail client via
-  `mailto:`, and friends are stored in each browser's `localStorage`. A friend
-  added on one device or browser will not appear on another.
+  server-side email and no sync. Sharing is a link you copy and send yourself,
+  and friends are stored in each browser's `localStorage`. A friend added on one
+  device or browser will not appear on another.
 
 ## How it works
 

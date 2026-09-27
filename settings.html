@@ -29,9 +29,9 @@
         <section class="class-settings__panel">
           <h2>Send Schedule</h2>
           <p class="class-settings__hint">
-            Copy a link to your schedule, or email it. Opening the link adds your
-            schedule to that person's card; it is saved under the email you enter
-            below.
+            Copy a link to your schedule and send it however you like. Opening the
+            link adds your schedule to that person's card; it is saved under the
+            email you enter below.
           </p>
           <div class="class-settings__field">
             <label for="share-name">Your name (optional)</label>
@@ -41,13 +41,8 @@
             <label for="share-email">Your email</label>
             <input type="email" id="share-email" placeholder="you@example.com" />
           </div>
-          <div class="class-settings__field">
-            <label for="share-recipient">Send to</label>
-            <input type="email" id="share-recipient" placeholder="friend@example.com" />
-          </div>
           <div class="class-settings__share-actions">
             <button type="button" class="primary" id="share-copy">Copy link</button>
-            <button type="button" class="secondary" id="share-email">Send email</button>
           </div>
           <p class="class-settings__hint" id="share-status" hidden></p>
           <div class="class-settings__field">
@@ -300,7 +295,6 @@
         // --- send schedule ------------------------------------------------
         var shareName = document.getElementById('share-name');
         var shareEmail = document.getElementById('share-email');
-        var shareRecipient = document.getElementById('share-recipient');
         var shareLink = document.getElementById('share-link');
         var shareStatus = document.getElementById('share-status');
 
@@ -358,22 +352,6 @@
             shareLink.select();
             setShareStatus('The link is selected — press Ctrl/Cmd+C to copy.', false);
           }
-        });
-
-        document.getElementById('share-email').addEventListener('click', function () {
-          if (!H.normalizeEmail(shareEmail.value)) { setShareStatus('Enter your email first.', true); return; }
-          var url = currentShareUrl();
-          shareLink.value = url;
-          var who = shareName.value.trim() || H.normalizeEmail(shareEmail.value);
-          var subject = encodeURIComponent(who + ' shared their schedule with you');
-          var body = encodeURIComponent(
-            who + ' shared their Hilltoppers schedule with you.\n\n' +
-            'Open this link to add it to your card:\n' + url + '\n\n' +
-            'The link adds the schedule under their email on your card.'
-          );
-          var to = shareRecipient.value.trim();
-          window.location.href = 'mailto:' + to + '?subject=' + subject + '&body=' + body;
-          setShareStatus('Opening your email app with the link filled in.', false);
         });
 
         // --- friends ------------------------------------------------------
