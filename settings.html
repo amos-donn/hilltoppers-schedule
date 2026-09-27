@@ -27,6 +27,45 @@
 
       <div class="class-settings__form">
         <section class="class-settings__panel">
+          <h2>Send Schedule</h2>
+          <p class="class-settings__hint">
+            Copy a link to your schedule, or email it. Opening the link adds your
+            schedule to that person's card; it is saved under the email you enter
+            below.
+          </p>
+          <div class="class-settings__field">
+            <label for="share-name">Your name (optional)</label>
+            <input type="text" id="share-name" placeholder="Shown next to your email" />
+          </div>
+          <div class="class-settings__field">
+            <label for="share-email">Your email</label>
+            <input type="email" id="share-email" placeholder="you@example.com" />
+          </div>
+          <div class="class-settings__field">
+            <label for="share-recipient">Send to</label>
+            <input type="email" id="share-recipient" placeholder="friend@example.com" />
+          </div>
+          <div class="class-settings__share-actions">
+            <button type="button" class="primary" id="share-copy">Copy link</button>
+            <button type="button" class="secondary" id="share-email">Send email</button>
+          </div>
+          <p class="class-settings__hint" id="share-status" hidden></p>
+          <div class="class-settings__field">
+            <label for="share-link">Your link</label>
+            <input type="text" id="share-link" readonly />
+          </div>
+        </section>
+
+        <section class="class-settings__panel">
+          <h2>Friends</h2>
+          <p class="class-settings__hint">
+            Shown on the card in this order, top to bottom. Use the arrows to
+            reorder. The card never shows your own schedule.
+          </p>
+          <div id="friend-rows" class="class-settings__friend-list"></div>
+        </section>
+
+        <section class="class-settings__panel">
           <h2>Display Settings</h2>
           <div class="class-settings__field">
             <label for="time-format">Time format</label>
@@ -70,7 +109,9 @@
         var H = window.HT;
         var state = {
           blockPrefs: H.loadBlockPrefs(),
-          schedulePrefs: H.loadSchedulePrefs()
+          schedulePrefs: H.loadSchedulePrefs(),
+          friends: H.loadFriends(),
+          identity: H.loadIdentity()
         };
         var autosave = document.getElementById('autosave');
         var saveTimer = null;
@@ -256,7 +297,131 @@
           lunchSelect.value = '';
         });
 
+        // --- send schedule ------------------------------------------------
+        var shareName = document.getElementById('share-name');
+        var shareEmail = document.getElementById('share-email');
+        var shareRecipient = document.getElementById('share-recipient');
+        var shareLink = document.getElementById('share-link');
+        var shareStatus = document.getElementById('share-status');
+
+        shareName.value = state.identity.name;
+        shareEmail.value = state.identity.email;
+
+        function currentShareUrl() {
+          var payload = H.createSharePayload({
+            email: shareEmail.value,
+            name: shareName.value,
+            blockPrefs: state.blockPrefs,
+            schedulePrefs: state.schedulePrefs
+          });
+          // The link must point at the card, whatever the settings page was
+          // reached by (with or without the .html suffix).
+          var base = location.href.split('#')[0].split('?')[0].replace(/[^/]*$/, 'index.html');
+          return base + '#' + H.SHARE_HASH_PREFIX + H.encodeShare(payload);
+        }
+
+        function setShareStatus(message, isError) {
+          shareStatus.textContent = message;
+          shareStatus.hidden = !message;
+          shareStatus.className = 'class-settings__hint' + (isError ? ' class-settings__hint--error' : '');
+        }
+
+        function saveIdentityFromInputs() {
+          state.identity = { name: shareName.value, email: H.normalizeEmail(shareEmail.value) };
+          H.saveIdentity(state.identity);
+        }
+
+        function refreshShareLink() {
+          if (H.normalizeEmail(shareEmail.value)) {
+            shareLink.value = currentShareUrl();
+            setShareStatus('', false);
+          } else {
+            shareLink.value = '';
+            setShareStatus('Enter your email to build the link.', false);
+          }
+        }
+
+        shareName.addEventListener('input', function () { saveIdentityFromInputs(); refreshShareLink(); });
+        shareEmail.addEventListener('input', function () { saveIdentityFromInputs(); refreshShareLink(); });
+
+        document.getElementById('share-copy').addEventListener('click', function () {
+          if (!H.normalizeEmail(shareEmail.value)) { setShareStatus('Enter your email first.', true); return; }
+          var url = currentShareUrl();
+          shareLink.value = url;
+          var done = function () { setShareStatus('Link copied. Paste it into an email or message.', false); };
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(url).then(done).catch(function () {
+              shareLink.select();
+              setShareStatus('Copy blocked by the browser — the link is selected, press Ctrl/Cmd+C.', false);
+            });
+          } else {
+            shareLink.select();
+            setShareStatus('The link is selected — press Ctrl/Cmd+C to copy.', false);
+          }
+        });
+
+        document.getElementById('share-email').addEventListener('click', function () {
+          if (!H.normalizeEmail(shareEmail.value)) { setShareStatus('Enter your email first.', true); return; }
+          var url = currentShareUrl();
+          shareLink.value = url;
+          var who = shareName.value.trim() || H.normalizeEmail(shareEmail.value);
+          var subject = encodeURIComponent(who + ' shared their schedule with you');
+          var body = encodeURIComponent(
+            who + ' shared their Hilltoppers schedule with you.\n\n' +
+            'Open this link to add it to your card:\n' + url + '\n\n' +
+            'The link adds the schedule under their email on your card.'
+          );
+          var to = shareRecipient.value.trim();
+          window.location.href = 'mailto:' + to + '?subject=' + subject + '&body=' + body;
+          setShareStatus('Opening your email app with the link filled in.', false);
+        });
+
+        // --- friends ------------------------------------------------------
+        var friendRows = document.getElementById('friend-rows');
+
+        function renderFriends() {
+          friendRows.innerHTML = '';
+          if (state.friends.length === 0) {
+            friendRows.appendChild(el('p', { class: 'class-settings__hint', text: 'No friends yet. Get a life.' }));
+            return;
+          }
+          state.friends.forEach(function (friend, index) {
+            var label = friend.name ? friend.name + ' (' + friend.email + ')' : friend.email;
+            var up = el('button', { type: 'button', class: 'class-settings__icon-button', 'aria-label': 'Move ' + label + ' up', text: '\u2191' });
+            var down = el('button', { type: 'button', class: 'class-settings__icon-button', 'aria-label': 'Move ' + label + ' down', text: '\u2193' });
+            var remove = el('button', { type: 'button', class: 'class-settings__icon-button', 'aria-label': 'Remove ' + label, text: '\u2715' });
+            up.disabled = index === 0;
+            down.disabled = index === state.friends.length - 1;
+            up.addEventListener('click', function () { move(friend.email, -1); });
+            down.addEventListener('click', function () { move(friend.email, 1); });
+            remove.addEventListener('click', function () {
+              state.friends = H.removeFriend(state.friends, friend.email);
+              H.saveFriends(state.friends);
+              if (H.loadSelectedFriend() === friend.email) H.saveSelectedFriend('');
+              renderFriends();
+            });
+            var meta = [];
+            if (friend.grade != null) meta.push(H.GRADE_LABELS[friend.grade] || ('Grade ' + friend.grade));
+            if (friend.lunchWave != null) meta.push(H.LUNCH_WAVE_LABELS[friend.lunchWave]);
+            friendRows.appendChild(el('div', { class: 'class-settings__friend-row' }, [
+              el('div', { class: 'class-settings__friend-info' }, [
+                el('strong', { text: label }),
+                el('span', { class: 'class-settings__friend-meta', text: meta.join(' \u00b7 ') })
+              ]),
+              el('div', { class: 'class-settings__friend-actions' }, [up, down, remove])
+            ]));
+          });
+        }
+
+        function move(email, delta) {
+          state.friends = H.moveFriend(state.friends, email, delta);
+          H.saveFriends(state.friends);
+          renderFriends();
+        }
+
         renderRows();
+        refreshShareLink();
+        renderFriends();
       })();
     </script>
   </body>

@@ -624,6 +624,97 @@ body, html {
   font-size: 14px;
 }
 
+.class-settings__hint--error {
+  color: #b42318;
+  font-weight: 600;
+}
+
+/* --- send schedule and friends (standalone page) ----------------------- */
+.class-settings__field input[type='text'],
+.class-settings__field input[type='email'] {
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface-muted);
+  color: var(--text);
+  font-size: 15px;
+  font-family: inherit;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.class-settings__field input[readonly] {
+  color: var(--muted);
+}
+
+.class-settings__share-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.class-settings__friend-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.class-settings__friend-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-muted);
+}
+
+.class-settings__friend-info {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.class-settings__friend-info strong {
+  overflow-wrap: anywhere;
+}
+
+.class-settings__friend-meta {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.class-settings__friend-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.class-settings__icon-button {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.class-settings__icon-button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.class-settings__icon-button:not(:disabled):hover {
+  border-color: var(--accent, #1a7f37);
+}
+
 .class-settings__hint--warning {
   color: #b26a00;
   font-weight: 600;

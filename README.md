@@ -15,9 +15,40 @@ Two pages:
   extension's card at the same width (see *Sizing* below).
 - **`settings.html` — Class & Schedule Settings.** The schedule-affecting part
   of the extension's Class settings page: time format, grade level, lunch, and
-  the A–E course names with alternating / free options. Open it from the gear on
-  the card, or directly. Changes save to this browser and the card picks them
-  up.
+  the A–E course names with alternating / free options. It also has *Send
+  Schedule* and the *Friends* list. Open it from the gear on the card, or
+  directly. Changes save to this browser and the card picks them up.
+
+## Sharing your schedule
+
+The card shows a friend's schedule, not your own. To put yourself on someone
+else's card, send them your link:
+
+1. On `settings.html`, enter your email (and an optional name) under **Send
+   Schedule**. The link is built as you type.
+2. **Copy link** copies it; **Send email** opens your mail app with the link
+   filled in and addressed to whoever you put in **Send to**.
+3. When they open the link, your schedule is added to their card and saved under
+   your email. It appears in their **Friends** list, where they can reorder or
+   remove it.
+
+The card's dropdown lists every friend with where they are right now (for
+example `sam@example.com — A Block`) in the order set in Settings; picking one
+shows that person's schedule.
+
+How it works, and its limits:
+
+- The link carries your display preferences in the URL **fragment** (`#share=…`),
+  so they never reach GitHub's servers or its logs. The fragment is cleared from
+  the address bar once it has been imported.
+- The recipient recomputes the live schedule from the same public data sources,
+  so the schedule stays current rather than freezing a snapshot.
+- The link is the credential: anyone who has it can add that schedule. Do not
+  post it publicly.
+- This is a static site with **no backend and no accounts**, so there is no
+  server-side email and no sync. "Send email" uses your own mail client via
+  `mailto:`, and friends are stored in each browser's `localStorage`. A friend
+  added on one device or browser will not appear on another.
 
 ## How it works
 
@@ -97,9 +128,10 @@ Measure, don't eyeball: render both at the same width and compare
 
 ## Preferences
 
-The card and the settings page share one store, `localStorage` in this browser,
-using the same keys and shapes the extension uses in `chrome.storage.sync`
-(`blockPreferences`, `schedulePreferences`). A hosted page has only its own
+The card and the settings page share one store, `localStorage` in this browser.
+The schedule preferences use the same keys and shapes the extension uses in
+`chrome.storage.sync` (`blockPreferences`, `schedulePreferences`); sharing adds
+`friends`, `selectedFriend`, and `identity`. A hosted page has only its own
 browser, so there is no account sync here; the extension's account/Firestore
 sync is not reproduced.
 

@@ -472,8 +472,218 @@
     return null;
   }
 
+  // --- friends and sharing ----------------------------------------------
+  // A static page has no backend, so a schedule is shared as a link: the
+  // sender's display preferences travel in the URL fragment and the recipient
+  // stores them under the sender's email. Recomputing from the public feed on
+  // each load keeps the friend's schedule current instead of frozen.
+
+  var FRIENDS_KEY = 'friends';
+  var SELECTED_FRIEND_KEY = 'selectedFriend';
+  var SHARE_HASH_PREFIX = 'share=';
+  var SHARE_VERSION = 1;
+
+  function b64urlEncode(text) {
+    var bytes = new TextEncoder().encode(text);
+    var binary = '';
+    for (var i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+    return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+
+  function b64urlDecode(text) {
+    var padded = String(text).replace(/-/g, '+').replace(/_/g, '/');
+    while (padded.length % 4) padded += '=';
+    var binary = atob(padded);
+    var bytes = new Uint8Array(binary.length);
+    for (var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return new TextDecoder().decode(bytes);
+  }
+
+  function normalizeEmail(email) {
+    return String(email || '').trim().toLowerCase();
+  }
+
+  // The sender's own preferences -> the payload that travels in the link.
+  function createSharePayload(opts) {
+    var prefs = opts.schedulePrefs || {};
+    return {
+      v: SHARE_VERSION,
+      email: normalizeEmail(opts.email),
+      name: (opts.name || '').trim(),
+      grade: prefs.graduationYear != null ? gradeFromGraduationYear(prefs.graduationYear) : null,
+      lunchWave: prefs.lunchWave != null ? prefs.lunchWave : null,
+      timeFormat: prefs.timeFormat === '24h' ? '24h' : '12h',
+      blocks: mergeBlockPrefs(opts.blockPrefs)
+    };
+  }
+
+  function encodeShare(payload) {
+    return b64urlEncode(JSON.stringify(payload));
+  }
+
+  function decodeShare(encoded) {
+    var obj;
+    try {
+      obj = JSON.parse(b64urlDecode(encoded));
+    } catch (e) {
+      return null;
+    }
+    if (!obj || obj.v !== SHARE_VERSION || typeof obj.email !== 'string' || !normalizeEmail(obj.email)) return null;
+    return obj;
+  }
+
+  function parseShareHash(hash) {
+    var raw = String(hash || '').replace(/^#/, '');
+    if (raw.indexOf(SHARE_HASH_PREFIX) !== 0) return null;
+    return decodeShare(raw.slice(SHARE_HASH_PREFIX.length));
+  }
+
+  function friendFromPayload(payload) {
+    return {
+      email: normalizeEmail(payload.email),
+      name: (payload.name || '').trim(),
+      grade: payload.grade != null ? Number(payload.grade) : null,
+      lunchWave: payload.lunchWave != null ? Number(payload.lunchWave) : null,
+      timeFormat: payload.timeFormat === '24h' ? '24h' : '12h',
+      blockPrefs: mergeBlockPrefs(payload.blocks),
+      addedAt: Date.now()
+    };
+  }
+
+  function normalizeFriend(friend) {
+    if (!friend || typeof friend !== 'object') return null;
+    var email = normalizeEmail(friend.email);
+    if (!email) return null;
+    var grade = friend.grade != null ? Number(friend.grade) : null;
+    return {
+      email: email,
+      name: (friend.name || '').trim(),
+      grade: grade != null && isFinite(grade) ? grade : null,
+      lunchWave: friend.lunchWave != null ? Number(friend.lunchWave) : null,
+      timeFormat: friend.timeFormat === '24h' ? '24h' : '12h',
+      blockPrefs: mergeBlockPrefs(friend.blockPrefs),
+      addedAt: friend.addedAt || Date.now()
+    };
+  }
+
+  function loadFriends() {
+    var stored;
+    try {
+      stored = JSON.parse(localStorage.getItem(FRIENDS_KEY) || '[]');
+    } catch (e) {
+      return [];
+    }
+    if (!Array.isArray(stored)) return [];
+    return stored.map(normalizeFriend).filter(Boolean);
+  }
+
+  function saveFriends(friends) {
+    try { localStorage.setItem(FRIENDS_KEY, JSON.stringify(friends || [])); } catch (e) { /* private mode */ }
+  }
+
+  // Adding an email that already exists updates it in place, keeping its
+  // position so a reordered list is not disturbed by a new share.
+  function upsertFriend(friends, friend) {
+    var list = (friends || []).slice();
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].email === friend.email) {
+        friend.addedAt = list[i].addedAt || friend.addedAt;
+        list[i] = friend;
+        return list;
+      }
+    }
+    list.push(friend);
+    return list;
+  }
+
+  function removeFriend(friends, email) {
+    var target = normalizeEmail(email);
+    return (friends || []).filter(function (f) { return f.email !== target; });
+  }
+
+  function moveFriend(friends, email, delta) {
+    var list = (friends || []).slice();
+    var target = normalizeEmail(email);
+    var index = -1;
+    for (var i = 0; i < list.length; i++) if (list[i].email === target) { index = i; break; }
+    if (index < 0) return list;
+    var next = index + delta;
+    if (next < 0 || next >= list.length) return list;
+    var moved = list.splice(index, 1)[0];
+    list.splice(next, 0, moved);
+    return list;
+  }
+
+  function loadSelectedFriend() {
+    try { return normalizeEmail(localStorage.getItem(SELECTED_FRIEND_KEY) || ''); } catch (e) { return ''; }
+  }
+
+  function saveSelectedFriend(email) {
+    try { localStorage.setItem(SELECTED_FRIEND_KEY, normalizeEmail(email)); } catch (e) { /* private mode */ }
+  }
+
+  // The sender's own identity, remembered so the link does not have to be
+  // re-entered every time.
+  var IDENTITY_KEY = 'identity';
+
+  function loadIdentity() {
+    try {
+      var stored = JSON.parse(localStorage.getItem(IDENTITY_KEY) || 'null');
+      if (!stored || typeof stored !== 'object') return { name: '', email: '' };
+      return { name: String(stored.name || ''), email: normalizeEmail(stored.email) };
+    } catch (e) {
+      return { name: '', email: '' };
+    }
+  }
+
+  function saveIdentity(identity) {
+    try {
+      localStorage.setItem(IDENTITY_KEY, JSON.stringify({
+        name: String((identity && identity.name) || ''),
+        email: normalizeEmail(identity && identity.email)
+      }));
+    } catch (e) { /* private mode */ }
+  }
+
+  function gradeFilteredBlocks(blocks, grade) {
+    var list = blocks || [];
+    var hasGradeSpecific = list.some(function (b) { return b.grades && b.grades.length > 0; });
+    if (!hasGradeSpecific || grade == null) return list;
+    return list.filter(function (b) { return !b.grades || b.grades.indexOf(grade) >= 0; });
+  }
+
+  // Where a friend is right now, e.g. "A Block", or null when between blocks.
+  function friendLocation(friend, schedule, baseDate, now) {
+    if (!friend) return null;
+    var blocks = gradeFilteredBlocks(schedule && schedule.blocks, friend.grade);
+    var status = computeStatus(blocks, baseDate, now);
+    if (status.currentBlock) return resolveBlockDisplay(status.currentBlock.name, schedule.dayType, friend.blockPrefs).label;
+    return null;
+  }
+
   window.HT = {
     EST_ZONE: EST_ZONE,
+    b64urlEncode: b64urlEncode,
+    b64urlDecode: b64urlDecode,
+    normalizeEmail: normalizeEmail,
+    createSharePayload: createSharePayload,
+    encodeShare: encodeShare,
+    decodeShare: decodeShare,
+    parseShareHash: parseShareHash,
+    SHARE_HASH_PREFIX: SHARE_HASH_PREFIX,
+    friendFromPayload: friendFromPayload,
+    normalizeFriend: normalizeFriend,
+    loadFriends: loadFriends,
+    saveFriends: saveFriends,
+    upsertFriend: upsertFriend,
+    removeFriend: removeFriend,
+    moveFriend: moveFriend,
+    loadSelectedFriend: loadSelectedFriend,
+    saveSelectedFriend: saveSelectedFriend,
+    loadIdentity: loadIdentity,
+    saveIdentity: saveIdentity,
+    gradeFilteredBlocks: gradeFilteredBlocks,
+    friendLocation: friendLocation,
     GRADE_LABELS: GRADE_LABELS,
     GRADE_LABELS_PLURAL: GRADE_LABELS_PLURAL,
     ALL_GRADES: ALL_GRADES,
