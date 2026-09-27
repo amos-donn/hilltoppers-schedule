@@ -1,0 +1,1399 @@
+body, html {
+  margin: 0;
+  padding: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  color: #111111;
+  background: #f7f8fb;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.popup {
+  min-width: 320px;
+  padding: 16px;
+}
+
+header {
+  margin-bottom: 8px;
+  padding-bottom: 4px;
+}
+
+.header-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.header-left {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+
+.day-type-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  border: 1px solid transparent;
+}
+
+.day-type-pill-link {
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+.day-type-pill-link:hover {
+  text-decoration: none;
+}
+
+.day-type-pill-link.green:hover {
+  background: rgba(26, 127, 55, 0.18);
+  border-color: rgba(26, 127, 55, 0.38);
+}
+
+.day-type-pill-link.white:hover {
+  background: rgba(17, 17, 17, 0.06);
+  border-color: rgba(17, 17, 17, 0.24);
+  color: #2f3842;
+}
+
+.day-type-pill-link.no-school:hover {
+  background: rgba(188, 76, 44, 0.18);
+  border-color: rgba(188, 76, 44, 0.38);
+}
+
+.day-type-pill-link.neutral:hover {
+  background: rgba(17, 17, 17, 0.06);
+  border-color: rgba(17, 17, 17, 0.24);
+  color: #2f3842;
+}
+
+.day-type-pill.green {
+  background: rgba(26, 127, 55, 0.12);
+  color: currentColor;
+  border-color: rgba(26, 127, 55, 0.25);
+}
+
+.day-type-pill.white {
+  background: #f0f2f5;
+  color: #555f6a;
+  border-color: rgba(17, 17, 17, 0.18);
+}
+
+.day-type-pill.no-school {
+  background: rgba(188, 76, 44, 0.12);
+  color: #bc4c2c;
+  border-color: rgba(188, 76, 44, 0.25);
+}
+
+.day-type-pill.neutral {
+  background: #f0f2f5;
+  color: #555f6a;
+  border-color: rgba(17, 17, 17, 0.18);
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.day-type-pill-wrapper {
+  position: relative;
+  display: inline-flex;
+}
+
+.settings-button-wrapper {
+  position: relative;
+  display: inline-flex;
+}
+
+.hover-float-label {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: #7d8591;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+.daytype-float-icon {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 auto;
+}
+
+.daytype-float-label {
+  top: calc(100% + 4px);
+  left: 50%;
+  transform: translate(-50%, -2px);
+}
+
+.settings-float-label {
+  top: 50%;
+  left: calc(100% + 6px);
+  transform: translateY(-50%) translateX(-2px);
+}
+
+.day-type-pill-wrapper:hover .daytype-float-label,
+.day-type-pill-wrapper:focus-within .daytype-float-label {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.settings-button-wrapper:hover .settings-float-label,
+.settings-button-wrapper:focus-within .settings-float-label {
+  opacity: 1;
+  transform: translateY(-50%) translateX(0);
+}
+
+.settings-button {
+  border: none;
+  background: transparent;
+  color: #7d8591;
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  cursor: pointer;
+  transition: transform 0.2s ease, color 0.2s ease, background 0.2s ease;
+}
+
+.settings-button:hover {
+  color: #111111;
+  background: rgba(17, 17, 17, 0.06);
+}
+
+.settings-button:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(17, 17, 17, 0.15);
+}
+
+.settings-button:active {
+  transform: scale(0.92);
+}
+
+/* Quiet one-liner at the very bottom; same voice as the hover labels. */
+.popup-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.footer-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+  color: #647067;
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.footer-action svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.footer-action:hover { color: #1a7f37; }
+.footer-action:focus-visible { outline: 2px solid #1a7f37; outline-offset: 3px; }
+
+
+.status {
+  background: #ffffff;
+  border: 1px solid rgba(17, 17, 17, 0.18);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 16px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.status:hover {
+  border-color: rgba(17, 17, 17, 0.28);
+  box-shadow: 0 6px 14px rgba(17, 17, 17, 0.08);
+}
+
+.status-current {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.next-label {
+  display: block;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #7d8591;
+  margin-bottom: 2px;
+}
+
+.current-name {
+  font-size: 20px;
+  font-weight: 700;
+  margin: 0;
+}
+
+.time-remaining {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  margin: 0;
+  color: #444444;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.time-value {
+  font-size: 22px;
+  line-height: 1.1;
+  font-weight: 700;
+}
+
+.time-label {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: #7d8591;
+}
+
+.status-ended {
+  text-align: center;
+}
+
+.status-ended h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.status-ended p {
+  margin: 4px 0 0;
+  color: #606770;
+  font-size: 13px;
+}
+
+.progress-bar-container {
+  position: relative;
+  margin: 14px -12px -12px;
+}
+
+.progress-bar-labels {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 100%;
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: #7d8591;
+  font-variant-numeric: tabular-nums;
+  opacity: 0;
+  transform: translateY(2px);
+  pointer-events: none;
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+.status:hover .progress-bar-labels,
+.status:focus-within .progress-bar-labels {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.status:hover .progress-bar-track,
+.status:focus-within .progress-bar-track {
+  transform: scaleY(0.72);
+}
+
+.progress-bar-track {
+  height: 5px;
+  background: rgba(26, 127, 55, 0.12);
+  border-radius: 0 0 7px 7px;
+  overflow: hidden;
+  transform-origin: bottom center;
+  transition: transform 0.18s ease;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: #1a7f37;
+  border-radius: 0 3px 3px 0;
+  transition: width 1s linear;
+}
+
+.progress-break .progress-bar-track {
+  background: rgba(243, 156, 61, 0.18);
+}
+
+.progress-break .progress-bar-fill {
+  background: #f39c3d;
+}
+
+.schedule-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dining-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.dining-content {
+  border: 1px solid rgba(17, 17, 17, 0.18);
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 12px;
+}
+
+.dining-period-tabs {
+  display: flex;
+  align-items: center;
+  border: 1px solid rgba(17, 17, 17, 0.14);
+  border-radius: 999px;
+  background: #fbfcff;
+  padding: 2px;
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+
+.dining-period-tab {
+  flex: 1 1 0;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: #555f6a;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 6px;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.dining-period-tab:hover:not(.active) {
+  background: rgba(17, 17, 17, 0.06);
+  color: #2f3842;
+}
+
+.dining-period-tab + .dining-period-tab {
+  margin-left: 2px;
+}
+
+.dining-period-tab.active {
+  background: rgba(26, 127, 55, 0.1);
+  color: #1f6f2b;
+  box-shadow: 0 0 0 1px rgba(26, 127, 55, 0.25) inset;
+}
+
+.dining-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.dining-column {
+  border: 1px solid rgba(17, 17, 17, 0.1);
+  border-radius: 6px;
+  padding: 8px;
+  background: #fbfcff;
+}
+
+.dining-station {
+  margin: 0 0 4px;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #7d8591;
+  font-weight: 700;
+}
+
+.dining-item {
+  margin: 0;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(17, 17, 17, 0.1);
+  font-size: 13px;
+  color: #161b22;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.dining-more-list {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  font-size: 13px;
+  line-height: 1.35;
+  color: #161b22;
+  font-weight: 600;
+}
+
+.dining-more-list li {
+  margin: 0;
+  padding: 6px 0 0;
+}
+
+.dining-more-list li + li {
+  margin-top: 6px;
+  border-top: 1px solid rgba(17, 17, 17, 0.08);
+}
+
+.dining-item-link {
+  color: inherit;
+  text-decoration: none;
+  display: inline-block;
+  width: 100%;
+}
+
+.dining-item-link:hover {
+  color: #1a7f37;
+  text-decoration: none;
+}
+
+.dining-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: #7d8591;
+}
+
+/* Which day's menu is showing, with the same triangle the section headers
+   use. Sits opposite the Menu Website link on its row. */
+.menu-day-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.menu-day-step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  padding: 4px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.menu-day-step:hover:not(:disabled) {
+  background: rgba(17, 17, 17, 0.06);
+}
+
+.menu-day-step:disabled {
+  cursor: default;
+  opacity: 0.3;
+}
+
+.menu-day-label {
+  min-width: 58px;
+  text-align: center;
+  font-weight: 600;
+  color: #2f3842;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Match Menu Website row: icon 14px + gap 5px, then text. */
+.dining-meta-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.dining-loading-spinner {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  color: #7d8591;
+  animation: dining-loading-spin 0.75s linear infinite;
+}
+
+@keyframes dining-loading-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.dining-link {
+  color: #1a7f37;
+  text-decoration: none;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.dining-link:hover {
+  text-decoration: underline;
+}
+
+.dining-link-icon {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+}
+
+.dining-error {
+  margin: 0;
+  font-size: 13px;
+  color: #d1242f;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dining-error-icon {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+}
+
+
+/* Calendar: a month of the school calendar, then a way out to the school's
+   own page for the details. Same shell as Menu. */
+.events-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.calendar-content {
+  border: 1px solid rgba(17, 17, 17, 0.18);
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 12px;
+}
+
+
+.cal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.cal-month {
+  font-size: 13px;
+  font-weight: 600;
+  color: #2f3842;
+}
+
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 3px;
+}
+
+.cal-weekday {
+  text-align: center;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: #a0a7b0;
+  padding-bottom: 2px;
+}
+
+/* The background is the day's colour, the mark below the number is what is
+   on. Both stay quiet: the same tints the day-type pill uses, and one small
+   dark shape rather than a second colour. */
+.cal-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 1px;
+  height: 34px;
+  padding: 4px 0 2px;
+  /* Buttons default to border-box and the out-of-month spans do not; rows
+     with both would otherwise come out taller than the rest. */
+  box-sizing: border-box;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  color: #161b22;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.cal-day:hover {
+  border-color: rgba(17, 17, 17, 0.18);
+}
+
+.cal-day:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(26, 127, 55, 0.28);
+}
+
+.cal-day-outside {
+  cursor: default;
+  pointer-events: none;
+}
+
+.cal-day.cal-green {
+  background: rgba(26, 127, 55, 0.12);
+}
+
+.cal-day.cal-white {
+  background: #f0f2f5;
+}
+
+/* No tint and a pale number, so school days are the filled cells and days
+   off are the empty ones. That reads at a glance and does not depend on
+   telling one colour from another. */
+.cal-day.cal-no-school {
+  background: transparent;
+  color: #c9ced4;
+}
+
+.cal-day.cal-today {
+  border-color: rgba(17, 17, 17, 0.55);
+  font-weight: 700;
+}
+
+.cal-day.cal-selected {
+  border-color: #1a7f37;
+  box-shadow: 0 0 0 1px #1a7f37;
+}
+
+.cal-day-number {
+  line-height: 1;
+}
+
+.cal-mark {
+  display: block;
+  width: 9px;
+  height: 9px;
+  flex: 0 0 auto;
+  color: #161b22;
+}
+
+.cal-day.cal-no-school .cal-mark {
+  color: #a0a7b0;
+}
+
+/* What the tapped day holds. Same card as a dining column. */
+.cal-day-panel {
+  margin-top: 10px;
+  border: 1px solid rgba(17, 17, 17, 0.1);
+  border-radius: 6px;
+  background: #fbfcff;
+  padding: 8px;
+}
+
+.cal-day-title {
+  margin: 0 0 6px;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #7d8591;
+  font-weight: 700;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.cal-day-status {
+  flex: 0 0 auto;
+}
+
+.cal-events {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.cal-event + .cal-event {
+  border-top: 1px solid rgba(17, 17, 17, 0.08);
+}
+
+.cal-event > a,
+.cal-event > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 5px 0;
+  color: inherit;
+  text-decoration: none;
+}
+
+.cal-event > a:hover .cal-event-title {
+  color: #1a7f37;
+}
+
+.cal-event-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: #161b22;
+  transition: color 0.15s ease;
+}
+
+.cal-event-time {
+  flex: 0 0 auto;
+  font-size: 12px;
+  color: #7d8591;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A bare row rather than another bordered button: it is already inside a
+   card, and the section headers are one level up. */
+.cal-schedule {
+  margin-top: 6px;
+  border-top: 1px solid rgba(17, 17, 17, 0.08);
+  padding-top: 4px;
+}
+
+.cal-schedule-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 4px 0;
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: #4a5560;
+  cursor: pointer;
+}
+
+.cal-schedule-toggle:hover {
+  color: #161b22;
+}
+
+.cal-blocks {
+  list-style: none;
+  margin: 2px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cal-blocks li {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 12px;
+  color: #161b22;
+}
+
+.cal-blocks li.muted-block {
+  color: #7d8591;
+}
+
+.cal-block-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.cal-block-time {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Stands in for a list of events or blocks, so it is built to the same line
+   as one of those rows: switching between a day with one event and a day
+   with none then leaves the panel exactly as tall. */
+.events-empty {
+  margin: 0;
+  padding: 5px 0;
+  font-size: 13px;
+  line-height: 1.35;
+  color: #7d8591;
+}
+
+.events-meta {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: #7d8591;
+}
+
+.schedule-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid rgba(17, 17, 17, 0.12);
+  border-radius: 6px;
+  background: #ffffff;
+  font-size: 13px;
+  font-weight: 500;
+  color: #4a5560;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.schedule-toggle:hover {
+  background: #f3f5f7;
+  border-color: rgba(17, 17, 17, 0.18);
+}
+
+.schedule-list ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  border: 1px solid rgba(17, 17, 17, 0.18);
+  border-radius: 8px;
+  overflow: hidden;
+  background: #ffffff;
+}
+
+
+.schedule-list li {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+}
+
+.schedule-list li + li {
+  border-top: 1px solid rgba(17, 17, 17, 0.08);
+}
+
+.schedule-list li.current-block {
+  background: rgba(26, 127, 55, 0.1);
+  position: relative;
+}
+
+.schedule-list li.current-block::before {
+  display: none;
+}
+
+.schedule-list li.upcoming-block {
+  background: rgba(111, 221, 136, 0.08);
+  position: relative;
+}
+
+.schedule-list li.upcoming-block::before {
+  display: none;
+}
+
+.schedule-list li .block-name {
+  font-weight: 500;
+  font-size: 14px;
+  color: #161b22;
+}
+
+.schedule-list li .block-time {
+  font-size: 13px;
+  color: #111111;
+  white-space: nowrap;
+  flex-shrink: 0;
+  text-align: right;
+}
+
+.schedule-list li.free-block .block-name,
+.schedule-list li.muted-block .block-name {
+  color: #7d8591;
+  font-weight: 500;
+}
+
+.schedule-list li.free-block .block-time,
+.schedule-list li.muted-block .block-time {
+  color: #7d8591;
+}
+
+.chevron {
+  display: inline-block;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 4px 4px 0 4px;
+  border-color: #161b22 transparent transparent transparent;
+  transition: transform 0.2s ease;
+}
+
+.chevron.open {
+  transform: rotate(180deg);
+}
+
+/* The same triangle turned on its side, so the day picker reads as part of
+   the same family as the section headers. */
+.chevron-prev {
+  transform: rotate(90deg);
+}
+
+.chevron-next {
+  transform: rotate(-90deg);
+}
+
+.error {
+  color: #d1242f;
+}
+
+.loading-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 160px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #7d8591;
+}
+
+.popup.no-network {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 160px;
+  color: #7d8591;
+}
+
+.popup.no-network p {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.schedule-toggle span:first-child {
+  font-weight: 600;
+}
+
+.toggle-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Sits beside the chevron rather than centred, which is where space-between
+   would otherwise put a third child. */
+.toggle-note {
+  margin-left: auto;
+  margin-right: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #4a5560;
+  font-variant-numeric: tabular-nums;
+}
+
+.toggle-title-icon {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  color: #161b22;
+  opacity: 1;
+}
+
+.schedule-heading {
+  position: relative;
+}
+
+.lunch-setup-prompt {
+  position: absolute;
+  top: 0;
+  right: 25px;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2px;
+  color: #4a5560;
+}
+
+.lunch-setup-prompt button {
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.lunch-setup-link {
+  padding: 6px 4px;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+}
+
+.lunch-setup-link:hover {
+  text-decoration: underline;
+}
+
+.lunch-setup-dismiss {
+  min-width: 24px;
+  min-height: 28px;
+}
+
+.lunch-setup-dismiss:hover {
+  background: #f3f5f7;
+}
+
+.schedule-hint {
+  margin: 10px 0 0;
+  font-size: 13px;
+  color: #7d8591;
+}
+
+.schedule-hint a {
+  color: currentColor;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.schedule-hint a:hover {
+  text-decoration: underline;
+}
+
+
+.subblock-list {
+  margin: 10px 0 0;
+  padding: 10px 0 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.subblock-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 12px;
+  color: #606770;
+  width: 100%;
+  padding-right: 24px;
+  box-sizing: border-box;
+}
+
+.subblock-list .subblock-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.subblock-list .subblock-time {
+  font-weight: 500;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.block-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.block-row.expandable {
+  cursor: pointer;
+}
+
+.block-row.expandable:hover {
+  color: #20652f;
+}
+
+.block-row.expandable:focus-visible {
+  outline: 2px solid rgba(26, 127, 55, 0.28);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.subblock-inline-toggle {
+  margin-top: 6px;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  padding: 4px;
+  color: currentColor;
+  font-size: 12px;
+  font-weight: 600;
+  align-self: flex-end;
+}
+
+.subblock-inline-toggle .chevron {
+  display: inline-block;
+}
+
+.subblock-list .subblock-name {
+  font-weight: 600;
+}
+
+/* The lunch the user picked in Class settings. Other waves stay gray. */
+.subblock-list li.my-lunch {
+  color: #161b22;
+}
+
+.subblock-list li.my-lunch .subblock-name,
+.subblock-list li.my-lunch .subblock-time {
+  font-weight: 700;
+}
+
+.block-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  position: relative;
+  padding-right: 24px;
+}
+
+.block-right .subblock-inline-toggle {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  margin-top: 0;
+  margin-left: 0;
+}
+
+/* Grade prompt (full-page replacement, like loading state) */
+
+.grade-prompt {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.grade-prompt-label {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #161b22;
+}
+
+.grade-prompt-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.grade-prompt-row {
+  display: block;
+  width: 100%;
+  padding: 8px 0;
+  border: none;
+  border-radius: 999px;
+  background: #ebeef2;
+  font-size: 13px;
+  font-weight: 500;
+  color: #4a5560;
+  text-align: center;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.grade-prompt-row:hover {
+  background: #dfe3e8;
+  color: #161b22;
+}
+
+.grade-prompt-row.selected {
+  background: #abe0bc;
+  color: #14532d;
+  font-weight: 600;
+}
+
+.grade-prompt-hint {
+  margin: 0;
+  font-size: 11px;
+  color: #a0a7b0;
+}
+
+.grade-prompt-continue {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 9px;
+  border: none;
+  border-radius: 999px;
+  background: #abe0bc;
+  color: #14532d;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(4px);
+  transition: opacity 0.2s ease, transform 0.2s ease, background 0.15s ease;
+}
+
+.grade-prompt-continue.visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+.grade-prompt-continue:hover {
+  background: #8fd4a6;
+}
+
+/* Grade selector in schedule section */
+
+.grade-selector {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: #7d8591;
+}
+
+.grade-selector select {
+  appearance: none;
+  -webkit-appearance: none;
+  border: 1px solid rgba(17, 17, 17, 0.14);
+  border-radius: 4px;
+  /* Triangle ~8×4px to match .chevron (border 4px sides) */
+  background: #ffffff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='4'%3E%3Cpath d='M0 0l4 4 4-4z' fill='%237d8591'/%3E%3C/svg%3E") no-repeat right 6px center;
+  padding: 3px 16px 3px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #161b22;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+
+.grade-selector select:hover {
+  border-color: rgba(17, 17, 17, 0.28);
+}
+
+.grade-selector select:focus {
+  outline: none;
+  border-color: rgba(26, 127, 55, 0.5);
+  box-shadow: 0 0 0 2px rgba(26, 127, 55, 0.12);
+}
+
+@media (max-width: 340px) {
+  .dining-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.topping-section { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
+.topping-heading { position: relative; }
+.topping-heading .schedule-toggle { width: 100%; }
+.topping-heading .toggle-title { margin-right: 36px; }
+.topping-preview-badge { margin-left: 7px; border: 1px solid #bfd2c3; border-radius: 999px; padding: 2px 6px; color: #4f765c; font-size: 9px; font-weight: 700; letter-spacing: .4px; line-height: 1; text-transform: uppercase; }
+.topping-content { position: relative; height: min(360px, calc(100dvh - 72px)); border: 1px solid rgba(17,17,17,.18); border-radius: 8px; background: #fff; overflow: hidden; }
+.topping-content iframe { display: block; width: 100%; height: 100%; border: 0; }
+.topping-menu { position: absolute; right: 32px; top: 50%; transform: translateY(-50%); z-index: 2; }
+.topping-menu-toggle { border: 0; background: transparent; color: #7b8680; cursor: pointer; width: 28px; height: 26px; font-size: 20px; line-height: 1; }
+.topping-menu-items { position: absolute; right: 0; top: 30px; min-width: 144px; padding: 4px; border: 1px solid #dce2de; border-radius: 8px; background: #fff; box-shadow: 0 5px 16px #17251d14; }
+.topping-menu-items a, .topping-menu-items button { display: block; width: 100%; text-align: left; border: 0; background: transparent; text-decoration: none; color: #56655a; font: inherit; font-size: 11px; padding: 8px; border-radius: 4px; cursor: pointer; }
+.topping-menu-items a:hover, .topping-menu-items button:hover { background: #f1f5f2; }
+.topping-unavailable { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #fff; color: #68746c; font-size: 12px; }
+.topping-unavailable button { border: 1px solid #dce2de; border-radius: 6px; background: #fff; padding: 6px 10px; color: inherit; cursor: pointer; }
+.topping-menu :focus-visible { outline: 2px solid #1a7f37; outline-offset: 3px; }
+
+.toppings-dock { margin-top:12px; }
+.toppings-strip { display:flex; align-items:center; width:max-content; max-width:100%; height:34px; margin:0; padding:0 5px; border:1px solid rgba(17,17,17,.12); border-radius:999px; background:#fff; box-sizing:border-box; }
+.toppings-strip-scroll { display:flex; align-items:center; min-width:0; overflow-x:auto; scrollbar-width:none; }
+.toppings-strip-scroll::-webkit-scrollbar { display:none; }
+.topping-chip, .toppings-add { display:grid; place-items:center; flex:none; width:34px; height:28px; padding:0; border:0; border-radius:999px; background:transparent; color:#68737d; cursor:pointer; }
+.topping-chip > svg { width:18px; height:18px; transition:transform 180ms cubic-bezier(.2,.8,.2,1); }
+.topping-chip:hover > svg { transform:translateY(-3px); }
+.topping-chip:hover, .toppings-add:hover { background:#f0f1f3; }
+.topping-chip[aria-expanded="true"] { color:#27313a; background:#e9ebee; }
+.toppings-add svg { transition:transform 300ms ease; transform-origin:center; width:18px; height:18px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; }
+.toppings-strip button:focus-visible { outline:2px solid #68737d; outline-offset:-2px; }
+.topping-name-tooltip { position:fixed; z-index:100; transform:translate(-50%,-100%); max-width:190px; padding:5px 9px; border-radius:6px; background:#fff; color:#4a5560; border:1px solid rgba(17,17,17,.1); font-size:11px; line-height:1.4; overflow-wrap:anywhere; pointer-events:none; text-align:center; box-shadow:0 5px 16px rgba(17,17,17,.12); animation:topping-tooltip-in 140ms ease-out; }
+.topping-panel { margin-top:8px; }
+.topping-panel[hidden] { display:none; }
+
+.toppings-divider { flex:none; width:1px; height:16px; margin:0 4px; background:rgba(17,17,17,.12); }
+.toppings-add:hover svg { transform:rotate(180deg); }
+@media (prefers-reduced-motion:reduce) { .toppings-add svg { transition:none; } .toppings-add:hover svg { transform:none; } }
+
+.toppings-row { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.toppings-row .toppings-strip { min-width:0; flex-shrink:1; }
+.toppings-row .topping-menu { position:relative; right:auto; top:auto; transform:none; flex:none; }
+.toppings-row .topping-menu-toggle { height:34px; }
+.toppings-row .topping-menu-toggle:disabled { opacity:.35; cursor:default; }
+@keyframes topping-tooltip-in { from { opacity:0; transform:translate(-50%,calc(-100% + 4px)); } to { opacity:1; transform:translate(-50%,-100%); } }
+@media (prefers-reduced-motion:reduce) { .topping-name-tooltip { animation:none; } }
+
+.toppings-row .topping-menu { animation:topping-options-in 180ms ease-out; }
+@keyframes topping-options-in { from { opacity:0; transform:translateY(4px) scale(.9); } to { opacity:1; transform:translateY(0) scale(1); } }
+@media (prefers-reduced-motion:reduce) { .toppings-row .topping-menu { animation:none; } }
+
+@media (prefers-reduced-motion:reduce) { .topping-chip > svg { transition:none; } .topping-chip:hover > svg { transform:none; } }
+
+/* Keep content mounted while the outer viewport folds shut. */
+.schedule-list, .events-list, .dining-list { gap:0; }
+.module-collapse { height:0; min-height:0; overflow:hidden; opacity:0; transition:height 180ms cubic-bezier(.2,.7,.2,1), opacity 140ms ease; overflow-anchor:none; }
+.module-collapse.is-open { opacity:1; transition-duration:220ms,180ms; }
+.module-collapse-inner { display:grid; gap:6px; padding-top:6px; }
+.toppings-dock > .module-collapse > .module-collapse-inner { padding-top:8px; }
+.topping-panel { margin-top:0; animation:module-fade-in 180ms ease; }
+@keyframes module-fade-in { from { opacity:0; } to { opacity:1; } }
+@media (prefers-reduced-motion:reduce) {
+  .module-collapse, .chevron { transition:none; }
+  .topping-panel { animation:none; }
+}
+
+.schedule-list li:has(> .module-collapse) { gap:0; }
+.schedule-list li > .module-collapse { width:100%; }
+.schedule-list li > .module-collapse > .module-collapse-inner { padding-top:6px; gap:0; }
+.cal-schedule > .module-collapse > .module-collapse-inner { padding-top:0; gap:0; }

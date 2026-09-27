@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Hilltoppers Schedule</title>
+    <!--
+      This page is the schedule card from the Hilltoppers extension, hosted
+      standalone so it can be embedded as a Topping. The CSS below is the
+      extension's popup.css, copied unchanged, so the card renders identically.
+    -->
+    <link rel="stylesheet" href="popup.css" />
+    <!--
+      In the extension the popup is a 352px window with a 320px card inside it.
+      Embedded as a Topping the host picks the width, so the 16px gutter would
+      make the card narrower than the frame (a 320px frame modelled on the
+      extension card, not the 352px window). Dropping the gutter at narrow
+      widths lets the card reach the container edges, which is what makes it
+      match the extension's card at the same width. The card keeps its own
+      internal padding, so nothing crowds the border.
+    -->
+    <style>
+      @media (max-width: 480px) {
+        .popup { padding: 0; }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+
+    <script src="schedule-core.js"></script>
+    <script src="schedule-card.js"></script>
+    <script>
+      (function () {
+        'use strict';
+        var H = window.HT;
+
+        // The card is hosted on github.io; the page that embeds it lives in the
+        // extension. The settings link must open the extension's own class
+        // settings, but a hosted page has no way to reach it, so it opens this
+        // project's settings page in a new tab instead.
+        var card = window.ScheduleCard.mount(document.getElementById('root'), {
+          blockPrefs: H.loadBlockPrefs(),
+          schedulePrefs: H.loadSchedulePrefs(),
+          onOpenSettings: function () {
+            window.open('settings.html', '_blank', 'noopener');
+          }
+        });
+
+        function currentGrade() {
+          var prefs = H.loadSchedulePrefs();
+          return prefs.graduationYear != null ? H.gradeFromGraduationYear(prefs.graduationYear) : null;
+        }
+
+        function refresh() {
+          var prefs = H.loadSchedulePrefs();
+          card.update({ viewingGrade: currentGrade(), schedulePrefs: prefs, blockPrefs: H.loadBlockPrefs() });
+          H.loadBlocksForDate(new Date()).then(function (result) {
+            card.update({ schedule: result });
+          }).catch(function () {
+            card.update({ schedule: { dateKey: '', blocks: [], dayType: null, details: null, networkFailed: true } });
+          });
+        }
+
+        // Same cadence as the popup: the countdown ticks once a second.
+        setInterval(function () {
+          card.update({ now: new Date() });
+        }, 1000);
+
+        window.addEventListener('storage', function (e) {
+          if (e.key === 'blockPreferences' || e.key === 'schedulePreferences') {
+            card.update({ blockPrefs: H.loadBlockPrefs(), schedulePrefs: H.loadSchedulePrefs(), viewingGrade: currentGrade() });
+          }
+        });
+
+        var refreshTimer = setInterval(refresh, 15 * 60 * 1000);
+        document.addEventListener('visibilitychange', function () {
+          if (!document.hidden) refresh();
+        });
+        window.addEventListener('beforeunload', function () { clearInterval(refreshTimer); });
+
+        refresh();
+      })();
+    </script>
+  </body>
+</html>

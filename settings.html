@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Hilltoppers Schedule Settings</title>
+    <!-- The extension's classSettings.css, copied unchanged, so the settings
+         page matches the extension's Class & Schedule Settings page. -->
+    <link rel="stylesheet" href="classSettings.css" />
+  </head>
+  <body>
+    <main class="class-settings">
+      <header class="class-settings__topbar" aria-label="Account">
+        <span class="class-settings__topbar-text">Settings are saved in this browser.</span>
+        <a class="secondary" href="index.html">Back to schedule</a>
+      </header>
+
+      <header class="class-settings__header">
+        <div>
+          <h1>Class &amp; Schedule Settings</h1>
+        </div>
+        <div class="class-settings__header-actions">
+          <span id="autosave" class="class-settings__autosave-indicator class-settings__autosave-indicator--success" hidden>&#10003; Saved</span>
+          <button type="button" class="secondary" id="reset">Reset to Defaults</button>
+        </div>
+      </header>
+
+      <div class="class-settings__form">
+        <section class="class-settings__panel">
+          <h2>Display Settings</h2>
+          <div class="class-settings__field">
+            <label for="time-format">Time format</label>
+            <select id="time-format">
+              <option value="12h">12-hour</option>
+              <option value="24h">24-hour</option>
+            </select>
+          </div>
+          <div class="class-settings__field">
+            <label for="grade-level">Grade level</label>
+            <select id="grade-level">
+              <option value="">Not set</option>
+            </select>
+          </div>
+          <div class="class-settings__field">
+            <label for="lunch-wave">My lunch</label>
+            <select id="lunch-wave">
+              <option value="">Not set</option>
+            </select>
+          </div>
+        </section>
+
+        <section class="class-settings__panel">
+          <h2>Class Blocks</h2>
+          <div class="class-settings__table" role="table" aria-label="Class block preferences">
+            <div class="class-settings__table-row class-settings__table-row--header" role="row">
+              <div role="columnheader">Block</div>
+              <div role="columnheader">Course name</div>
+              <div role="columnheader">Alternating</div>
+            </div>
+            <div id="block-rows"></div>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <script src="schedule-core.js"></script>
+    <script>
+      (function () {
+        'use strict';
+        var H = window.HT;
+        var state = {
+          blockPrefs: H.loadBlockPrefs(),
+          schedulePrefs: H.loadSchedulePrefs()
+        };
+        var autosave = document.getElementById('autosave');
+        var saveTimer = null;
+
+        function flashSaved() {
+          autosave.hidden = false;
+          if (saveTimer) clearTimeout(saveTimer);
+          saveTimer = setTimeout(function () { autosave.hidden = true; }, 3000);
+        }
+
+        function persist() {
+          H.saveBlockPrefs(state.blockPrefs);
+          H.saveSchedulePrefs(state.schedulePrefs);
+          flashSaved();
+        }
+
+        function el(tag, props, children) {
+          var node = document.createElement(tag);
+          if (props) Object.keys(props).forEach(function (k) {
+            if (k === 'class') node.className = props[k];
+            else if (k === 'text') node.textContent = props[k];
+            else if (k === 'disabled') node.disabled = props[k];
+            else if (props[k] !== null && props[k] !== undefined) node.setAttribute(k, props[k]);
+          });
+          (children || []).forEach(function (c) { if (c != null) node.appendChild(typeof c === 'string' ? document.createTextNode(c) : c); });
+          return node;
+        }
+
+        // --- display settings -------------------------------------------
+        var timeFormat = document.getElementById('time-format');
+        timeFormat.value = state.schedulePrefs.timeFormat;
+        timeFormat.addEventListener('change', function () {
+          state.schedulePrefs.timeFormat = timeFormat.value === '24h' ? '24h' : '12h';
+          persist();
+        });
+
+        var gradeSelect = document.getElementById('grade-level');
+        H.ALL_GRADES.forEach(function (g) {
+          gradeSelect.appendChild(el('option', { value: g, text: H.GRADE_LABELS[g] + ' (' + g + 'th)' }));
+        });
+        gradeSelect.value = state.schedulePrefs.graduationYear != null ? String(H.gradeFromGraduationYear(state.schedulePrefs.graduationYear)) : '';
+        gradeSelect.addEventListener('change', function () {
+          var grade = gradeSelect.value ? Number(gradeSelect.value) : null;
+          if (grade == null) delete state.schedulePrefs.graduationYear;
+          else state.schedulePrefs.graduationYear = H.graduationYearFromGrade(grade);
+          persist();
+        });
+
+        var lunchSelect = document.getElementById('lunch-wave');
+        H.LUNCH_WAVES.forEach(function (wave) {
+          lunchSelect.appendChild(el('option', { value: wave, text: H.LUNCH_WAVE_LABELS[wave] }));
+        });
+        lunchSelect.value = state.schedulePrefs.lunchWave != null ? String(state.schedulePrefs.lunchWave) : '';
+        lunchSelect.addEventListener('change', function () {
+          var wave = H.lunchWaveFromName(lunchSelect.value);
+          if (wave == null) delete state.schedulePrefs.lunchWave;
+          else state.schedulePrefs.lunchWave = wave;
+          persist();
+        });
+
+        // --- class blocks -------------------------------------------------
+        var rows = document.getElementById('block-rows');
+
+        function renderRows() {
+          rows.innerHTML = '';
+          Object.keys(H.DEFAULT_BLOCK_NAMES).forEach(function (key) {
+            var pref = state.blockPrefs[key];
+            var isAlternating = pref.alternating === true;
+
+            var inputGroup;
+            if (!isAlternating) {
+              inputGroup = el('div', { class: 'class-settings__input-with-free' }, [
+                nameInput(key, pref.name, H.DEFAULT_BLOCK_NAMES[key], false, function (value) {
+                  pref.name = value; persist();
+                }),
+                freeCheckbox(pref.free === true, function () { toggleFree(key); })
+              ]);
+            } else {
+              inputGroup = el('div', { class: 'class-settings__alternating-inputs' }, [
+                el('div', { class: 'class-settings__input-with-free' }, [
+                  el('span', { class: 'class-settings__day-label', text: '\uD83D\uDFE9 Green' }),
+                  nameInput(key, pref.nameGreen, H.DEFAULT_BLOCK_NAMES[key] + ' (Green day)', pref.freeGreen === true, function (value) {
+                    pref.nameGreen = value; persist();
+                  }),
+                  freeCheckbox(pref.freeGreen === true, function () { toggleFreeAlternating(key, 'green'); })
+                ]),
+                el('div', { class: 'class-settings__input-with-free' }, [
+                  el('span', { class: 'class-settings__day-label', text: '\u2B1C\uFE0F White' }),
+                  nameInput(key, pref.nameWhite, H.DEFAULT_BLOCK_NAMES[key] + ' (White day)', pref.freeWhite === true, function (value) {
+                    pref.nameWhite = value; persist();
+                  }),
+                  freeCheckbox(pref.freeWhite === true, function () { toggleFreeAlternating(key, 'white'); })
+                ])
+              ]);
+            }
+
+            var altCheckbox = el('input', { type: 'checkbox', 'aria-label': 'Alternating classes for ' + H.DEFAULT_BLOCK_NAMES[key] });
+            altCheckbox.checked = isAlternating;
+            altCheckbox.addEventListener('change', function () { toggleAlternating(key); });
+
+            rows.appendChild(el('div', { class: 'class-settings__table-row', role: 'row' }, [
+              el('div', { class: 'class-settings__table-label', role: 'cell' }, [el('strong', { text: H.DEFAULT_BLOCK_NAMES[key] })]),
+              el('div', { class: 'class-settings__table-input-group', role: 'cell' }, [inputGroup]),
+              el('div', { class: 'class-settings__table-toggle', role: 'cell' }, [
+                el('label', null, [altCheckbox, el('span', { text: 'Alternating' })])
+              ])
+            ]));
+          });
+        }
+
+        function nameInput(key, value, placeholder, disabled, onChange) {
+          var input = el('input', { type: 'text', value: value || '', placeholder: placeholder, 'aria-label': 'Course name for ' + placeholder });
+          input.disabled = disabled;
+          input.addEventListener('input', function () { onChange(input.value); });
+          return input;
+        }
+
+        function freeCheckbox(checked, onChange) {
+          var box = el('input', { type: 'checkbox', 'aria-label': 'Free block' });
+          box.checked = checked;
+          box.addEventListener('change', onChange);
+          return el('label', { class: 'class-settings__free-checkbox' }, [box, el('span', { text: 'Free' })]);
+        }
+
+        // Ported from ClassSettings.tsx so the toggle behaviour is the same.
+        function toggleAlternating(key) {
+          var current = state.blockPrefs[key];
+          var next = !(current.alternating === true);
+          var currentName = (current.name || '').trim();
+          var isFree = current.free === true;
+          current.alternating = next;
+          if (next) {
+            current.nameGreen = (current.nameGreen && current.nameGreen.trim()) ? current.nameGreen : (isFree ? '' : currentName);
+            current.nameWhite = (current.nameWhite && current.nameWhite.trim()) ? current.nameWhite : (isFree ? '' : currentName);
+            if (current.freeGreen == null) current.freeGreen = isFree;
+            if (current.freeWhite == null) current.freeWhite = isFree;
+          }
+          persist(); renderRows();
+        }
+
+        function toggleFree(key) {
+          var current = state.blockPrefs[key];
+          var isFree = !(current.free === true);
+          if (isFree) {
+            var currentName = (current.name || '').trim();
+            current.free = true;
+            current.nameBackup = currentName && currentName !== 'Free Block' ? currentName : (current.nameBackup || '');
+            current.name = 'Free Block';
+          } else {
+            current.free = false;
+            current.name = current.nameBackup && current.nameBackup.trim() ? current.nameBackup : '';
+          }
+          persist(); renderRows();
+        }
+
+        function toggleFreeAlternating(key, day) {
+          var current = state.blockPrefs[key];
+          var flag = day === 'green' ? 'freeGreen' : 'freeWhite';
+          var isFree = !(current[flag] === true);
+          if (isFree) {
+            var field = day === 'green' ? 'nameGreen' : 'nameWhite';
+            var backupField = day === 'green' ? 'nameGreenBackup' : 'nameWhiteBackup';
+            var currentName = (current[field] || '').trim();
+            current[flag] = true;
+            current[backupField] = currentName && currentName !== 'Free Block' ? currentName : (current[backupField] || '');
+            current[field] = 'Free Block';
+          } else {
+            var backup = (day === 'green' ? 'nameGreenBackup' : 'nameWhiteBackup');
+            current[flag] = false;
+            current[day === 'green' ? 'nameGreen' : 'nameWhite'] = (current[backup] || '').trim() ? current[backup] : '';
+          }
+          persist(); renderRows();
+        }
+
+        document.getElementById('reset').addEventListener('click', function () {
+          if (!window.confirm('Are you sure you want to reset all settings to defaults? This will erase all your custom block names and preferences.')) return;
+          state.blockPrefs = H.createEmptyPreferences();
+          state.schedulePrefs = { lunchPeriod: 1, timeFormat: '12h' };
+          persist();
+          renderRows();
+          timeFormat.value = '12h';
+          gradeSelect.value = '';
+          lunchSelect.value = '';
+        });
+
+        renderRows();
+      })();
+    </script>
+  </body>
+</html>
