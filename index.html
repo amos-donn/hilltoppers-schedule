@@ -23,6 +23,16 @@
       @media (max-width: 480px) {
         .popup { padding: 0; }
       }
+
+      /* Embedded as a Topping the frame decides the width. The card's
+         min-width is a phone-popup floor that would otherwise force the
+         document wider than a narrow frame and add a horizontal scrollbar. */
+      html, body { max-width: 100%; overflow-x: hidden; }
+      @media (max-width: 480px) {
+        .popup { min-width: 0; }
+      }
+      .friend-picker { display: flex; justify-content: flex-end; min-width: 0; }
+      .friend-select { max-width: 100%; }
     </style>
   </head>
   <body>
@@ -35,26 +45,27 @@
         'use strict';
         var H = window.HT;
 
-        // The card is hosted on github.io; the page that embeds it lives in the
-        // extension. The settings link must open the extension's own class
-        // settings, but a hosted page has no way to reach it, so it opens this
-        // project's settings page in a new tab instead.
+        // A shared link carries the sender's preferences in the fragment. Import
+        // it before mounting so the friend appears in the picker immediately.
+        (function importShare() {
+          var payload = H.parseShareHash(location.hash);
+          if (!payload) return;
+          var friend = H.friendFromPayload(payload);
+          H.saveFriends(H.upsertFriend(H.loadFriends(), friend));
+          H.saveSelectedFriend(friend.email);
+          try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* file:// */ }
+        })();
+
         var card = window.ScheduleCard.mount(document.getElementById('root'), {
-          blockPrefs: H.loadBlockPrefs(),
-          schedulePrefs: H.loadSchedulePrefs(),
+          friends: H.loadFriends(),
+          selectedFriend: H.loadSelectedFriend(),
           onOpenSettings: function () {
             window.open('settings.html', '_blank', 'noopener');
           }
         });
 
-        function currentGrade() {
-          var prefs = H.loadSchedulePrefs();
-          return prefs.graduationYear != null ? H.gradeFromGraduationYear(prefs.graduationYear) : null;
-        }
-
         function refresh() {
-          var prefs = H.loadSchedulePrefs();
-          card.update({ viewingGrade: currentGrade(), schedulePrefs: prefs, blockPrefs: H.loadBlockPrefs() });
+          card.update({ friends: H.loadFriends(), selectedFriend: H.loadSelectedFriend() });
           H.loadBlocksForDate(new Date()).then(function (result) {
             card.update({ schedule: result });
           }).catch(function () {
@@ -68,8 +79,8 @@
         }, 1000);
 
         window.addEventListener('storage', function (e) {
-          if (e.key === 'blockPreferences' || e.key === 'schedulePreferences') {
-            card.update({ blockPrefs: H.loadBlockPrefs(), schedulePrefs: H.loadSchedulePrefs(), viewingGrade: currentGrade() });
+          if (e.key === 'friends' || e.key === 'selectedFriend') {
+            card.update({ friends: H.loadFriends(), selectedFriend: H.loadSelectedFriend() });
           }
         });
 

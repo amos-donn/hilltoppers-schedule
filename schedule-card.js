@@ -8,8 +8,6 @@
 
   var H = window.HT;
 
-  var BULLETIN_URL = 'https://stjacademy.org/a-culture-of-caring-and-respect/sja-news/daily-bulletin/';
-
   function el(tag, props, children) {
     var node = document.createElement(tag);
     if (props) {
@@ -53,42 +51,40 @@
   var CALENDAR_SVG = '<svg class="toggle-title-icon" viewBox="0 0 24 24" aria-hidden="true">' +
     '<path d="M8 3v3M16 3v3M4 9h16M6 6h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
-  var BULLETIN_SVG = '<svg class="daytype-float-icon" viewBox="0 0 24 24" aria-hidden="true">' +
-    '<path d="M14 4h6v6m0-6-8 8M10 6H7a3 3 0 0 0-3 3v8a3 3 0 0 0 3 3h8a3 3 0 0 0 3-3v-3" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-
-  function dayTypeClass(dayType) {
-    if (!dayType) return 'neutral';
-    var lower = dayType.toLowerCase();
-    if (lower.indexOf('green') >= 0) return 'green';
-    if (lower.indexOf('white') >= 0) return 'white';
-    if (lower.indexOf('no school') >= 0) return 'no-school';
-    return 'neutral';
-  }
-
   function mount(root, opts) {
     opts = opts || {};
     var state = {
       schedule: opts.schedule || { dateKey: '', blocks: [], dayType: null, details: null },
       blockPrefs: opts.blockPrefs || H.createEmptyPreferences(),
       schedulePrefs: opts.schedulePrefs || H.DEFAULT_SCHEDULE_PREFERENCES,
-      viewingGrade: opts.viewingGrade != null ? opts.viewingGrade : null,
+      friends: opts.friends || [],
+      selectedFriend: opts.selectedFriend || '',
       now: opts.now || new Date(),
       scheduleExpanded: Boolean(opts.scheduleExpanded),
       expandedBlockId: null
     };
     var baseDate = state.schedule.dateKey ? H.parseDateKey(state.schedule.dateKey) : H.parseDateKey(H.todayKey());
 
-    function hasGradeSpecific() {
-      return state.schedule.blocks.some(function (b) { return b.grades && b.grades.length > 0; });
+    function selectedFriend() {
+      var list = state.friends || [];
+      for (var i = 0; i < list.length; i++) {
+        if (list[i].email === state.selectedFriend) return list[i];
+      }
+      // Fall back to the first friend so removing or renaming the selected one
+      // never leaves the card stranded on the empty state.
+      return list.length > 0 ? list[0] : null;
     }
-
-    function filteredBlocks() {
-      if (!hasGradeSpecific() || state.viewingGrade == null) return state.schedule.blocks;
-      return state.schedule.blocks.filter(function (b) { return !b.grades || b.grades.indexOf(state.viewingGrade) >= 0; });
+    function friendLabel(friend) {
+      return friend.name ? friend.name + ' (' + friend.email + ')' : friend.email;
+    }
+    // The card shows a friend's schedule only; the viewer's own schedule is
+    // never displayed. The viewer's grade is therefore irrelevant here and the
+    // friend's own grade is what filters grade-specific blocks.
+    function friendBlocks(friend) {
+      return H.gradeFilteredBlocks(state.schedule.blocks, friend ? friend.grade : null);
     }
 
     function renderHeader() {
-      var dayTypeLabel = state.schedule.dayType;
       var gear = el('div', { class: 'settings-button-wrapper' }, [
         el('button', { class: 'settings-button', type: 'button', 'aria-label': 'Open settings', html: GEAR_SVG }),
         el('span', { class: 'hover-float-label settings-float-label', text: 'Settings' })
@@ -96,38 +92,56 @@
       gear.querySelector('button').addEventListener('click', function () {
         if (opts.onOpenSettings) opts.onOpenSettings();
       });
-      var pill = el('div', { class: 'day-type-pill-wrapper' }, [
-        el('a', { class: 'day-type-pill ' + dayTypeClass(dayTypeLabel) + ' day-type-pill-link', href: BULLETIN_URL, target: '_blank', rel: 'noreferrer noopener', 'aria-label': 'Open Daily Bulletin', text: dayTypeLabel || 'Unknown' }),
-        el('span', { class: 'hover-float-label daytype-float-label', html: BULLETIN_SVG + '<span>Daily Bulletin</span>' })
-      ]);
       return el('header', null, [
         el('div', { class: 'header-row' }, [
           el('div', { class: 'header-left' }, [el('div', { class: 'header-title-row' }, [gear])]),
-          el('div', { class: 'header-right' }, [pill])
+          el('div', { class: 'header-right' }, [renderFriendPicker()])
         ])
       ]);
     }
 
-    function renderStatus(status, progressBar) {
+    // The dropdown lists every friend with where they are right now, in the
+    // order set on the settings page.
+    function renderFriendPicker() {
+      var list = state.friends || [];
+      if (list.length === 0) return null;
+      var select = el('select', { class: 'friend-select', 'aria-label': 'Choose a friend' });
+      list.forEach(function (friend) {
+        var location = H.friendLocation(friend, state.schedule, baseDate, state.now);
+        var text = friendLabel(friend) + (location ? ' \u2014 ' + location : '');
+        select.appendChild(el('option', { value: friend.email, text: text }));
+      });
+      select.value = state.selectedFriend;
+      select.addEventListener('change', function () {
+        state.selectedFriend = select.value;
+        state.expandedBlockId = null;
+        H.saveSelectedFriend(state.selectedFriend);
+        render();
+      });
+      return el('div', { class: 'friend-picker' }, [select]);
+    }
+
+    function renderStatus(friend, status, progressBar) {
       var currentBlock = status.currentBlock;
       var nextBlock = status.nextBlock;
-      var dayTypeLabel = state.schedule.dayType;
-      var filtered = filteredBlocks();
-      var isNoSchool = filtered.length === 0 && (dayTypeLabel ? dayTypeLabel.toLowerCase().indexOf('no school') >= 0 : false);
-      var isNetworkFailed = state.schedule.networkFailed === true && filtered.length === 0 && !dayTypeLabel;
+      var filtered = friendBlocks(friend);
+      var dayType = state.schedule.dayType;
+      var isNoSchool = filtered.length === 0 &&
+        ((state.schedule.details || false) || (dayType ? dayType.toLowerCase().indexOf('no school') >= 0 : false));
+      var isNetworkFailed = state.schedule.networkFailed === true && filtered.length === 0;
 
       var body;
       if (currentBlock) {
-        var currentDisplay = H.resolveBlockDisplay(currentBlock.name, dayTypeLabel, state.blockPrefs);
+        var currentDisplay = H.resolveBlockDisplay(currentBlock.name, state.schedule.dayType, friend.blockPrefs);
         body = el('div', { class: 'status-current' }, [
-          el('div', { class: 'current-details' }, [el('p', { class: 'current-name', text: currentDisplay.label }) ]),
+          el('div', { class: 'current-details' }, [el('p', { class: 'current-name', text: currentDisplay.label })]),
           el('span', { class: 'time-remaining' }, [
             el('span', { class: 'time-label', text: 'ends in' }),
             el('span', { class: 'time-value', text: H.formatCountdown(status.remainingMs) })
           ])
         ]);
       } else if (nextBlock) {
-        var nextDisplay = H.resolveBlockDisplay(nextBlock.name, dayTypeLabel, state.blockPrefs);
+        var nextDisplay = H.resolveBlockDisplay(nextBlock.name, state.schedule.dayType, friend.blockPrefs);
         body = el('div', { class: 'status-current upcoming-status' }, [
           el('div', { class: 'current-details' }, [
             el('span', { class: 'next-label', text: 'Next up' }),
@@ -146,7 +160,8 @@
         body = el('div', { class: 'status-ended' }, [el('h2', { text: h2 }), el('p', { text: p })]);
       }
 
-      var section = el('section', { class: 'status' }, [body]);
+      var heading = el('p', { class: 'friend-heading', text: friendLabel(friend) });
+      var section = el('section', { class: 'status' }, [heading, body]);
       if (progressBar) {
         var container = el('div', { class: 'progress-bar-container' + (progressBar.isBreak ? ' progress-break' : '') }, [
           el('div', { class: 'progress-bar-labels' }, [el('span', { text: progressBar.startLabel }), el('span', { text: progressBar.endLabel })]),
@@ -159,10 +174,10 @@
       return section;
     }
 
-    function lunchCountdown(currentBlock) {
-      if (!currentBlock || state.schedulePrefs.lunchWave == null) return null;
+    function lunchCountdown(friend, currentBlock) {
+      if (!currentBlock || friend.lunchWave == null) return null;
       var mine = (currentBlock.subBlocks || []).filter(function (sub) {
-        return H.lunchWaveFromName(sub.name) === state.schedulePrefs.lunchWave;
+        return H.lunchWaveFromName(sub.name) === friend.lunchWave;
       })[0];
       if (!mine) return null;
       var start = H.parseBlockTime(mine.start, baseDate);
@@ -172,12 +187,12 @@
       return null;
     }
 
-    function renderBlock(block, status, filtered) {
+    function renderBlock(friend, block, status) {
       var start = H.parseBlockTime(block.start, baseDate);
       var end = H.parseBlockTime(block.end, baseDate);
       var isCurrent = status.currentBlock && status.currentBlock.id === block.id;
       var isNext = !status.currentBlock && status.nextBlock && status.nextBlock.id === block.id;
-      var display = H.resolveBlockDisplay(block.name, state.schedule.dayType, state.blockPrefs);
+      var display = H.resolveBlockDisplay(block.name, state.schedule.dayType, friend.blockPrefs);
       var classes = [];
       if (isCurrent) classes.push('current-block');
       else if (isNext) classes.push('upcoming-block');
@@ -190,7 +205,7 @@
       var isExpanded = state.expandedBlockId === block.id;
 
       var blockRight = el('div', { class: 'block-right' }, [
-        el('span', { class: 'block-time', text: H.toDisplayTime(start, state.schedulePrefs.timeFormat) + ' \u2013 ' + H.toDisplayTime(end, state.schedulePrefs.timeFormat) })
+        el('span', { class: 'block-time', text: H.toDisplayTime(start, friend.timeFormat) + ' \u2013 ' + H.toDisplayTime(end, friend.timeFormat) })
       ]);
       if (hasSubBlocks) {
         blockRight.appendChild(el('span', { class: 'subblock-inline-toggle', 'aria-hidden': 'true' }, [
@@ -219,10 +234,10 @@
       var children = [row];
       if (hasSubBlocks) {
         var items = subBlocks.map(function (sub) {
-          var isMyLunch = state.schedulePrefs.lunchWave != null && H.lunchWaveFromName(sub.name) === state.schedulePrefs.lunchWave;
+          var isMyLunch = friend.lunchWave != null && H.lunchWaveFromName(sub.name) === friend.lunchWave;
           return el('li', { class: isMyLunch ? 'my-lunch' : undefined }, [
             el('span', { class: 'subblock-name', text: sub.name }),
-            el('span', { class: 'subblock-time', text: H.toDisplayTime(H.parseBlockTime(sub.start, baseDate), state.schedulePrefs.timeFormat) + ' \u2013 ' + H.toDisplayTime(H.parseBlockTime(sub.end, baseDate), state.schedulePrefs.timeFormat) })
+            el('span', { class: 'subblock-time', text: H.toDisplayTime(H.parseBlockTime(sub.start, baseDate), friend.timeFormat) + ' \u2013 ' + H.toDisplayTime(H.parseBlockTime(sub.end, baseDate), friend.timeFormat) })
           ]);
         });
         children.push(animatedCollapse(isExpanded, [el('ul', { class: 'subblock-list' }, items)]));
@@ -230,13 +245,11 @@
       return el('li', { class: classes.join(' ') || undefined }, children);
     }
 
-    function renderScheduleSection(status) {
-      var filtered = filteredBlocks();
-      var dayTypeLabel = state.schedule.dayType;
-      var isNoSchool = filtered.length === 0 && (dayTypeLabel ? dayTypeLabel.toLowerCase().indexOf('no school') >= 0 : false);
-      if (isNoSchool) return null;
+    function renderScheduleSection(friend, status) {
+      var filtered = friendBlocks(friend);
+      if (filtered.length === 0) return null;
 
-      var note = lunchCountdown(status.currentBlock);
+      var note = lunchCountdown(friend, status.currentBlock);
       var toggle = el('button', { type: 'button', class: 'schedule-toggle', 'aria-expanded': String(state.scheduleExpanded) }, [
         el('span', { class: 'toggle-title', html: CALENDAR_SVG + '<span>Schedule</span>' })
       ]);
@@ -247,23 +260,7 @@
         render();
       });
 
-      var inner = [];
-
-      if (hasGradeSpecific() && state.viewingGrade != null) {
-        var select = el('select', { 'aria-label': 'Select grade to view schedule' },
-          H.ALL_GRADES.map(function (g) {
-            return el('option', { value: g, text: H.GRADE_LABELS_PLURAL[g], selected: g === state.viewingGrade ? 'selected' : null });
-          })
-        );
-        select.value = String(state.viewingGrade);
-        select.addEventListener('change', function (e) {
-          state.viewingGrade = Number(e.target.value);
-          render();
-        });
-        inner.push(el('div', { class: 'grade-selector' }, [el('span', { text: 'Showing schedule for' }), select]));
-      }
-
-      inner.push(el('ul', null, filtered.map(function (block) { return renderBlock(block, status, filtered); })));
+      var inner = [el('ul', null, filtered.map(function (block) { return renderBlock(friend, block, status); }))];
 
       return el('section', { class: 'schedule-list' + (state.scheduleExpanded ? '' : ' collapsed') }, [
         el('div', { class: 'schedule-heading' }, [toggle]),
@@ -271,30 +268,61 @@
       ]);
     }
 
+    function renderEmpty() {
+      var main = el('main', { class: 'popup' }, [
+        el('section', { class: 'status' }, [
+          el('div', { class: 'status-ended' }, [
+            el('h2', { text: 'No friends yet' }),
+            el('p', { text: 'Get a life.' })
+          ])
+        ])
+      ]);
+      var gear = el('div', { class: 'settings-button-wrapper' }, [
+        el('button', { class: 'settings-button', type: 'button', 'aria-label': 'Open settings', html: GEAR_SVG }),
+        el('span', { class: 'hover-float-label settings-float-label', text: 'Settings' })
+      ]);
+      gear.querySelector('button').addEventListener('click', function () {
+        if (opts.onOpenSettings) opts.onOpenSettings();
+      });
+      main.insertBefore(el('header', null, [
+        el('div', { class: 'header-row' }, [
+          el('div', { class: 'header-left' }, [el('div', { class: 'header-title-row' }, [gear])])
+        ])
+      ]), main.firstChild);
+      return main;
+    }
+
     function render() {
       baseDate = state.schedule.dateKey ? H.parseDateKey(state.schedule.dateKey) : H.parseDateKey(H.todayKey());
+      root.innerHTML = '';
+
+      var friend = selectedFriend();
+      if (!friend) {
+        root.appendChild(renderEmpty());
+        return;
+      }
+
       var main = el('main', { class: 'popup' });
-      var filtered = filteredBlocks();
+      var filtered = friendBlocks(friend);
       var status = H.computeStatus(filtered, baseDate, state.now);
-      var progressBar = H.computeProgressBar(filtered, status.currentBlock, status.nextBlock, baseDate, state.now, state.schedulePrefs.timeFormat);
+      var progressBar = H.computeProgressBar(filtered, status.currentBlock, status.nextBlock, baseDate, state.now, friend.timeFormat);
 
       if (state.schedule.networkFailed === true && filtered.length === 0 && !state.schedule.dayType) {
         main.className = 'popup no-network';
-        main.innerHTML = '';
         main.appendChild(el('p', { text: 'No internet connection' }));
-        root.innerHTML = '';
         root.appendChild(main);
         return;
       }
 
       main.appendChild(renderHeader());
-      main.appendChild(renderStatus(status, progressBar));
-      var section = renderScheduleSection(status);
+      main.appendChild(renderStatus(friend, status, progressBar));
+      var section = renderScheduleSection(friend, status);
       if (section) main.appendChild(section);
 
-      root.innerHTML = '';
       root.appendChild(main);
     }
+
+    render();
 
     return {
       render: render,
