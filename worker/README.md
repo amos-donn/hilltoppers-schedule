@@ -17,10 +17,15 @@ install.
 
 ## 1. Create the tables
 
+The D1 console runs **one statement per call**. Pasting the whole file returns
+`Requests without any query are not supported.`, so run each statement on its
+own, in order, clicking **Execute** after each.
+
 1. Cloudflare dashboard → **Storage & Databases → D1** → `hilltoppers-schedule`.
 2. Open the **Console** tab.
-3. Paste the entire contents of `worker/schema.sql` and click **Execute**.
-4. Check it worked: in the Console run
+3. Paste and Execute each of the 11 statements in `worker/schema.sql`, one at a
+   time. Five create tables, six create indexes.
+4. Check it worked:
    `SELECT name FROM sqlite_master WHERE type = 'table';`
    You should see `accounts`, `grants`, `notices`, `requests`, `sessions`.
 
