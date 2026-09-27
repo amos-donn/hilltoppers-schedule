@@ -14,10 +14,12 @@ Two pages:
   At a narrow width the card fills the frame edge to edge, matching the
   extension's card at the same width (see *Sizing* below).
 - **`settings.html` — Class & Schedule Settings.** The schedule-affecting part
-  of the extension's Class settings page: time format, grade level, lunch, and
-  the A–E course names with alternating / free options. It also has *Send
-  Schedule* and the *Friends* list. Open it from the gear on the card, or
-  directly. Changes save to this browser and the card picks them up.
+  of the extension's Class settings page. **My Profile** holds the display
+  settings (time format, grade level, lunch) and your A–E courses with their
+  alternating / free options; **Send Schedule** builds your share link; and
+  **Friends** lists the schedules shown on the card. Open it from the gear on
+  the card, or directly. Changes save to this browser and the card picks them
+  up.
 
 ## Sharing your schedule
 
