@@ -43,9 +43,23 @@
  *
  * - Privilege-sensitive values (which account you are, what you may read) come
  *   from the session row, never from the request body.
+ *
+ * - This Worker only serves /api/*. The visible pages are GitHub Pages, so
+ *   after sign-in the browser is redirected to APP_URL, not back here, and the
+ *   session cookie is SameSite=None because the page and the API are different
+ *   origins.
  */
 
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
+
+// Where the visible site lives. The pages are GitHub Pages, not this Worker,
+// so a redirect back to this origin after sign-in would land on nothing. The
+// cookie has to be SameSite=None because the pages and this API are different
+// origins: with Lax or Strict the browser would not send it on the fetch calls
+// the page makes, and the session would silently look signed out.
+const APP_URL = 'https://amos-donn.github.io/hilltoppers-schedule';
+const APP_ORIGIN = 'https://amos-donn.github.io';
+
 
 // ---------------------------------------------------------------------------
 // Small helpers
@@ -113,7 +127,7 @@ function sessionCookie(token, maxAge) {
     `ht_session=${token}`,
     'Path=/',
     'HttpOnly',
-    'SameSite=Lax',
+    'SameSite=None',
     'Secure',
     `Max-Age=${maxAge}`,
   ].join('; ');
@@ -285,7 +299,7 @@ async function authCallback(request, env) {
 
   const failRedirect = new Response(null, {
     status: 302,
-    headers: { Location: `${url.origin}/settings.html?auth=error` },
+    headers: { Location: `${APP_URL}/settings.html?auth=error` },
   });
 
   if (error || !code || !state) return failRedirect;
@@ -353,7 +367,7 @@ async function authCallback(request, env) {
     .run();
 
   const headers = new Headers({
-    Location: `${url.origin}/settings.html?auth=ok`,
+    Location: `${APP_URL}/settings.html?auth=ok`,
   });
   headers.append('Set-Cookie', sessionCookie(token, SESSION_TTL_SECONDS));
   headers.append('Set-Cookie', `${googleCookieName(state)}=; Path=/; Max-Age=0`);
@@ -737,7 +751,7 @@ export default {
     // CORS for the static pages, which are served from a different origin than
     // this Worker. Credentials are allowed because the session is a cookie.
     const cors = {
-      'Access-Control-Allow-Origin': 'https://amos-donn.github.io',
+      'Access-Control-Allow-Origin': APP_ORIGIN,
       'Access-Control-Allow-Credentials': 'true',
       'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type',
