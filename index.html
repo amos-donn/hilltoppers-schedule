@@ -47,20 +47,30 @@
 
         // A shared link carries the sender's preferences in the fragment. Import
         // it before mounting so the friend appears in the picker immediately.
-        (function importShare() {
+        // A link opened while the card is already loaded is a same-document
+        // navigation, so hashchange handles it too.
+        function importShare() {
           var payload = H.parseShareHash(location.hash);
-          if (!payload) return;
+          if (!payload) return false;
           var friend = H.friendFromPayload(payload);
           H.saveFriends(H.upsertFriend(H.loadFriends(), friend));
           H.saveSelectedFriend(friend.email);
           try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* file:// */ }
-        })();
+          return true;
+        }
+        importShare();
 
         var card = window.ScheduleCard.mount(document.getElementById('root'), {
           friends: H.loadFriends(),
           selectedFriend: H.loadSelectedFriend(),
           onOpenSettings: function () {
             window.open('settings.html', '_blank', 'noopener');
+          }
+        });
+
+        window.addEventListener('hashchange', function () {
+          if (importShare()) {
+            card.update({ friends: H.loadFriends(), selectedFriend: H.loadSelectedFriend() });
           }
         });
 
