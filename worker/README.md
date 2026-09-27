@@ -98,8 +98,11 @@ https://hilltoppers-schedule-friends.amos-donn.workers.dev/api/me
   means the Worker is running and refusing anonymous access.
 - Now open
   `https://hilltoppers-schedule-friends.amos-donn.workers.dev/api/auth/login`.
-  You should land on Google's account picker. After choosing an account you
-  should come back to the settings page with `?auth=ok` in the URL.
+  You should land on Google's account picker, and after choosing an account you
+  should arrive at
+  `https://amos-donn.github.io/hilltoppers-schedule/settings.html?auth=ok` —
+  the GitHub Pages site, not the Worker. The Worker serves only `/api/*`, so a
+  redirect back to the Worker's own origin would land on a JSON 404.
 - Then run the first URL again. You should now get your own profile, including
   a `profileId` like `brave-heron-4821`.
 

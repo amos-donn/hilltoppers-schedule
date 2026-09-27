@@ -167,6 +167,11 @@ async function signIn(env, { sub, email, name }) {
     cookie: `ht_oauth_${state.slice(0, 8)}=1`,
   });
   assert.equal(cb.status, 302, 'callback should redirect back to settings');
+  assert.match(
+    cb.headers.get('Location'),
+    /^https:\/\/amos-donn\.github\.io\/hilltoppers-schedule\/settings\.html/,
+    'the redirect must go to the site, not to this Worker, which serves no pages'
+  );
   const cookie = cookieFrom(cb);
   assert.ok(cookie, 'callback should set a session cookie');
   return cookie;
@@ -265,7 +270,7 @@ await test('a second sign-in reuses the same account', async () => {
   assert.equal(n.n, 1, 're-signing in must not create a second account');
 });
 
-await test('a session cookie is HttpOnly, Secure and SameSite=Lax', async () => {
+await test('a session cookie is HttpOnly, Secure and SameSite=None', async () => {
   const login = await call(env, '/api/auth/login');
   const state = new URL(login.headers.get('Location')).searchParams.get('state');
   tokenToReturn = await makeIdToken({ sub: 'sub-bob', email: 'bob@x.org', name: 'Bob' });
@@ -276,7 +281,7 @@ await test('a session cookie is HttpOnly, Secure and SameSite=Lax', async () => 
   const raw = res.headers.getSetCookie().find((c) => c.startsWith('ht_session='));
   assert.match(raw, /HttpOnly/);
   assert.match(raw, /Secure/);
-  assert.match(raw, /SameSite=Lax/);
+  assert.match(raw, /SameSite=None/);
   env.bob = { cookie: cookieFrom(res) };
 });
 
