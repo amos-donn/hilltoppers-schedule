@@ -144,8 +144,8 @@ header {
 
 .settings-float-label {
   top: 50%;
-  left: calc(100% + 6px);
-  transform: translateY(-50%) translateX(-2px);
+  right: calc(100% + 6px);
+  transform: translateY(-50%) translateX(2px);
 }
 
 .day-type-pill-wrapper:hover .daytype-float-label,
@@ -159,7 +159,6 @@ header {
   opacity: 1;
   transform: translateY(-50%) translateX(0);
 }
-
 .settings-button {
   border: none;
   background: transparent;
@@ -1399,25 +1398,6 @@ header {
 .cal-schedule > .module-collapse > .module-collapse-inner { padding-top:0; gap:0; }
 
 /* --- friends sharing (standalone page; not in the extension) ----------- */
-.friend-select {
-  width: 100%;
-  min-width: 0;
-  appearance: none;
-  -webkit-appearance: none;
-  border: 1px solid rgba(17, 17, 17, 0.14);
-  border-radius: 4px;
-  background: #ffffff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='4'%3E%3Cpath d='M0 0l4 4 4-4z' fill='%237d8591'/%3E%3C/svg%3E") no-repeat right 6px center;
-  padding: 3px 16px 3px 8px;
-  font-size: 12px;
-  font-weight: 600;
-  color: #161b22;
-  cursor: pointer;
-  text-overflow: ellipsis;
-}
-
-.friend-select:hover { border-color: rgba(17, 17, 17, 0.28); }
-.friend-select:focus { outline: none; border-color: rgba(26, 127, 55, 0.5); box-shadow: 0 0 0 2px rgba(26, 127, 55, 0.12); }
-
 .friend-heading {
   margin: 0 0 4px;
   font-size: 11px;
@@ -1427,4 +1407,145 @@ header {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* --- status card heading (friend name + gear) -------------------------- */
+.status-heading-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.status-heading-row .friend-heading {
+  margin: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Tucked into the card's top-right corner so it reads as part of the card
+   rather than a bar above it. The negative offsets pull back the button's own
+   padding, keeping the name and heading flush with the card edges. */
+.status-heading-row .settings-button-wrapper {
+  flex: 0 0 auto;
+  margin: -6px -6px -6px 0;
+}
+
+/* --- friends list (standalone page; not in the extension) -------------- */
+.friends-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 16px;
+}
+
+.friends-heading {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #7d8591;
+}
+
+.friend-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid rgba(17, 17, 17, 0.18);
+  border-radius: 8px;
+  overflow: hidden;
+  background: #ffffff;
+}
+
+.friend-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.friend-row + .friend-row {
+  border-top: 1px solid rgba(17, 17, 17, 0.08);
+}
+
+.friend-row:hover {
+  background: #f7f8fb;
+}
+
+.friend-row:focus-visible {
+  outline: 2px solid #1a7f37;
+  outline-offset: -2px;
+}
+
+.friend-row.is-selected {
+  background: rgba(26, 127, 55, 0.08);
+}
+
+.friend-identity {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.friend-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #161b22;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.friend-email {
+  font-size: 11px;
+  color: #7d8591;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The right column answers "what class are they in", so the block badge and
+   course line up across every row instead of starting at each name's width. */
+.friend-class {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  max-width: 62%;
+}
+
+.friend-block-badge {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #f0f2f5;
+  color: #555f6a;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.friend-course {
+  font-size: 13px;
+  color: #161b22;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.friend-class.is-free .friend-course {
+  color: #7d8591;
+}
+
+.friend-class--none span {
+  font-size: 12px;
+  color: #7d8591;
 }

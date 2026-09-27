@@ -84,41 +84,81 @@
       return H.gradeFilteredBlocks(state.schedule.blocks, friend ? friend.grade : null);
     }
 
-    function renderHeader() {
-      var gear = el('div', { class: 'settings-button-wrapper' }, [
+    // The gear lives inside the status card (top-right) rather than above it.
+    function settingsButton() {
+      var wrapper = el('div', { class: 'settings-button-wrapper' }, [
         el('button', { class: 'settings-button', type: 'button', 'aria-label': 'Open settings', html: GEAR_SVG }),
         el('span', { class: 'hover-float-label settings-float-label', text: 'Settings' })
       ]);
-      gear.querySelector('button').addEventListener('click', function () {
+      wrapper.querySelector('button').addEventListener('click', function () {
         if (opts.onOpenSettings) opts.onOpenSettings();
       });
-      return el('header', null, [
-        el('div', { class: 'header-row' }, [
-          el('div', { class: 'header-left' }, [el('div', { class: 'header-title-row' }, [gear])]),
-          el('div', { class: 'header-right' }, [renderFriendPicker()])
-        ])
-      ]);
+      return wrapper;
     }
 
-    // The dropdown lists every friend with where they are right now, in the
-    // order set on the settings page.
-    function renderFriendPicker() {
+    // Every friend, in the order set on the settings page, each with what they
+    // are in right now. Tapping a row selects that friend for the status above.
+    function friendNow(friend) {
+      var status = H.computeStatus(friendBlocks(friend), baseDate, state.now);
+      if (!status.currentBlock) return null;
+      var display = H.resolveBlockDisplay(status.currentBlock.name, state.schedule.dayType, friend.blockPrefs);
+      return { label: display.label, isFree: display.isFree, key: H.getBlockKey(status.currentBlock.name) };
+    }
+
+    function friendGapLabel(friend) {
+      if (friendBlocks(friend).length === 0) {
+        return state.schedule.networkFailed === true ? 'No connection' : 'No school today';
+      }
+      return 'Between classes';
+    }
+
+    function renderFriends() {
       var list = state.friends || [];
       if (list.length === 0) return null;
-      var select = el('select', { class: 'friend-select', 'aria-label': 'Choose a friend' });
-      list.forEach(function (friend) {
-        var location = H.friendLocation(friend, state.schedule, baseDate, state.now);
-        var text = friendLabel(friend) + (location ? ' \u2014 ' + location : '');
-        select.appendChild(el('option', { value: friend.email, text: text }));
+
+      var rows = list.map(function (friend) {
+        var isSelected = friend.email === state.selectedFriend;
+        var now = friendNow(friend);
+
+        var identity = el('div', { class: 'friend-identity' }, [
+          el('span', { class: 'friend-name', text: friend.name || friend.email })
+        ]);
+        if (friend.name) identity.appendChild(el('span', { class: 'friend-email', text: friend.email }));
+
+        var current;
+        if (now) {
+          current = el('div', { class: 'friend-class' + (now.isFree ? ' is-free' : '') }, [
+            now.key ? el('span', { class: 'friend-block-badge', text: now.key + ' Block' }) : null,
+            el('span', { class: 'friend-course', text: now.label })
+          ]);
+        } else {
+          current = el('div', { class: 'friend-class friend-class--none' }, [
+            el('span', { text: friendGapLabel(friend) })
+          ]);
+        }
+
+        var row = el('li', { class: 'friend-row' + (isSelected ? ' is-selected' : '') }, [identity, current]);
+        row.setAttribute('role', 'button');
+        row.setAttribute('tabindex', '0');
+        row.setAttribute('aria-pressed', String(isSelected));
+        row.setAttribute('aria-label', 'Show ' + friendLabel(friend) + "'s schedule");
+        var choose = function () {
+          state.selectedFriend = friend.email;
+          state.expandedBlockId = null;
+          H.saveSelectedFriend(state.selectedFriend);
+          render();
+        };
+        row.addEventListener('click', choose);
+        row.addEventListener('keydown', function (event) {
+          if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); choose(); }
+        });
+        return row;
       });
-      select.value = state.selectedFriend;
-      select.addEventListener('change', function () {
-        state.selectedFriend = select.value;
-        state.expandedBlockId = null;
-        H.saveSelectedFriend(state.selectedFriend);
-        render();
-      });
-      return el('div', { class: 'friend-picker' }, [select]);
+
+      return el('section', { class: 'friends-list' }, [
+        el('p', { class: 'friends-heading', text: 'Friends' }),
+        el('ul', { class: 'friend-rows' }, rows)
+      ]);
     }
 
     function renderStatus(friend, status, progressBar) {
@@ -160,7 +200,10 @@
         body = el('div', { class: 'status-ended' }, [el('h2', { text: h2 }), el('p', { text: p })]);
       }
 
-      var heading = el('p', { class: 'friend-heading', text: friendLabel(friend) });
+      var heading = el('div', { class: 'status-heading-row' }, [
+        el('p', { class: 'friend-heading', text: friendLabel(friend) }),
+        settingsButton()
+      ]);
       var section = el('section', { class: 'status' }, [heading, body]);
       if (progressBar) {
         var container = el('div', { class: 'progress-bar-container' + (progressBar.isBreak ? ' progress-break' : '') }, [
@@ -269,27 +312,18 @@
     }
 
     function renderEmpty() {
-      var main = el('main', { class: 'popup' }, [
+      return el('main', { class: 'popup' }, [
         el('section', { class: 'status' }, [
+          el('div', { class: 'status-heading-row' }, [
+            el('p', { class: 'friend-heading', text: 'No friends yet' }),
+            settingsButton()
+          ]),
           el('div', { class: 'status-ended' }, [
-            el('h2', { text: 'No friends yet' }),
-            el('p', { text: 'Get a life.' })
+            el('h2', { text: 'Get a life.' }),
+            el('p', { text: 'Open settings to add one.' })
           ])
         ])
       ]);
-      var gear = el('div', { class: 'settings-button-wrapper' }, [
-        el('button', { class: 'settings-button', type: 'button', 'aria-label': 'Open settings', html: GEAR_SVG }),
-        el('span', { class: 'hover-float-label settings-float-label', text: 'Settings' })
-      ]);
-      gear.querySelector('button').addEventListener('click', function () {
-        if (opts.onOpenSettings) opts.onOpenSettings();
-      });
-      main.insertBefore(el('header', null, [
-        el('div', { class: 'header-row' }, [
-          el('div', { class: 'header-left' }, [el('div', { class: 'header-title-row' }, [gear])])
-        ])
-      ]), main.firstChild);
-      return main;
     }
 
     function render() {
@@ -314,10 +348,11 @@
         return;
       }
 
-      main.appendChild(renderHeader());
       main.appendChild(renderStatus(friend, status, progressBar));
       var section = renderScheduleSection(friend, status);
       if (section) main.appendChild(section);
+      var friends = renderFriends();
+      if (friends) main.appendChild(friends);
 
       root.appendChild(main);
     }

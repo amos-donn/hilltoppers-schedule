@@ -34,9 +34,9 @@ else's card, send them your link:
    your email. It appears in their **Friends** list, where they can reorder or
    remove it.
 
-The card's dropdown lists every friend with where they are right now (for
-example `sam@example.com — A Block`) in the order set in Settings; picking one
-shows that person's schedule.
+The card's **Friends** list shows every friend in the order set in Settings, each
+with the class they are in right now (for example `C Block · AP US History`).
+Tapping a row shows that person's schedule in the card above it.
 
 How it works, and its limits:
 
