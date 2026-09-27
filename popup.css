@@ -229,16 +229,9 @@ header {
 
 .status {
   background: #ffffff;
-  border: 1px solid rgba(17, 17, 17, 0.18);
   border-radius: 8px;
   padding: 12px;
   margin-bottom: 16px;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
-}
-
-.status:hover {
-  border-color: rgba(17, 17, 17, 0.28);
-  box-shadow: 0 6px 14px rgba(17, 17, 17, 0.08);
 }
 
 .status-current {
