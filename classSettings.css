@@ -168,6 +168,13 @@ body, html {
   font-weight: 500;
 }
 
+.class-settings__topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
 .class-settings__topbar-user {
   display: flex;
   align-items: center;

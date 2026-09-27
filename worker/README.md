@@ -121,3 +121,25 @@ cause almost every time.
   written per day with 5 GB storage. A school's usage is far below this. Free
   limits hard-error for the rest of the day if exceeded, and Workers Paid is
   $5/month if it ever matters.
+
+## Tests
+
+The behaviour that matters here is cross-origin and cookie-driven, so the tests
+drive the real pages rather than mocks.
+
+```
+npm install   # jsdom, the only dev dependency
+npm test
+```
+
+Three suites, all plain `node`:
+
+- `worker/test/api.test.mjs` — the Worker against a real D1 shape via
+  `node:sqlite`. Covers sign-in, forged and wrong-audience ID tokens, cookie
+  flags, profile edits, directory visibility, grants, revoke and account delete.
+- `worker/test/page.test.mjs` — `settings.html` in jsdom, talking to that same
+  Worker and database. Catches the bugs a unit test cannot: a missing element
+  id, an unstyled class, a button that never wires up, a render that throws.
+- `worker/test/card.test.mjs` — `index.html`, the schedule card the Topping
+  embeds, confirming it consumes the friend entries the settings page writes.
+
