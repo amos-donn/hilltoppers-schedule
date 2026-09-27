@@ -1,7 +1,7 @@
 -- Hilltoppers Schedule - D1 schema
 --
 -- Run this once, in the D1 console: Cloudflare dashboard -> Storage &
--- Databases -> D1 -> (the hilltopeprs-schedule database) -> Console, paste the
+-- Databases -> D1 -> (the hilltoppers-schedule database) -> Console, paste the
 -- whole file, Execute. It creates tables only; it does not delete anything.
 -- Re-running it is safe: every statement is CREATE ... IF NOT EXISTS.
 

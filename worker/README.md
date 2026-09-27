@@ -10,14 +10,14 @@ install.
 
 ## What is already done
 
-- D1 database `hilltopeprs-schedule`, id `581d4ea8-71dc-4c44-ac7f-53df194cb1c4`
+- D1 database `hilltoppers-schedule`, id `581d4ea8-71dc-4c44-ac7f-53df194cb1c4`
 - Worker `hilltoppers-schedule-friends`, at
   `https://hilltoppers-schedule-friends.amos-donn.workers.dev`
 - `SESSION_SECRET` set as a Worker secret
 
 ## 1. Create the tables
 
-1. Cloudflare dashboard → **Storage & Databases → D1** → `hilltopeprs-schedule`.
+1. Cloudflare dashboard → **Storage & Databases → D1** → `hilltoppers-schedule`.
 2. Open the **Console** tab.
 3. Paste the entire contents of `worker/schema.sql` and click **Execute**.
 4. Check it worked: in the Console run
@@ -32,7 +32,7 @@ ever dropped.
 1. Cloudflare dashboard → **Workers & Pages** → `hilltoppers-schedule-friends`.
 2. **Settings → Bindings → Add → D1 database**.
 3. Variable name: `DB` (exactly — the code looks for this name).
-4. Database: `hilltopeprs-schedule`. Save.
+4. Database: `hilltoppers-schedule`. Save.
 
 ## 3. Create the Google sign-in credentials
 
