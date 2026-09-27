@@ -11,8 +11,12 @@
   <body>
     <main class="class-settings">
       <header class="class-settings__topbar" aria-label="Account">
-        <span class="class-settings__topbar-text">Settings are saved in this browser.</span>
-        <a class="secondary" href="index.html">Back to schedule</a>
+        <span class="class-settings__topbar-text" id="topbar-text">Settings are saved in this browser.</span>
+        <span class="class-settings__topbar-actions">
+          <button type="button" class="secondary" id="topbar-auth" hidden>Sign in</button>
+          <button type="button" class="tertiary" id="topbar-signout" hidden>Sign out</button>
+          <a class="secondary" href="index.html">Back to schedule</a>
+        </span>
       </header>
 
       <header class="class-settings__header">
@@ -25,41 +29,80 @@
         </div>
       </header>
 
-      <div class="class-settings__form">
-        <section class="class-settings__panel">
-          <h2>Send Schedule</h2>
-          <p class="class-settings__hint class-settings__hint--intro">
-            Copy a link to your schedule and send it however you like. Opening the
-            link adds your schedule to that person's card; it is saved under the
-            email you enter below.
-          </p>
-          <div class="class-settings__fields">
-            <div class="class-settings__field">
-              <label for="share-name">Your name (optional)</label>
-              <input type="text" id="share-name" placeholder="Shown next to your email" />
-            </div>
-            <div class="class-settings__field">
-              <label for="share-email">Your email</label>
-              <input type="email" id="share-email" placeholder="you@example.com" />
-            </div>
-            <div class="class-settings__field">
-              <label for="share-link">Your link</label>
-              <input type="text" id="share-link" readonly placeholder="Built from your email" />
-            </div>
-          </div>
-          <div class="class-settings__share-actions">
-            <button type="button" class="primary" id="share-copy">Copy link</button>
-          </div>
-          <p class="class-settings__hint" id="share-status" hidden></p>
-        </section>
+      <div class="class-settings__notification" id="auth-notice" hidden>
+        <span id="auth-notice-text"></span>
+        <button type="button" class="tertiary" id="auth-notice-dismiss">Dismiss</button>
+      </div>
 
-        <section class="class-settings__panel">
-          <h2>Friends</h2>
-          <p class="class-settings__hint class-settings__hint--intro">
-            Shown on the card in this order, top to bottom. Use the arrows to
-            reorder. The card never shows your own schedule.
-          </p>
-          <div id="friend-rows" class="class-settings__friend-list"></div>
+      <div class="class-settings__form">
+        <section class="class-settings__panel" id="account-panel">
+          <h2>Account</h2>
+          <div id="account-signed-out" hidden>
+            <p class="class-settings__hint class-settings__hint--intro">
+              Sign in to keep your schedule, friends, and settings on your
+              account instead of only in this browser. Your profile ID is how
+              other students reach your schedule &mdash; you choose whether it is
+              discoverable, and you can take access away at any time.
+            </p>
+            <div class="class-settings__signin-grid">
+              <div class="class-settings__oauth-buttons">
+                <button type="button" class="primary" id="signin-google">Continue with Google</button>
+              </div>
+              <p class="class-settings__hint">
+                Only a Google sign-in is needed. No password is stored, and the
+                app never sees one.
+              </p>
+            </div>
+          </div>
+
+          <div id="account-signed-in" hidden>
+            <div class="class-settings__account-card">
+              <div class="class-settings__account-header">
+                <div>
+                  <p class="class-settings__account-email" id="account-email"></p>
+                  <p class="class-settings__account-status class-settings__account-status--success" id="account-status">Signed in.</p>
+                </div>
+              </div>
+
+              <div class="class-settings__fields">
+                <div class="class-settings__field">
+                  <label for="display-name">Display name</label>
+                  <input type="text" id="display-name" maxlength="80" placeholder="Shown to other students" />
+                </div>
+                <div class="class-settings__field">
+                  <label for="profile-id">Your profile ID</label>
+                  <div class="class-settings__email-actions">
+                    <input type="text" id="profile-id" readonly />
+                    <button type="button" class="secondary" id="copy-profile-id">Copy</button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="class-settings__fields">
+                <div class="class-settings__field">
+                  <label for="visibility">Who can find you</label>
+                  <select id="visibility">
+                    <option value="private">Private &mdash; only people I give my ID to</option>
+                    <option value="public">Public &mdash; discoverable by search</option>
+                  </select>
+                </div>
+              </div>
+
+              <label class="class-settings__free-checkbox">
+                <input type="checkbox" id="auto-grant" />
+                <span>Approve requests automatically</span>
+              </label>
+              <p class="class-settings__hint">
+                On by default. Turn it off and you decide each request by hand.
+                Either way, you can revoke anyone's access afterwards, and a
+                revoked code never works again.
+              </p>
+
+              <p class="class-settings__hint" id="account-save-status" hidden></p>
+            </div>
+          </div>
+
+          <p class="class-settings__loading" id="account-loading">Checking sign-in&hellip;</p>
         </section>
 
         <section class="class-settings__panel">
@@ -105,22 +148,105 @@
             </div>
           </div>
         </section>
+
+        <section class="class-settings__panel">
+          <h2>Friends</h2>
+          <p class="class-settings__hint class-settings__hint--intro">
+            Shown on the card in this order, top to bottom. Use the arrows to
+            reorder. The card never shows your own schedule.
+          </p>
+          <div id="friend-rows" class="class-settings__friend-list"></div>
+
+          <div class="class-settings__subsection">
+            <h3>Add a friend</h3>
+            <p class="class-settings__hint class-settings__hint--intro">
+              Search public profiles, or paste a profile ID someone gave you.
+            </p>
+            <div class="class-settings__fields">
+              <div class="class-settings__field">
+                <label for="directory-search">Profile ID or name</label>
+                <div class="class-settings__email-actions">
+                  <input type="text" id="directory-search" placeholder="brave-heron-4821" />
+                  <button type="button" class="secondary" id="directory-go">Search</button>
+                </div>
+              </div>
+            </div>
+            <div id="directory-results" class="class-settings__friend-list"></div>
+            <p class="class-settings__hint" id="directory-status" hidden></p>
+          </div>
+        </section>
+
+        <section class="class-settings__panel" id="requests-panel" hidden>
+          <h2>Requests</h2>
+          <p class="class-settings__hint class-settings__hint--intro">
+            Who has asked for your schedule, and who you have asked.
+          </p>
+          <div class="class-settings__subsection">
+            <h3>Waiting on you</h3>
+            <div id="requests-incoming" class="class-settings__friend-list"></div>
+          </div>
+          <div class="class-settings__subsection">
+            <h3>You asked</h3>
+            <div id="requests-outgoing" class="class-settings__friend-list"></div>
+          </div>
+        </section>
+
+        <section class="class-settings__panel" id="access-panel" hidden>
+          <h2>Who can see your schedule</h2>
+          <p class="class-settings__hint class-settings__hint--intro">
+            Everyone with access holds a code for your profile. Revoking one
+            takes away only that person's access, immediately, and they are
+            told &mdash; a revoked code never works again.
+          </p>
+          <div id="grant-viewers" class="class-settings__friend-list"></div>
+
+          <div class="class-settings__subsection">
+            <h3>Schedules you can see</h3>
+            <div id="grant-viewing" class="class-settings__friend-list"></div>
+          </div>
+        </section>
+
+        <section class="class-settings__panel" id="notices-panel" hidden>
+          <h2>Notices</h2>
+          <p class="class-settings__hint class-settings__hint--intro">
+            What has changed about your access to other people's schedules.
+          </p>
+          <div id="notice-list" class="class-settings__friend-list"></div>
+          <div class="class-settings__share-actions">
+            <button type="button" class="secondary" id="notices-seen">Mark all as read</button>
+          </div>
+        </section>
+
+        <section class="class-settings__panel" id="danger-panel" hidden>
+          <h2>Delete account</h2>
+          <p class="class-settings__hint class-settings__hint--intro">
+            Removes your account, your schedule, and every code you have given
+            out. Anyone who could see your schedule is told it is gone. This
+            cannot be undone.
+          </p>
+          <div class="class-settings__share-actions">
+            <button type="button" class="secondary" id="delete-account">Delete my account</button>
+          </div>
+        </section>
       </div>
     </main>
 
     <script src="schedule-core.js"></script>
+    <script src="account.js"></script>
     <script>
       (function () {
         'use strict';
         var H = window.HT;
+        var A = window.HTAccount;
+
         var state = {
           blockPrefs: H.loadBlockPrefs(),
           schedulePrefs: H.loadSchedulePrefs(),
-          friends: H.loadFriends(),
-          identity: H.loadIdentity()
+          friends: H.loadFriends()
         };
         var autosave = document.getElementById('autosave');
         var saveTimer = null;
+        var saveStatus = document.getElementById('account-save-status');
 
         function flashSaved() {
           autosave.hidden = false;
@@ -128,10 +254,32 @@
           saveTimer = setTimeout(function () { autosave.hidden = true; }, 3000);
         }
 
+        /** The account columns the schedule endpoint serves to viewers. */
+        function prefsPatch() {
+          return {
+            blockPrefs: state.blockPrefs,
+            schedulePrefs: state.schedulePrefs,
+            timeFormat: state.schedulePrefs.timeFormat === '24h' ? '24h' : '12h',
+            grade: state.schedulePrefs.graduationYear != null
+              ? H.gradeFromGraduationYear(state.schedulePrefs.graduationYear) : null,
+            lunchWave: state.schedulePrefs.lunchWave != null ? state.schedulePrefs.lunchWave : null
+          };
+        }
+
         function persist() {
           H.saveBlockPrefs(state.blockPrefs);
           H.saveSchedulePrefs(state.schedulePrefs);
           flashSaved();
+          // Courses live in D1 as well as this browser, so the schedule follows
+          // the student between devices. Signed out this is a no-op, and the
+          // local copy above is the only copy.
+          A.syncPrefs(prefsPatch()).then(function (result) {
+            if (!result || result.ok || result.unauthorized) return;
+            if (result.networkError) {
+              saveStatus.textContent = 'Saved in this browser. The account could not be reached, so this is not on your account yet.';
+              saveStatus.hidden = false;
+            }
+          });
         }
 
         function el(tag, props, children) {
@@ -144,6 +292,20 @@
           });
           (children || []).forEach(function (c) { if (c != null) node.appendChild(typeof c === 'string' ? document.createTextNode(c) : c); });
           return node;
+        }
+
+        function emptyHint(text) {
+          return el('p', { class: 'class-settings__hint', text: text });
+        }
+
+        function friendlyError(result) {
+          if (!result) return 'Something went wrong.';
+          if (result.networkError) return 'Could not reach the server. Check your connection and try again.';
+          if (result.status === 403) return 'You do not have access to that schedule.';
+          if (result.status === 404) return 'No profile with that ID.';
+          if (result.status === 429) return 'Too many attempts. Wait a moment and try again.';
+          if (result.error === 'self') return 'That is your own profile ID.';
+          return 'Something went wrong (' + (result.status || 'no response') + ').';
         }
 
         // --- display settings -------------------------------------------
@@ -303,75 +465,13 @@
           lunchSelect.value = '';
         });
 
-        // --- send schedule ------------------------------------------------
-        var shareName = document.getElementById('share-name');
-        var shareEmail = document.getElementById('share-email');
-        var shareLink = document.getElementById('share-link');
-        var shareStatus = document.getElementById('share-status');
-
-        shareName.value = state.identity.name;
-        shareEmail.value = state.identity.email;
-
-        function currentShareUrl() {
-          var payload = H.createSharePayload({
-            email: shareEmail.value,
-            name: shareName.value,
-            blockPrefs: state.blockPrefs,
-            schedulePrefs: state.schedulePrefs
-          });
-          // The link must point at the card, whatever the settings page was
-          // reached by (with or without the .html suffix).
-          var base = location.href.split('#')[0].split('?')[0].replace(/[^/]*$/, 'index.html');
-          return base + '#' + H.SHARE_HASH_PREFIX + H.encodeShare(payload);
-        }
-
-        function setShareStatus(message, isError) {
-          shareStatus.textContent = message;
-          shareStatus.hidden = !message;
-          shareStatus.className = 'class-settings__hint' + (isError ? ' class-settings__hint--error' : '');
-        }
-
-        function saveIdentityFromInputs() {
-          state.identity = { name: shareName.value, email: H.normalizeEmail(shareEmail.value) };
-          H.saveIdentity(state.identity);
-        }
-
-        function refreshShareLink() {
-          if (H.normalizeEmail(shareEmail.value)) {
-            shareLink.value = currentShareUrl();
-            setShareStatus('', false);
-          } else {
-            shareLink.value = '';
-            setShareStatus('Enter your email to build the link.', false);
-          }
-        }
-
-        shareName.addEventListener('input', function () { saveIdentityFromInputs(); refreshShareLink(); });
-        shareEmail.addEventListener('input', function () { saveIdentityFromInputs(); refreshShareLink(); });
-
-        document.getElementById('share-copy').addEventListener('click', function () {
-          if (!H.normalizeEmail(shareEmail.value)) { setShareStatus('Enter your email first.', true); return; }
-          var url = currentShareUrl();
-          shareLink.value = url;
-          var done = function () { setShareStatus('Link copied. Paste it into an email or message.', false); };
-          if (navigator.clipboard && navigator.clipboard.writeText) {
-            navigator.clipboard.writeText(url).then(done).catch(function () {
-              shareLink.select();
-              setShareStatus('Copy blocked by the browser — the link is selected, press Ctrl/Cmd+C.', false);
-            });
-          } else {
-            shareLink.select();
-            setShareStatus('The link is selected — press Ctrl/Cmd+C to copy.', false);
-          }
-        });
-
         // --- friends ------------------------------------------------------
         var friendRows = document.getElementById('friend-rows');
 
         function renderFriends() {
           friendRows.innerHTML = '';
           if (state.friends.length === 0) {
-            friendRows.appendChild(el('p', { class: 'class-settings__hint', text: 'No friends yet. Get a life.' }));
+            friendRows.appendChild(emptyHint('No friends yet. Add one below.'));
             return;
           }
           state.friends.forEach(function (friend, index) {
@@ -408,9 +508,508 @@
           renderFriends();
         }
 
+        // --- account panel ------------------------------------------------
+        var accountLoading = document.getElementById('account-loading');
+        var signedOutBox = document.getElementById('account-signed-out');
+        var signedInBox = document.getElementById('account-signed-in');
+        var topbarText = document.getElementById('topbar-text');
+        var topbarAuth = document.getElementById('topbar-auth');
+        var topbarSignout = document.getElementById('topbar-signout');
+        var displayName = document.getElementById('display-name');
+        var profileIdInput = document.getElementById('profile-id');
+        var visibility = document.getElementById('visibility');
+        var autoGrant = document.getElementById('auto-grant');
+        var accountStatus = document.getElementById('account-status');
+        var requestsPanel = document.getElementById('requests-panel');
+        var accessPanel = document.getElementById('access-panel');
+        var noticesPanel = document.getElementById('notices-panel');
+        var dangerPanel = document.getElementById('danger-panel');
+
+        var nameSaveTimer = null;
+        // Tracks which account's courses have already been adopted on this page
+        // load. Without it, every profile update would re-run applyAccountPrefs,
+        // which re-renders the class table and would steal focus mid-keystroke.
+        var appliedProfileId = null;
+
+        function renderAccount(me) {
+          accountLoading.hidden = true;
+          if (!me) {
+            signedOutBox.hidden = false;
+            signedInBox.hidden = true;
+            topbarText.textContent = 'Not signed in. Settings are saved in this browser.';
+            topbarAuth.hidden = false;
+            topbarSignout.hidden = true;
+            requestsPanel.hidden = true;
+            accessPanel.hidden = true;
+            noticesPanel.hidden = true;
+            dangerPanel.hidden = true;
+            return;
+          }
+
+          signedOutBox.hidden = true;
+          signedInBox.hidden = false;
+          topbarText.textContent = 'Signed in as ' + (me.displayName || me.email);
+          topbarAuth.hidden = true;
+          topbarSignout.hidden = false;
+          requestsPanel.hidden = false;
+          accessPanel.hidden = false;
+          noticesPanel.hidden = false;
+          dangerPanel.hidden = false;
+
+          document.getElementById('account-email').textContent = me.email;
+          profileIdInput.value = me.profileId;
+          if (document.activeElement !== displayName) {
+            displayName.value = me.displayName || '';
+          }
+          visibility.value = me.isPublic ? 'public' : 'private';
+          autoGrant.checked = me.autoGrant !== false;
+
+          if (appliedProfileId !== me.profileId) {
+            appliedProfileId = me.profileId;
+            // The first time this browser sees this account, adopt the account's
+            // courses; if the account has none yet, hand it the local ones rather
+            // than discarding what was already configured here.
+            var hasLocalPrefs = Object.keys(state.blockPrefs || {}).length > 0;
+            var accountHasPrefs = Object.keys(me.blockPrefs || {}).length > 0
+              || Object.keys(me.schedulePrefs || {}).length > 0;
+            if (hasLocalPrefs && !accountHasPrefs) {
+              A.syncPrefs(prefsPatch());
+              setAccountStatus('Signed in. Local classes copied to your account.', 'success');
+            } else if (accountHasPrefs) {
+              applyAccountPrefs(me);
+              setAccountStatus('Signed in. Settings loaded from your account.', 'success');
+            }
+          }
+        }
+
+        /**
+         * Adopt the account's courses on this browser. Fields are only filled
+         * when the account actually holds something, so signing in never blanks
+         * a working local schedule.
+         */
+        function applyAccountPrefs(me) {
+          if (me.blockPrefs && Object.keys(me.blockPrefs).length) {
+            state.blockPrefs = H.mergeBlockPrefs(me.blockPrefs);
+            H.saveBlockPrefs(state.blockPrefs);
+            renderRows();
+          }
+
+          var prefs = Object.assign({}, state.schedulePrefs, me.schedulePrefs || {});
+          // The account's typed columns are what the card serves to viewers, so
+          // they win over the free-form blob when the two disagree.
+          if (me.timeFormat) prefs.timeFormat = me.timeFormat === '24h' ? '24h' : '12h';
+          if (me.grade != null) prefs.graduationYear = H.graduationYearFromGrade(me.grade);
+          else delete prefs.graduationYear;
+          if (me.lunchWave != null) prefs.lunchWave = me.lunchWave;
+          else delete prefs.lunchWave;
+
+          state.schedulePrefs = prefs;
+          H.saveSchedulePrefs(state.schedulePrefs);
+          timeFormat.value = prefs.timeFormat || '12h';
+          gradeSelect.value = prefs.graduationYear != null
+            ? String(H.gradeFromGraduationYear(prefs.graduationYear)) : '';
+          lunchSelect.value = prefs.lunchWave != null ? String(prefs.lunchWave) : '';
+        }
+
+        function setAccountStatus(message, kind) {
+          accountStatus.textContent = message;
+          accountStatus.className = 'class-settings__account-status'
+            + (kind ? ' class-settings__account-status--' + kind : '');
+        }
+
+        document.getElementById('signin-google').addEventListener('click', function () {
+          A.signIn();
+        });
+        topbarAuth.addEventListener('click', function () { A.signIn(); });
+        topbarSignout.addEventListener('click', function () {
+          A.signOut().then(function () { window.location.reload(); });
+        });
+
+        document.getElementById('copy-profile-id').addEventListener('click', function () {
+          profileIdInput.select();
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(profileIdInput.value).then(function () {
+              setAccountStatus('Profile ID copied.', 'success');
+            }).catch(function () {
+              setAccountStatus('Copy was blocked \u2014 the ID is selected, press Ctrl/Cmd+C.', 'warning');
+            });
+          } else {
+            setAccountStatus('The ID is selected \u2014 press Ctrl/Cmd+C to copy.', 'warning');
+          }
+        });
+
+        displayName.addEventListener('input', function () {
+          // Debounced so a burst of typing is one request, not one per key.
+          if (nameSaveTimer) clearTimeout(nameSaveTimer);
+          nameSaveTimer = setTimeout(function () {
+            A.updateProfile({ displayName: displayName.value }).then(function (result) {
+              setAccountStatus(result.ok ? 'Saved.' : friendlyError(result), result.ok ? 'success' : 'error');
+            });
+          }, 600);
+        });
+
+        visibility.addEventListener('change', function () {
+          A.updateProfile({ isPublic: visibility.value === 'public' }).then(function (result) {
+            if (!result.ok) { setAccountStatus(friendlyError(result), 'error'); return; }
+            setAccountStatus(
+              visibility.value === 'public'
+                ? 'Public. Your profile can be found by name or by ID.'
+                : 'Private. Only people you give your ID to can ask.',
+              'success'
+            );
+          });
+        });
+
+        autoGrant.addEventListener('change', function () {
+          A.updateProfile({ autoGrant: autoGrant.checked }).then(function (result) {
+            if (!result.ok) { setAccountStatus(friendlyError(result), 'error'); return; }
+            setAccountStatus(
+              autoGrant.checked
+                ? 'Requests are granted automatically.'
+                : 'Requests now wait for your approval.',
+              'success'
+            );
+          });
+        });
+
+        // --- directory and requests ---------------------------------------
+        var directorySearch = document.getElementById('directory-search');
+        var directoryResults = document.getElementById('directory-results');
+        var directoryStatus = document.getElementById('directory-status');
+        var requestsIncoming = document.getElementById('requests-incoming');
+        var requestsOutgoing = document.getElementById('requests-outgoing');
+
+        function setDirectoryStatus(message, isError) {
+          directoryStatus.textContent = message || '';
+          directoryStatus.hidden = !message;
+          directoryStatus.className = 'class-settings__hint' + (isError ? ' class-settings__hint--error' : '');
+        }
+
+        function renderDirectory(results, query) {
+          directoryResults.innerHTML = '';
+          if (!results.length) {
+            directoryResults.appendChild(emptyHint(
+              query ? 'No public profile matched "' + query + '".' : 'No public profiles yet.'
+            ));
+            return;
+          }
+          results.forEach(function (profile) {
+            var label = profile.displayName ? profile.displayName + ' (' + profile.profileId + ')' : profile.profileId;
+            var ask = el('button', { type: 'button', class: 'secondary', text: 'Ask for schedule' });
+            ask.addEventListener('click', function () {
+              ask.disabled = true;
+              ask.textContent = 'Asking\u2026';
+              A.askForSchedule(profile.profileId).then(function (result) {
+                if (!result.ok) {
+                  setDirectoryStatus(friendlyError(result), true);
+                  ask.disabled = false;
+                  ask.textContent = 'Ask for schedule';
+                  return;
+                }
+                refreshRequests();
+                if (result.data.status === 'granted') {
+                  setDirectoryStatus('Access granted. Add them so their schedule shows on the card.', false);
+                  addFriendFromProfile(profile);
+                  ask.textContent = 'Added';
+                } else {
+                  setDirectoryStatus('Request sent. It appears under Requests until they answer.', false);
+                  ask.textContent = 'Requested';
+                }
+              });
+            });
+            directoryResults.appendChild(el('div', { class: 'class-settings__friend-row' }, [
+              el('div', { class: 'class-settings__friend-info' }, [
+                el('strong', { text: label }),
+                el('span', { class: 'class-settings__friend-meta', text: 'Public profile' })
+              ]),
+              el('div', { class: 'class-settings__friend-actions' }, [ask])
+            ]));
+          });
+        }
+
+        /**
+         * A grant is the permission; the local friend entry is what the card
+         * displays, and a friend entry needs the person's courses to render.
+         * So add a bare entry immediately, then fetch the schedule the grant just
+         * unlocked and fill it in. A failed fetch leaves the permission intact
+         * and only costs the course detail.
+         */
+        function addFriendFromProfile(profile) {
+          var base = H.normalizeFriend({ name: profile.displayName || '', email: profile.profileId });
+          state.friends = H.upsertFriend(state.friends, base);
+          H.saveFriends(state.friends);
+          renderFriends();
+
+          A.getSchedule(profile.profileId).then(function (result) {
+            if (!result.ok) return;
+            var schedule = result.data;
+            var friend = H.normalizeFriend({
+              name: schedule.displayName || base.name,
+              email: schedule.profileId,
+              grade: schedule.grade,
+              lunchWave: schedule.lunchWave,
+              timeFormat: schedule.timeFormat,
+              blockPrefs: schedule.blockPrefs
+            });
+            state.friends = H.upsertFriend(state.friends, friend);
+            H.saveFriends(state.friends);
+            renderFriends();
+          });
+        }
+
+        function search() {
+          var query = directorySearch.value.trim();
+          if (!query) {
+            setDirectoryStatus('Enter a profile ID or a name to search.', true);
+            return;
+          }
+          A.searchDirectory(query).then(function (result) {
+            if (!result.ok) {
+              setDirectoryStatus(friendlyError(result), true);
+              renderDirectory([], query);
+              return;
+            }
+            setDirectoryStatus('', false);
+            renderDirectory(result.data.profiles || [], query);
+          });
+        }
+
+        document.getElementById('directory-go').addEventListener('click', search);
+        directorySearch.addEventListener('keydown', function (event) {
+          if (event.key === 'Enter') { event.preventDefault(); search(); }
+        });
+
+        function renderRequests(data) {
+          requestsIncoming.innerHTML = '';
+          requestsOutgoing.innerHTML = '';
+
+          if (!data.incoming.length) {
+            requestsIncoming.appendChild(emptyHint('No one is waiting on you.'));
+          }
+          data.incoming.forEach(function (request) {
+            var line = el('div', { class: 'class-settings__friend-row' }, [
+              el('div', { class: 'class-settings__friend-info' }, [
+                el('strong', { text: request.displayName || request.profileId }),
+                el('span', { class: 'class-settings__friend-meta', text: request.status })
+              ])
+            ]);
+            if (request.status === 'pending') {
+              var accept = el('button', { type: 'button', class: 'primary', text: 'Accept' });
+              var decline = el('button', { type: 'button', class: 'secondary', text: 'Decline' });
+              accept.addEventListener('click', function () { decide(request.id, 'accept'); });
+              decline.addEventListener('click', function () { decide(request.id, 'decline'); });
+              line.appendChild(el('div', { class: 'class-settings__friend-actions' }, [accept, decline]));
+            }
+            requestsIncoming.appendChild(line);
+          });
+
+          if (!data.outgoing.length) {
+            requestsOutgoing.appendChild(emptyHint('You have not asked anyone.'));
+          }
+          data.outgoing.forEach(function (request) {
+            requestsOutgoing.appendChild(el('div', { class: 'class-settings__friend-row' }, [
+              el('div', { class: 'class-settings__friend-info' }, [
+                el('strong', { text: request.displayName || request.profileId }),
+                el('span', { class: 'class-settings__friend-meta', text: request.status })
+              ])
+            ]));
+          });
+        }
+
+        function decide(id, decision) {
+          A.decideRequest(id, decision).then(function (result) {
+            if (!result.ok) { setAccountStatus(friendlyError(result), 'error'); return; }
+            setAccountStatus(decision === 'accept' ? 'Access granted.' : 'Request declined.', 'success');
+            refreshRequests();
+            refreshGrants();
+          });
+        }
+
+        function refreshRequests() {
+          if (!A.isSignedIn()) return;
+          A.listRequests().then(function (result) {
+            if (!result.ok) return;
+            renderRequests(result.data);
+          });
+        }
+
+        // --- grants -------------------------------------------------------
+        var grantViewers = document.getElementById('grant-viewers');
+        var grantViewing = document.getElementById('grant-viewing');
+
+        function renderGrants(data) {
+          grantViewers.innerHTML = '';
+          grantViewing.innerHTML = '';
+
+          if (!data.viewers.length) {
+            grantViewers.appendChild(emptyHint('Only you can see your schedule.'));
+          }
+          data.viewers.forEach(function (grant) {
+            var revoke = el('button', { type: 'button', class: 'secondary', text: 'Revoke' });
+            revoke.addEventListener('click', function () {
+              if (!window.confirm('Revoke access for ' + (grant.displayName || grant.profileId) + '? They will be told, and this code will never work again.')) return;
+              A.revokeGrant(grant.id).then(function (result) {
+                if (!result.ok) { setAccountStatus(friendlyError(result), 'error'); return; }
+                setAccountStatus('Access revoked. They will be told the next time they sign in.', 'success');
+                refreshGrants();
+              });
+            });
+            grantViewers.appendChild(el('div', { class: 'class-settings__friend-row' }, [
+              el('div', { class: 'class-settings__friend-info' }, [
+                el('strong', { text: grant.displayName || grant.profileId }),
+                el('span', { class: 'class-settings__friend-meta', text: grant.profileId + ' \u00b7 can see your schedule' })
+              ]),
+              el('div', { class: 'class-settings__friend-actions' }, [revoke])
+            ]));
+          });
+
+          if (!data.viewing.length) {
+            grantViewing.appendChild(emptyHint('You cannot see anyone else\'s schedule yet.'));
+          }
+          data.viewing.forEach(function (grant) {
+            var view = el('button', { type: 'button', class: 'secondary', text: 'View' });
+            view.addEventListener('click', function () { openSchedule(grant.profileId); });
+            var add = el('button', { type: 'button', class: 'secondary', text: 'Add to friends' });
+            add.addEventListener('click', function () { addFriendFromProfile(grant); add.textContent = 'Added'; add.disabled = true; });
+            grantViewing.appendChild(el('div', { class: 'class-settings__friend-row' }, [
+              el('div', { class: 'class-settings__friend-info' }, [
+                el('strong', { text: grant.displayName || grant.profileId }),
+                el('span', { class: 'class-settings__friend-meta', text: grant.profileId })
+              ]),
+              el('div', { class: 'class-settings__friend-actions' }, [view, add])
+            ]));
+          });
+        }
+
+        function refreshGrants() {
+          if (!A.isSignedIn()) return;
+          A.listGrants().then(function (result) {
+            if (!result.ok) return;
+            renderGrants(result.data);
+            // A grant is the permission; the card's friend list is derived from
+            // it. Merging here means someone whose request was accepted appears
+            // on the card without having to come back and add them by hand.
+            adoptGrantedFriends(result.data.viewing || []);
+          });
+        }
+
+        function adoptGrantedFriends(viewing) {
+          var before = state.friends.length;
+          viewing.forEach(function (grant) {
+            var friend = H.normalizeFriend({ name: grant.displayName || '', email: grant.profileId });
+            state.friends = H.upsertFriend(state.friends, friend);
+          });
+          if (state.friends.length !== before) {
+            H.saveFriends(state.friends);
+            renderFriends();
+          }
+        }
+
+        /** Show someone else's schedule on the same card the site already has. */
+        function openSchedule(profileId) {
+          A.getSchedule(profileId).then(function (result) {
+            if (!result.ok) { setAccountStatus(friendlyError(result), 'error'); return; }
+            var schedule = result.data;
+            var payload = H.createSharePayload({
+              email: profileId,
+              name: schedule.displayName || profileId,
+              blockPrefs: schedule.blockPrefs,
+              schedulePrefs: schedule.schedulePrefs
+            });
+            var base = location.href.split('#')[0].split('?')[0].replace(/[^/]*$/, 'index.html');
+            window.open(base + '#' + H.SHARE_HASH_PREFIX + H.encodeShare(payload), '_blank');
+          });
+        }
+
+        // --- notices ------------------------------------------------------
+        var noticeList = document.getElementById('notice-list');
+
+        var NOTICE_TEXT = {
+          'access.revoked': 'Your access was revoked.',
+          'access.granted': 'Someone was given access to your schedule.',
+          'request.received': 'Someone asked for your schedule.',
+          'request.accepted': 'Your request for a schedule was accepted.',
+          'request.declined': 'Your request for a schedule was declined.'
+        };
+
+        function renderNotices(notices) {
+          noticeList.innerHTML = '';
+          if (!notices.length) {
+            noticeList.appendChild(emptyHint('Nothing new.'));
+            return;
+          }
+          notices.forEach(function (notice) {
+            var who = notice.payload && notice.payload.profileId ? notice.payload.profileId : '';
+            var text = NOTICE_TEXT[notice.kind] || notice.kind;
+            var when = new Date(notice.createdAt * 1000).toLocaleString();
+            noticeList.appendChild(el('div', { class: 'class-settings__friend-row' }, [
+              el('div', { class: 'class-settings__friend-info' }, [
+                el('strong', { text: text }),
+                el('span', { class: 'class-settings__friend-meta', text: (who ? who + ' \u00b7 ' : '') + when })
+              ]),
+              notice.seen ? null : el('span', { class: 'class-settings__badge', text: 'New' })
+            ]));
+          });
+        }
+
+        function refreshNotices() {
+          if (!A.isSignedIn()) return;
+          A.listNotices().then(function (result) {
+            if (!result.ok) return;
+            renderNotices(result.data.notices || []);
+          });
+        }
+
+        document.getElementById('notices-seen').addEventListener('click', function () {
+          A.markNoticesSeen().then(function () { refreshNotices(); });
+        });
+
+        // --- delete -------------------------------------------------------
+        document.getElementById('delete-account').addEventListener('click', function () {
+          if (!window.confirm('Delete your account? Your schedule and every code you gave out stop working, and this cannot be undone.')) return;
+          if (!window.confirm('Last check: really delete your account?')) return;
+          A.deleteAccount().then(function (result) {
+            if (!result.ok) { setAccountStatus(friendlyError(result), 'error'); return; }
+            window.alert('Your account has been deleted.');
+            window.location.reload();
+          });
+        });
+
+        // --- auth notice from the redirect --------------------------------
+        (function () {
+          var params = new URLSearchParams(location.search);
+          var authResult = params.get('auth');
+          if (!authResult) return;
+          var notice = document.getElementById('auth-notice');
+          var text = document.getElementById('auth-notice-text');
+          if (authResult === 'ok') {
+            text.textContent = 'Signed in.';
+          } else {
+            text.textContent = 'Sign-in did not finish. If you used a school Google account, your school may block third-party apps \u2014 a personal Google account will work.';
+          }
+          notice.hidden = false;
+          // Clean the query so a refresh does not replay the message.
+          history.replaceState(null, '', location.pathname);
+        })();
+
+        document.getElementById('auth-notice-dismiss').addEventListener('click', function () {
+          document.getElementById('auth-notice').hidden = true;
+        });
+
+        // --- boot ---------------------------------------------------------
         renderRows();
-        refreshShareLink();
         renderFriends();
+
+        A.onAuthChange(function (me) {
+          renderAccount(me);
+          if (me) {
+            refreshRequests();
+            refreshGrants();
+            refreshNotices();
+          }
+        });
+
+        A.refresh();
       })();
     </script>
   </body>
