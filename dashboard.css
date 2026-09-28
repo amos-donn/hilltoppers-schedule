@@ -255,6 +255,8 @@ body, html {
   font-weight: 600;
 }
 
+.dashboard__avatar svg { width: 16px; height: 16px; display: block; }
+
 .dashboard__account-row button.tertiary {
   padding: 5px 6px;
   border: 0;
@@ -322,7 +324,7 @@ body, html {
   border: 1px solid var(--border);
   border-radius: 9px;
   background-color: var(--surface-muted);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236b7a6e' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 256 256' fill='%236b7a6e'%3E%3Cpath d='M213.66,101.66l-80,80a8,8,0,0,1-11.32,0l-80-80A8,8,0,0,1,53.66,90.34L128,164.69l74.34-74.35a8,8,0,0,1,11.32,11.32Z'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 12px center;
   color: var(--text);
