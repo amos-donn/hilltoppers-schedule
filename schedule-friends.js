@@ -45,6 +45,61 @@
   }
 
   /**
+   * The signed-in account as a friend-shaped record, for the primary card.
+   *
+   * `account.refresh()` returns the account's own profile, including the courses
+   * and schedule settings it saved, so the primary card can render the viewer's
+   * own day even inside the frame where localStorage is unreachable. The profile
+   * has no email in the card's sense, so the account's profile id fills that
+   * slot; it is only used for identity here, never shown as a friend.
+   */
+  function selfFromAccount(me) {
+    if (!me) return null;
+    var name = me.displayName || me.name || '';
+    var self = H.normalizeFriend({
+      email: me.profileId || 'me',
+      name: name,
+      grade: me.grade,
+      lunchWave: me.lunchWave,
+      timeFormat: me.timeFormat,
+      blockPrefs: me.blockPrefs,
+    });
+    // Keep the account's calendar settings: lunch wave and time format also live
+    // in schedulePrefs for a locally configured page, and `normalizeFriend` only
+    // understands the friend fields.
+    var prefs = me.schedulePrefs || {};
+    if (self.lunchWave == null && prefs.lunchWave != null) self.lunchWave = Number(prefs.lunchWave);
+    if (prefs.timeFormat === '24h') self.timeFormat = '24h';
+    return self;
+  }
+
+  /**
+   * Your own schedule as the card sees it, read from this browser's settings.
+   *
+   * Opened directly, index.html and settings.html share localStorage, so the
+   * name, courses and schedule settings the settings page saved are already
+   * there. Returns null until there is a name to show, so an unconfigured page
+   * falls back to the old "show the selected friend" behaviour instead of
+   * drawing an empty card for someone who never set themselves up.
+   */
+  function selfFromLocal() {
+    var identity = H.loadIdentity();
+    var name = (identity && identity.name) || '';
+    if (!name && !(identity && identity.email)) return null;
+    var prefs = H.loadSchedulePrefs();
+    var grade = prefs.graduationYear != null ? H.gradeFromGraduationYear(prefs.graduationYear) : null;
+    return H.normalizeFriend({
+      email: identity.email || 'me',
+      name: name || identity.email,
+      grade: grade,
+      lunchWave: prefs.lunchWave != null ? prefs.lunchWave : null,
+      timeFormat: prefs.timeFormat,
+      blockPrefs: H.loadBlockPrefs(),
+    });
+  }
+
+
+  /**
    * Merge account friends into the local list. The same person can arrive both
    * ways -- a share link and a grant -- so entries are matched by identity and
    * the account's data wins, since it is the fresher of the two.
@@ -61,13 +116,16 @@
    * Fetch the signed-in account's friends. Resolves with an outcome rather than
    * throwing, so the card can distinguish "signed out" from "the request failed"
    * and only offer sign-in when signing in would actually help.
+   *
+   * `me` may be passed in when the caller already refreshed the account, so this
+   * does not fetch it twice; without it the account is refreshed here.
    */
-  async function loadAccountFriends(account) {
-    var me = await account.refresh();
+  async function loadAccountFriends(account, me) {
+    if (me === undefined) me = await account.refresh();
     if (!me) return { friends: [], signedOut: true };
 
     var grants = await account.listGrants();
-    if (!grants.ok) return { friends: [], failed: true };
+    if (!grants.ok) return { friends: [], failed: true, me: me };
 
     var schedules = await Promise.all(
       (grants.data.viewing || []).map(function (grant) {
@@ -76,6 +134,7 @@
     );
 
     return {
+      me: me,
       friends: schedules
         .filter(function (r) { return r.ok; })
         .map(function (r) { return friendFromSchedule(r.data); })
@@ -86,6 +145,8 @@
   window.HTFriends = {
     isEmbedded: isEmbedded,
     friendFromSchedule: friendFromSchedule,
+    selfFromAccount: selfFromAccount,
+    selfFromLocal: selfFromLocal,
     mergeFriends: mergeFriends,
     loadAccountFriends: loadAccountFriends,
   };

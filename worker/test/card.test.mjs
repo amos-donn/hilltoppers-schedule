@@ -319,6 +319,214 @@ await test('a clock tick updates the countdown in place instead of rebuilding th
 });
 
 
+// ---------------------------------------------------------------------------
+// The primary card: collapsed it is the live status card (period, subject and
+// remaining time); tapping it expands the whole day. The friends section below
+// is one card per friend, each expanding to their own day.
+// ---------------------------------------------------------------------------
+await test('the collapsed primary card shows the period, subject and remaining time', async () => {
+  const d = new JSDOM('<div id="root"></div>', {
+    url: 'https://amos-donn.github.io/hilltoppers-schedule/index.html',
+    runScripts: 'dangerously',
+  });
+  const w = d.window;
+  for (const f of ['schedule-core.js', 'schedule-card.js']) {
+    const s = w.document.createElement('script');
+    s.textContent = readFileSync(repoPath(f), 'utf8');
+    w.document.head.appendChild(s);
+  }
+  const H = w.HT;
+  const baseDate = H.parseDateKey(H.todayKey());
+  const schedule = {
+    dateKey: H.todayKey(), dayType: null, details: null,
+    blocks: [
+      { id: 'b1', name: 'A Block', start: '08:00', end: '09:00' },
+      { id: 'b2', name: 'B Block', start: '09:00', end: '10:00' },
+    ],
+  };
+  const self = H.normalizeFriend({
+    email: 'me@example.com', name: 'Sam', grade: 11,
+    blockPrefs: { A: { name: 'Chemistry', alternating: false } },
+  });
+  const now = H.parseBlockTime('08:30', baseDate);
+  const root = w.document.getElementById('root');
+  w.ScheduleCard.mount(root, { schedule, self, now });
+
+  // Collapsed: the day's list is not rendered, only the status card.
+  assert.equal(root.querySelector('.schedule-list.collapsed') !== null, true, 'the day starts collapsed');
+  assert.match(root.querySelector('.current-block-badge').textContent, /A Block/, 'the period is named');
+  assert.match(root.querySelector('.current-name').textContent, /Chemistry/, 'the subject is named');
+  assert.match(root.querySelector('.current-period').textContent, /8:00/, 'and its time span');
+  assert.equal(root.querySelector('.time-value').textContent, '30:00', 'and the remaining time');
+  assert.match(root.querySelector('.friend-heading').textContent, /Sam/, "the card is headed with the viewer's name");
+});
+
+await test('tapping the collapsed primary card expands the whole day', async () => {
+  const d = new JSDOM('<div id="root"></div>', {
+    url: 'https://amos-donn.github.io/hilltoppers-schedule/index.html',
+    runScripts: 'dangerously',
+  });
+  const w = d.window;
+  for (const f of ['schedule-core.js', 'schedule-card.js']) {
+    const s = w.document.createElement('script');
+    s.textContent = readFileSync(repoPath(f), 'utf8');
+    w.document.head.appendChild(s);
+  }
+  const H = w.HT;
+  const baseDate = H.parseDateKey(H.todayKey());
+  const schedule = {
+    dateKey: H.todayKey(), dayType: null, details: null,
+    blocks: [
+      { id: 'b1', name: 'A Block', start: '08:00', end: '09:00' },
+      { id: 'b2', name: 'B Block', start: '09:00', end: '10:00' },
+    ],
+  };
+  const self = H.normalizeFriend({ email: 'me@example.com', name: 'Sam', grade: 11 });
+  const root = w.document.getElementById('root');
+  w.ScheduleCard.mount(root, { schedule, self, now: H.parseBlockTime('08:30', baseDate) });
+
+  const status = root.querySelector('.status');
+  assert.ok(status.classList.contains('is-tappable'), 'the collapsed card reads as tappable');
+  status.dispatchEvent(new w.Event('click', { bubbles: true }));
+
+  assert.equal(root.querySelector('.schedule-list.collapsed'), null, 'the day is no longer collapsed');
+  const blocks = root.querySelectorAll('.schedule-list .block-name');
+  assert.equal(blocks.length, 2, 'the whole timetable is revealed');
+  assert.equal(blocks[0].textContent, 'A Block');
+  assert.equal(blocks[1].textContent, 'B Block');
+});
+
+await test("the friends section is one card per friend, expanding to their day", async () => {
+  const d = new JSDOM('<div id="root"></div>', {
+    url: 'https://amos-donn.github.io/hilltoppers-schedule/index.html',
+    runScripts: 'dangerously',
+  });
+  const w = d.window;
+  for (const f of ['schedule-core.js', 'schedule-card.js']) {
+    const s = w.document.createElement('script');
+    s.textContent = readFileSync(repoPath(f), 'utf8');
+    w.document.head.appendChild(s);
+  }
+  const H = w.HT;
+  const baseDate = H.parseDateKey(H.todayKey());
+  const schedule = {
+    dateKey: H.todayKey(), dayType: null, details: null,
+    blocks: [
+      { id: 'b1', name: 'A Block', start: '08:00', end: '09:00' },
+      { id: 'b2', name: 'B Block', start: '09:00', end: '10:00' },
+    ],
+  };
+  const self = H.normalizeFriend({ email: 'me@example.com', name: 'Sam', grade: 11 });
+  const friend = H.normalizeFriend({
+    email: 'erin@example.com', name: 'Erin', grade: 11,
+    blockPrefs: { A: { name: 'Physics', alternating: false } },
+  });
+  const root = w.document.getElementById('root');
+  w.ScheduleCard.mount(root, { schedule, self, friends: [friend], now: H.parseBlockTime('08:30', baseDate) });
+
+  const section = root.querySelector('.friends-list');
+  assert.ok(section, "the Friends' Schedules section rendered");
+  assert.match(section.querySelector('.friends-heading').textContent, /Friends' Schedules/);
+
+  const card = root.querySelector('.friend-card');
+  assert.ok(card, 'one card per friend');
+  assert.match(card.querySelector('.friend-name').textContent, /Erin/, 'the friend is named');
+  assert.match(card.querySelector('.friend-course').textContent, /Physics/, 'with their live class');
+  assert.match(card.querySelector('.friend-time').textContent, /30:00/, 'and the time left in it');
+  assert.ok(card.querySelector('.schedule-list.collapsed'), 'their day starts collapsed');
+
+  // Clicking the card expands their full day as an accordion.
+  card.querySelector('.friend-card-head').dispatchEvent(new w.Event('click', { bubbles: true }));
+  const open = root.querySelector('.friend-card');
+  assert.equal(open.querySelector('.schedule-list.collapsed'), null, 'their day is expanded');
+  assert.equal(open.querySelectorAll('.block-name').length, 2, 'showing every period');
+});
+
+await test('a clock tick advances every countdown in place, self and friends alike', async () => {
+  const d = new JSDOM('<div id="root"></div>', {
+    url: 'https://amos-donn.github.io/hilltoppers-schedule/index.html',
+    runScripts: 'dangerously',
+  });
+  const w = d.window;
+  for (const f of ['schedule-core.js', 'schedule-card.js']) {
+    const s = w.document.createElement('script');
+    s.textContent = readFileSync(repoPath(f), 'utf8');
+    w.document.head.appendChild(s);
+  }
+  const H = w.HT;
+  const baseDate = H.parseDateKey(H.todayKey());
+  const schedule = {
+    dateKey: H.todayKey(), dayType: null, details: null,
+    blocks: [{ id: 'b1', name: 'A Block', start: '08:00', end: '09:00' }],
+  };
+  const self = H.normalizeFriend({ email: 'me@example.com', name: 'Sam', grade: 11 });
+  const friend = H.normalizeFriend({ email: 'erin@example.com', name: 'Erin', grade: 11 });
+  const now = H.parseBlockTime('08:30', baseDate);
+  const root = w.document.getElementById('root');
+  const card = w.ScheduleCard.mount(root, { schedule, self, friends: [friend], now });
+
+  const primaryBefore = root.querySelector('.time-value');
+  const friendBefore = root.querySelector('.friend-time');
+  assert.equal(primaryBefore.textContent, '30:00');
+  assert.equal(friendBefore.textContent, '30:00');
+
+  card.tick(new Date(now.getTime() + 1000));
+  assert.equal(root.querySelector('.time-value'), primaryBefore, 'the primary countdown node is unchanged');
+  assert.equal(root.querySelector('.friend-time'), friendBefore, 'the friend countdown node is unchanged');
+  assert.equal(primaryBefore.textContent, '29:59', 'the primary countdown advanced');
+  assert.equal(friendBefore.textContent, '29:59', 'the friend countdown advanced');
+});
+
+await test('your own schedule is read from this browser when the page is opened directly', async () => {
+  const d = new JSDOM('<div id="root"></div>', {
+    url: 'https://amos-donn.github.io/hilltoppers-schedule/index.html',
+    runScripts: 'dangerously',
+  });
+  const w = d.window;
+  for (const f of ['schedule-core.js', 'schedule-friends.js']) {
+    const s = w.document.createElement('script');
+    s.textContent = readFileSync(repoPath(f), 'utf8');
+    w.document.head.appendChild(s);
+  }
+  // Nothing saved yet: there is no self to show.
+  assert.equal(w.HTFriends.selfFromLocal(), null, 'an unconfigured browser has no self');
+
+  w.HT.saveIdentity({ name: 'Sam', email: 'sam@example.com' });
+  w.HT.saveSchedulePrefs({ lunchPeriod: 1, timeFormat: '24h', lunchWave: 2, graduationYear: w.HT.graduationYearFromGrade(11) });
+  const self = w.HTFriends.selfFromLocal();
+  assert.ok(self, 'a configured browser has a self');
+  assert.equal(self.name, 'Sam');
+  assert.equal(self.timeFormat, '24h', 'the saved time format is carried');
+  assert.equal(self.grade, 11, 'the saved grade is carried');
+  assert.equal(self.lunchWave, 2, 'and the lunch wave');
+});
+
+
+await test('signed in, the primary card is your own schedule even opened directly', async () => {
+  // Alex is still signed in from the embedded test above. Give the account its
+  // own courses, then mount the page the way a signed-in visitor opening it
+  // directly would -- no frame, and nothing saved in localStorage.
+  await patchProfile({
+    displayName: 'Alex', grade: 12, lunchWave: 2, timeFormat: '24h',
+    blockPrefs: { A: { name: 'Calculus', alternating: false } },
+  });
+  const page = mountPage({ frame: false });
+  await page.settle(60);
+  page.pokeRefresh();
+  await page.settle(60);
+
+  assert.equal(page.errors.length, 0, page.errors.join(' | '));
+  assert.match(page.window.document.querySelector('.friend-heading').textContent, /Alex/,
+    'the primary card is headed with the account name');
+  // Their own courses reach the card, not a friend's.
+  const H = page.window.HT;
+  const me = page.window.HTAccount.current();
+  assert.equal(me.displayName, 'Alex', 'the account is the source of the primary card');
+  const display = H.resolveBlockDisplay('A Block', 'Green Day', me.blockPrefs);
+  assert.equal(display.label, 'Calculus', 'the account courses are used');
+});
+
+
 console.log(results.join('\n'));
 console.log(`\n${passed} passed, ${results.length - passed} failed`);
 process.exit(results.length - passed ? 1 : 0);
