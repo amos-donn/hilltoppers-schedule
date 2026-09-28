@@ -7,34 +7,83 @@
     <!-- The extension's classSettings.css, copied unchanged, so the settings
          page matches the extension's Class & Schedule Settings page. -->
     <link rel="stylesheet" href="classSettings.css" />
+    <!-- The Hilltoppers dashboard shell: sidebar tabs, the sage palette,
+         the custom dropdowns, and the Google button. Loaded after
+         classSettings.css, which it restyles. -->
+    <link rel="stylesheet" href="dashboard.css" />
   </head>
   <body>
-    <main class="class-settings">
-      <header class="class-settings__topbar" aria-label="Account">
-        <span class="class-settings__topbar-text" id="topbar-text">Settings are saved in this browser.</span>
-        <span class="class-settings__topbar-actions">
-          <button type="button" class="secondary" id="topbar-auth" hidden>Sign in</button>
-          <button type="button" class="tertiary" id="topbar-signout" hidden>Sign out</button>
-          <a class="secondary" href="index.html">Back to schedule</a>
-        </span>
-      </header>
-
-      <header class="class-settings__header">
-        <div>
-          <h1>Class &amp; Schedule Settings</h1>
+    <div class="dashboard">
+      <aside class="dashboard__sidebar" aria-label="Settings sections">
+        <div class="dashboard__brand">
+          <span class="dashboard__mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 3v18M3 9h18M3 15h18" />
+            </svg>
+          </span>
+          <span class="dashboard__brand-text">
+            <strong>Hilltoppers</strong>
+            <small>Class &amp; schedule settings</small>
+          </span>
         </div>
-        <div class="class-settings__header-actions">
-          <span id="autosave" class="class-settings__autosave-indicator class-settings__autosave-indicator--success" hidden>&#10003; Saved</span>
-          <button type="button" class="secondary" id="reset">Reset to Defaults</button>
+
+        <nav class="dashboard__nav" role="tablist" aria-label="Settings sections" id="tablist">
+          <span class="dashboard__indicator" id="tab-indicator" aria-hidden="true"></span>
+          <button type="button" class="dashboard__tab" role="tab" data-tab="account" aria-selected="true" aria-controls="panel-account" id="tab-account-btn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="3.5" /><path d="M5 21v-2a7 7 0 0 1 14 0v2" /></svg>
+            Account
+          </button>
+          <button type="button" class="dashboard__tab" role="tab" data-tab="profile" aria-selected="false" aria-controls="panel-profile" id="tab-profile-btn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5V6a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 1.5Z" /><path d="M8 8h7M8 12h7" /></svg>
+            My Profile
+          </button>
+          <button type="button" class="dashboard__tab" role="tab" data-tab="friends" aria-selected="false" aria-controls="panel-friends" id="tab-friends-btn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3" /><path d="M3 20v-1.5A4.5 4.5 0 0 1 7.5 14h3A4.5 4.5 0 0 1 15 18.5V20" /><path d="M16 4.5a3 3 0 0 1 0 7M17.5 20v-1a4.5 4.5 0 0 0-3-4.24" /></svg>
+            Friends
+          </button>
+          <button type="button" class="dashboard__tab" role="tab" data-tab="notices" aria-selected="false" aria-controls="panel-notices" id="tab-notices-btn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 8-3 8h18s-3-1-3-8" /><path d="M10.5 21a2 2 0 0 0 3 0" /></svg>
+            Notices
+            <span class="class-settings__badge" id="notices-tab-badge" hidden>New</span>
+          </button>
+          <button type="button" class="dashboard__tab" role="tab" data-tab="settings" aria-selected="false" aria-controls="panel-settings" id="tab-settings-btn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.67 4.14a2.34 2.34 0 0 1 4.66 0 2.34 2.34 0 0 0 3.32 1.91 2.34 2.34 0 0 1 2.33 4.04 2.34 2.34 0 0 0 0 3.83 2.34 2.34 0 0 1-2.33 4.03 2.34 2.34 0 0 0-3.32 1.92 2.34 2.34 0 0 1-4.66 0 2.34 2.34 0 0 0-3.32-1.92 2.34 2.34 0 0 1-2.33-4.03 2.34 2.34 0 0 0 0-3.83 2.34 2.34 0 0 1 2.33-4.04 2.34 2.34 0 0 0 3.32-1.91Z" /><circle cx="12" cy="12" r="3" /></svg>
+            Settings
+          </button>
+        </nav>
+
+        <div class="dashboard__bottom">
+          <div class="dashboard__account">
+            <div class="dashboard__account-row">
+              <span class="dashboard__avatar" id="topbar-avatar" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="8" r="3.5" /><path d="M5 21v-2a7 7 0 0 1 14 0v2" /></svg>
+              </span>
+              <button type="button" class="tertiary" id="topbar-auth">Sign out</button>
+            </div>
+            <p class="dashboard__account-note" id="topbar-text">Not signed in. Settings are saved in this browser.</p>
+          </div>
+          <a class="dashboard__back" href="index.html">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6" /></svg>
+            Back to schedule
+          </a>
         </div>
-      </header>
+      </aside>
 
-      <div class="class-settings__notification" id="auth-notice" hidden>
-        <span id="auth-notice-text"></span>
-        <button type="button" class="tertiary" id="auth-notice-dismiss">Dismiss</button>
-      </div>
+      <main class="dashboard__content">
+        <header class="dashboard__header">
+          <h1 id="page-title">Account</h1>
+          <div class="dashboard__header-actions">
+            <span id="autosave" class="class-settings__autosave-indicator class-settings__autosave-indicator--success" hidden>&#10003; Saved</span>
+            <button type="button" class="secondary" id="reset">Reset to Defaults</button>
+          </div>
+        </header>
 
-      <div class="class-settings__form">
+        <div class="class-settings__notification" id="auth-notice" hidden>
+          <span id="auth-notice-text"></span>
+          <button type="button" class="tertiary" id="auth-notice-dismiss">Dismiss</button>
+        </div>
+
+        <section class="dashboard__panel" id="panel-account" role="tabpanel" aria-labelledby="tab-account-btn" tabindex="-1">
         <section class="class-settings__panel" id="account-panel">
           <h2>Account</h2>
           <div id="account-signed-out" hidden>
@@ -46,7 +95,15 @@
             </p>
             <div class="class-settings__signin-grid">
               <div class="class-settings__oauth-buttons">
-                <button type="button" class="primary" id="signin-google">Continue with Google</button>
+                <button type="button" class="google-button" id="signin-google">
+                  <svg class="google-button__icon" viewBox="0 0 48 48" aria-hidden="true">
+                    <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5Z"/>
+                    <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65Z"/>
+                    <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19Z"/>
+                    <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48Z"/>
+                  </svg>
+                  Sign in to view friends!
+                </button>
               </div>
               <p class="class-settings__hint">
                 Only a Google sign-in is needed. No password is stored, and the
@@ -58,12 +115,10 @@
           <div id="account-signed-in" hidden>
             <div class="class-settings__account-card">
               <div class="class-settings__account-header">
-                <div>
-                  <p class="class-settings__account-email" id="account-email"></p>
-                  <p class="class-settings__account-status class-settings__account-status--success" id="account-status">Signed in.</p>
-                </div>
+                <h3>Signed in</h3>
+                <p class="class-settings__account-email" id="account-email"></p>
+                <p class="class-settings__account-status class-settings__account-status--success" id="account-status">Signed in.</p>
               </div>
-
               <div class="class-settings__fields">
                 <div class="class-settings__field">
                   <label for="display-name">Display name</label>
@@ -76,9 +131,6 @@
                     <button type="button" class="secondary" id="copy-profile-id">Copy</button>
                   </div>
                 </div>
-              </div>
-
-              <div class="class-settings__fields">
                 <div class="class-settings__field">
                   <label for="visibility">Who can find you</label>
                   <select id="visibility">
@@ -87,7 +139,6 @@
                   </select>
                 </div>
               </div>
-
               <label class="class-settings__free-checkbox">
                 <input type="checkbox" id="auto-grant" />
                 <span>Approve requests automatically</span>
@@ -97,14 +148,15 @@
                 Either way, you can revoke anyone's access afterwards, and a
                 revoked code never works again.
               </p>
-
               <p class="class-settings__hint" id="account-save-status" hidden></p>
             </div>
           </div>
 
           <p class="class-settings__loading" id="account-loading">Checking sign-in&hellip;</p>
         </section>
+        </section>
 
+        <section class="dashboard__panel" id="panel-profile" role="tabpanel" aria-labelledby="tab-profile-btn" tabindex="-1" hidden>
         <section class="class-settings__panel">
           <h2>My Profile</h2>
           <p class="class-settings__hint class-settings__hint--intro">
@@ -148,7 +200,9 @@
             </div>
           </div>
         </section>
+        </section>
 
+        <section class="dashboard__panel" id="panel-friends" role="tabpanel" aria-labelledby="tab-friends-btn" tabindex="-1" hidden>
         <section class="class-settings__panel">
           <h2>Friends</h2>
           <p class="class-settings__hint class-settings__hint--intro">
@@ -205,7 +259,9 @@
             <div id="grant-viewing" class="class-settings__friend-list"></div>
           </div>
         </section>
+        </section>
 
+        <section class="dashboard__panel" id="panel-notices" role="tabpanel" aria-labelledby="tab-notices-btn" tabindex="-1" hidden>
         <section class="class-settings__panel" id="notices-panel" hidden>
           <h2>Notices</h2>
           <p class="class-settings__hint class-settings__hint--intro">
@@ -216,7 +272,9 @@
             <button type="button" class="secondary" id="notices-seen">Mark all as read</button>
           </div>
         </section>
+        </section>
 
+        <section class="dashboard__panel" id="panel-settings" role="tabpanel" aria-labelledby="tab-settings-btn" tabindex="-1" hidden>
         <section class="class-settings__panel" id="danger-panel" hidden>
           <h2>Delete account</h2>
           <p class="class-settings__hint class-settings__hint--intro">
@@ -228,8 +286,9 @@
             <button type="button" class="secondary" id="delete-account">Delete my account</button>
           </div>
         </section>
-      </div>
-    </main>
+        </section>
+      </main>
+    </div>
 
     <script src="schedule-core.js"></script>
     <script src="account.js"></script>
@@ -513,8 +572,13 @@
         var signedOutBox = document.getElementById('account-signed-out');
         var signedInBox = document.getElementById('account-signed-in');
         var topbarText = document.getElementById('topbar-text');
+        // The sidebar's one account control. It reads "Sign out" and only
+        // appears with an account; signing in is offered inside the Account
+        // panel instead, where the Google button lives.
         var topbarAuth = document.getElementById('topbar-auth');
-        var topbarSignout = document.getElementById('topbar-signout');
+        var panelNotices = document.getElementById('panel-notices');
+        var panelSettings = document.getElementById('panel-settings');
+        var noticesTabBadge = document.getElementById('notices-tab-badge');
         var displayName = document.getElementById('display-name');
         var profileIdInput = document.getElementById('profile-id');
         var visibility = document.getElementById('visibility');
@@ -537,11 +601,12 @@
             signedOutBox.hidden = false;
             signedInBox.hidden = true;
             topbarText.textContent = 'Not signed in. Settings are saved in this browser.';
-            topbarAuth.hidden = false;
-            topbarSignout.hidden = true;
+            topbarAuth.hidden = true;
             requestsPanel.hidden = true;
             accessPanel.hidden = true;
             noticesPanel.hidden = true;
+            panelNotices.hidden = true;
+            panelSettings.hidden = true;
             dangerPanel.hidden = true;
             return;
           }
@@ -549,11 +614,12 @@
           signedOutBox.hidden = true;
           signedInBox.hidden = false;
           topbarText.textContent = 'Signed in as ' + (me.displayName || me.email);
-          topbarAuth.hidden = true;
-          topbarSignout.hidden = false;
+          topbarAuth.hidden = false;
           requestsPanel.hidden = false;
           accessPanel.hidden = false;
           noticesPanel.hidden = false;
+          panelNotices.hidden = false;
+          panelSettings.hidden = false;
           dangerPanel.hidden = false;
 
           document.getElementById('account-email').textContent = me.email;
@@ -620,8 +686,7 @@
         document.getElementById('signin-google').addEventListener('click', function () {
           A.signIn();
         });
-        topbarAuth.addEventListener('click', function () { A.signIn(); });
-        topbarSignout.addEventListener('click', function () {
+        topbarAuth.addEventListener('click', function () {
           A.signOut().then(function () { window.location.reload(); });
         });
 
@@ -934,6 +999,11 @@
 
         function renderNotices(notices) {
           noticeList.innerHTML = '';
+          var unseen = notices.filter(function (notice) { return !notice.seen; }).length;
+          // The tab is always visible, so an unseen notice needs a marker there
+          // too or a signed-in student would never know to open it.
+          noticesTabBadge.hidden = unseen === 0;
+          noticesTabBadge.textContent = unseen > 1 ? unseen + ' new' : 'New';
           if (!notices.length) {
             noticeList.appendChild(emptyHint('Nothing new.'));
             return;
@@ -996,9 +1066,80 @@
           document.getElementById('auth-notice').hidden = true;
         });
 
+        // --- tabs ---------------------------------------------------------
+        // The five sections share one page. Selecting a tab shows its panel;
+        // each panel's own content is still shown or hidden by sign-in state,
+        // so the two are independent.
+        var TABS = ['account', 'profile', 'friends', 'notices', 'settings'];
+        var TAB_TITLES = {
+          account: 'Account', profile: 'My Profile', friends: 'Friends',
+          notices: 'Notices', settings: 'Settings'
+        };
+        var pageTitle = document.getElementById('page-title');
+        var tablist = document.getElementById('tablist');
+        var tabIndicator = document.getElementById('tab-indicator');
+
+        var activeTab = TABS.indexOf(location.hash.replace('#', '')) >= 0
+          ? location.hash.replace('#', '') : 'account';
+
+        function moveIndicator() {
+          var active = tablist.querySelector('.dashboard__tab[aria-selected="true"]');
+          if (!active) { tabIndicator.style.opacity = '0'; return; }
+          tabIndicator.style.width = active.offsetWidth + 'px';
+          tabIndicator.style.height = active.offsetHeight + 'px';
+          tabIndicator.style.transform = 'translate(' + active.offsetLeft + 'px,'
+            + active.offsetTop + 'px)';
+          tabIndicator.style.opacity = '1';
+        }
+
+        function showTab(name, focus) {
+          activeTab = name;
+          TABS.forEach(function (key) {
+            var is = key === name;
+            document.getElementById('panel-' + key).hidden = !is;
+            document.getElementById('tab-' + key + '-btn').setAttribute('aria-selected', is ? 'true' : 'false');
+          });
+          pageTitle.textContent = TAB_TITLES[name];
+          document.title = TAB_TITLES[name] + ' \u00b7 Hilltoppers Schedule';
+          if (focus) document.getElementById('panel-' + name).focus();
+          moveIndicator();
+        }
+
+        Array.prototype.forEach.call(tablist.querySelectorAll('.dashboard__tab'), function (tab) {
+          tab.addEventListener('click', function () {
+            var name = tab.getAttribute('data-tab');
+            if (name === activeTab) return;
+            // In the URL so a refresh returns to the same section and the
+            // browser's Back button walks between them.
+            history.pushState({ tab: name }, '', '#' + name);
+            showTab(name, false);
+          });
+          // A tablist is expected to move with the arrow keys and to keep focus
+          // on the tab it selects; without this the roles promise a behaviour
+          // the page does not have.
+          tab.addEventListener('keydown', function (event) {
+            var step = event.key === 'ArrowDown' || event.key === 'ArrowRight' ? 1
+              : event.key === 'ArrowUp' || event.key === 'ArrowLeft' ? -1 : 0;
+            if (!step) return;
+            event.preventDefault();
+            var next = TABS[(TABS.indexOf(activeTab) + step + TABS.length) % TABS.length];
+            history.pushState({ tab: next }, '', '#' + next);
+            showTab(next, false);
+            document.getElementById('tab-' + next + '-btn').focus();
+          });
+        });
+
+        window.addEventListener('popstate', function () {
+          var name = location.hash.replace('#', '');
+          showTab(TABS.indexOf(name) >= 0 ? name : 'account', false);
+        });
+
+        window.addEventListener('resize', moveIndicator);
+
         // --- boot ---------------------------------------------------------
         renderRows();
         renderFriends();
+        showTab(activeTab, false);
 
         A.onAuthChange(function (me) {
           renderAccount(me);

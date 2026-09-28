@@ -1,0 +1,364 @@
+/*
+ * The settings page shell, matching daniezl/Hilltoppers.
+ *
+ * Loaded after classSettings.css, which is the extension's file kept verbatim.
+ * That file carries a prefers-color-scheme: dark block, so this page used to
+ * flip dark on a dark-mode OS while the card stayed light. The sidebar in
+ * Hilltoppers is light-only, so the palette below is forced with :root:root
+ * (the same specificity trick the extension's dashboard.css uses) and the
+ * scheme is pinned to light on the page and on every control.
+ *
+ * The colours are the extension's dashboard palette -- the softer sage green,
+ * not the GitHub green in classSettings.css -- because the dashboard overrides
+ * the former with the latter and the dashboard is what Hilltoppers looks like.
+ */
+
+:root:root {
+  color-scheme: light;
+  --bg: #fafbf7;
+  --surface: #ffffff;
+  --surface-muted: #f0f4ed;
+  --text: #243c32;
+  --muted: #6b7a6e;
+  --border: #dce3d9;
+  --accent: #577962;
+  --accent-muted: #e7eee0;
+  --danger: #995445;
+  background: var(--bg);
+  color: var(--text);
+}
+
+body, html {
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+}
+
+.dashboard input,
+.dashboard select,
+.dashboard textarea,
+.dashboard button { color-scheme: light; }
+.dashboard input[type='checkbox'] { accent-color: var(--accent); }
+
+/* The controls below are padded, and several sit in a grid track or a
+   full-width row. Without border-box the padding is added to that width and
+   the control spills past its column. */
+.dashboard input,
+.dashboard select,
+.dashboard button { box-sizing: border-box; }
+
+.dashboard button:focus-visible,
+.dashboard a:focus-visible,
+.dashboard input:focus-visible,
+.dashboard select:focus-visible {
+  outline: 3px solid #78a88c;
+  outline-offset: 2px;
+}
+
+/* One rule for every element the scripts show and hide, so a display value
+   below (grid, flex) can never beat the hidden attribute. */
+.dashboard [hidden] { display: none !important; }
+
+/* --- shell ------------------------------------------------------------- */
+
+.dashboard {
+  display: grid;
+  grid-template-columns: 236px minmax(0, 1fr);
+  min-height: 100dvh;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+.dashboard__sidebar {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  padding: 28px 14px 16px;
+  background: #f2f5ee;
+  border-right: 1px solid var(--border);
+}
+
+.dashboard__brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px 16px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.dashboard__mark {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  border-radius: 8px;
+  background: var(--accent-muted);
+  color: #466b50;
+}
+
+.dashboard__mark svg { width: 18px; height: 18px; }
+
+.dashboard__brand-text { display: grid; gap: 1px; min-width: 0; }
+.dashboard__brand-text strong { font-size: 15px; font-weight: 650; letter-spacing: -0.3px; }
+.dashboard__brand-text small { font-size: 11px; color: var(--muted); }
+
+/* --- tabs -------------------------------------------------------------- */
+
+.dashboard__nav { position: relative; display: grid; gap: 4px; }
+
+.dashboard__tab {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #607367;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: color 200ms ease, background-color 200ms ease;
+}
+
+.dashboard__tab:hover { background: #eaf0e5; color: var(--text); }
+.dashboard__tab svg { width: 18px; height: 18px; flex: none; }
+.dashboard__tab[aria-selected='true'] { color: #345840; font-weight: 600; }
+
+/* The single pill that slides between tabs, the way the extension's sidebar
+   indicator does, instead of a background on each tab. */
+.dashboard__indicator {
+  position: absolute;
+  z-index: 0;
+  top: 0;
+  left: 0;
+  border-radius: 8px;
+  background: #e2ebdc;
+  opacity: 0;
+  pointer-events: none;
+  transition: transform 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    width 180ms ease, height 180ms ease, opacity 120ms ease;
+}
+
+/* --- sidebar footer ---------------------------------------------------- */
+
+.dashboard__bottom {
+  margin-top: auto;
+  padding-top: 14px;
+  display: grid;
+  gap: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.dashboard__back {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  color: #607367;
+  font-size: 13px;
+  text-decoration: none;
+}
+
+.dashboard__back:hover { background: #eaf0e5; color: var(--text); }
+.dashboard__back svg { width: 18px; height: 18px; flex: none; }
+
+.dashboard__account { display: grid; gap: 8px; }
+
+.dashboard__account-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 4px;
+}
+
+.dashboard__avatar {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  border-radius: 50%;
+  background: #dfe8d8;
+  color: #527357;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.dashboard__account-row button.tertiary {
+  padding: 5px 6px;
+  border: 0;
+  background: transparent;
+  color: #607367;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 400;
+  cursor: pointer;
+}
+
+.dashboard__account-row button.tertiary:hover { color: var(--text); text-decoration: underline; }
+
+.dashboard__account-note {
+  margin: 0;
+  padding: 0 4px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+/* --- content ----------------------------------------------------------- */
+
+.dashboard__content {
+  padding: 40px 44px 56px;
+  min-width: 0;
+  max-width: 1040px;
+  outline: none;
+}
+
+.dashboard__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 18px;
+  margin-bottom: 24px;
+  border-bottom: 1px solid var(--border);
+}
+
+.dashboard__header h1 { margin: 0; font-size: 25px; font-weight: 650; letter-spacing: -0.7px; }
+.dashboard__header-actions { display: flex; align-items: center; gap: 12px; }
+
+.dashboard__panel { display: grid; gap: 20px; }
+.dashboard__panel > * { margin: 0; }
+
+/* The classes table is the one wide element; it stays inside its panel. */
+.dashboard__panel .class-settings__table { margin-top: 4px; }
+
+/* --- the extension's .class-settings, re-fit into the content column ---- */
+
+.dashboard .class-settings { margin: 0; padding: 0; max-width: none; }
+
+/* --- custom dropdowns --------------------------------------------------- */
+
+/* The browser's blue/grey select is replaced with the extension's own
+   treatment: appearance off, the same chevron drawn as an inline SVG, and a
+   slightly darker surface on hover. */
+.dashboard select {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  max-width: 320px;
+  padding: 9px 34px 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background-color: var(--surface-muted);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236b7a6e' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.dashboard select:hover { background-color: #e6ebdf; border-color: #c6d2c2; }
+.dashboard select:disabled { opacity: 0.6; cursor: default; }
+.dashboard select option { background: #ffffff; color: var(--text); }
+
+/* --- Google sign-in button --------------------------------------------- */
+
+/* Built from the extension's button and card patterns. Used by every sign-in
+   affordance on the page, and mirrored inside the card's empty state. */
+.google-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 11px 18px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.google-button:hover { background: var(--surface-muted); border-color: #c6d2c2; }
+.google-button__icon { width: 18px; height: 18px; flex: none; display: block; }
+.google-button--block { width: 100%; padding: 10px 14px; font-size: 13px; }
+
+/* classSettings.css grows the oauth button to fill the row (flex: 1 1 220px),
+   which here would stretch a single sign-in button into a full-width bar.
+   A button reads better at its natural size. */
+.dashboard .class-settings__oauth-buttons { display: block; }
+.dashboard .class-settings__oauth-buttons button { flex: none; }
+
+/* --- friend rows and hints, tuned for the new surface ------------------- */
+
+.dashboard .class-settings__hint { color: var(--muted); }
+.dashboard .class-settings__friend-row { background: var(--surface-muted); }
+.dashboard .class-settings__icon-button { background: var(--surface); }
+.dashboard .class-settings__table input[type='text'] { background: var(--surface); }
+
+/* --- narrow widths ------------------------------------------------------ */
+
+@media (max-width: 900px) {
+  .dashboard { grid-template-columns: minmax(0, 1fr); }
+
+  .dashboard__sidebar {
+    position: static;
+    height: auto;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 16px;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .dashboard__brand {
+    flex: 1 1 auto;
+    padding: 0 4px;
+    margin: 0;
+    border-bottom: 0;
+  }
+
+  .dashboard__nav { display: flex; flex-wrap: wrap; gap: 6px; width: 100%; }
+  .dashboard__tab { width: auto; }
+  .dashboard__indicator { display: none; }
+
+  .dashboard__bottom {
+    margin: 0 0 0 auto;
+    padding: 0;
+    border-top: 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .dashboard__account-note { display: none; }
+  .dashboard__content { padding: 26px 20px 40px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dashboard__indicator,
+  .dashboard__tab,
+  .google-button,
+  .dashboard select { transition: none; }
+}
