@@ -107,6 +107,15 @@
     return result;
   }
 
+  /**
+   * Start an email change. On success the Worker hands back the Google URL to
+   * visit; the actual change happens on the callback, so the page navigates
+   * away and comes back with ?email=ok or a failure reason.
+   */
+  async function changeEmail(email) {
+    return api('/api/me/email', { method: 'POST', body: { email: email } });
+  }
+
   function searchDirectory(query) {
     return api('/api/directory?q=' + encodeURIComponent(query || ''));
   }
@@ -161,6 +170,7 @@
     signIn: signIn,
     signOut: signOut,
     updateProfile: updateProfile,
+    changeEmail: changeEmail,
     deleteAccount: deleteAccount,
     searchDirectory: searchDirectory,
     askForSchedule: askForSchedule,

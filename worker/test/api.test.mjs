@@ -464,6 +464,171 @@ await test('deleting an account cascades and notifies viewers', async () => {
   );
 });
 
+// ---------------------------------------------------------------------------
+// Changing the account's email
+//
+// The address is the account's sign-in identity, so the flow is: ask, prove
+// control of the new address through Google, then move the account onto it.
+// These tests cover the rule that matters most - an address already in use is
+// refused rather than merged.
+// ---------------------------------------------------------------------------
+
+/** Walk the email-change callback the way the browser would. */
+async function completeEmailChange(env, cookie, { sub, email, name }) {
+  const start = await call(env, '/api/me/email', {
+    method: 'POST', cookie, body: { email },
+  });
+  assert.equal(start.status, 200, 'starting the change should succeed');
+  const state = new URL(start.body.authorizeUrl).searchParams.get('state');
+  assert.ok(state, 'the authorize URL carries a signed state');
+
+  tokenToReturn = await makeIdToken({ sub, email, name });
+  const cb = await call(env, `/api/auth/callback?code=test-code&state=${encodeURIComponent(state)}`);
+  return { start, cb, state };
+}
+
+await test('changing the email moves the account onto the new address', async () => {
+  const env2 = makeEnv();
+  const cookie = await signIn(env2, { sub: 'sub-move', email: 'old@example.org', name: 'Mover' });
+  const before = await call(env2, '/api/me', { cookie });
+  const profileId = before.body.profileId;
+
+  const { cb } = await completeEmailChange(env2, cookie, {
+    sub: 'sub-move', email: 'new@example.org', name: 'Mover',
+  });
+  assert.equal(cb.status, 302);
+  assert.match(cb.headers.get('Location'), /email=ok/, 'the redirect reports success');
+
+  // A fresh session comes back, so the browser stays signed in as the same
+  // account, now under the new address.
+  const fresh = cookieFrom(cb);
+  assert.ok(fresh, 'the callback sets a new session cookie');
+  const after = await call(env2, '/api/me', { cookie: fresh });
+  assert.equal(after.status, 200, 'still signed in');
+  assert.equal(after.body.email, 'new@example.org', 'the email moved');
+  assert.equal(after.body.profileId, profileId, 'and the account is the same one');
+
+  const rows = env2.__db.prepare('SELECT COUNT(*) AS n FROM accounts').get().n;
+  assert.equal(rows, 1, 'no second account was created');
+});
+
+await test('an email already on another account is refused', async () => {
+  const env3 = makeEnv();
+  await signIn(env3, { sub: 'sub-owner', email: 'taken@example.org', name: 'Owner' });
+  const moverCookie = await signIn(env3, { sub: 'sub-mover', email: 'mover@example.org', name: 'Mover' });
+
+  // Caught before Google is even contacted, so the student is not sent on a
+  // round trip that cannot succeed.
+  const start = await call(env3, '/api/me/email', {
+    method: 'POST', cookie: moverCookie, body: { email: 'taken@example.org' },
+  });
+  assert.equal(start.status, 409);
+  assert.equal(start.body.error, 'email_taken');
+
+  // And again on the way back. The two checks can disagree if another account
+  // claims the address in between, so simulate exactly that: start the change
+  // while the address is free, then let someone else take it before the
+  // callback lands.
+  const start2 = await call(env3, '/api/me/email', {
+    method: 'POST', cookie: moverCookie, body: { email: 'fresh@example.org' },
+  });
+  assert.equal(start2.status, 200, 'the address was free when the change started');
+  const state = new URL(start2.body.authorizeUrl).searchParams.get('state');
+
+  await signIn(env3, { sub: 'sub-late', email: 'fresh@example.org', name: 'Late' });
+
+  tokenToReturn = await makeIdToken({ sub: 'sub-mover', email: 'fresh@example.org', name: 'Mover' });
+  const cb = await call(env3, `/api/auth/callback?code=c&state=${encodeURIComponent(state)}`);
+  assert.match(cb.headers.get('Location'), /email=taken/, 'the callback refuses it too');
+
+  const me = await call(env3, '/api/me', { cookie: moverCookie });
+  assert.equal(me.body.email, 'mover@example.org', 'the account did not move');
+  assert.equal(env3.__db.prepare('SELECT COUNT(*) AS n FROM accounts').get().n, 3, 'no rows were merged');
+});
+
+await test('an account cannot move onto a Google account another row owns', async () => {
+  const env4 = makeEnv();
+  const ownerCookie = await signIn(env4, { sub: 'sub-dupe', email: 'first@example.org', name: 'First' });
+  const otherCookie = await signIn(env4, { sub: 'sub-other', email: 'second@example.org', name: 'Second' });
+  assert.ok(ownerCookie && otherCookie);
+
+  // "Second" tries to claim an address backed by a google_sub that already has
+  // a row. Merging the two would hand over the first account's data.
+  const start = await call(env4, '/api/me/email', {
+    method: 'POST', cookie: otherCookie, body: { email: 'third@example.org' },
+  });
+  const state = new URL(start.body.authorizeUrl).searchParams.get('state');
+  tokenToReturn = await makeIdToken({ sub: 'sub-dupe', email: 'third@example.org', name: 'First' });
+  const cb = await call(env4, `/api/auth/callback?code=c&state=${encodeURIComponent(state)}`);
+  assert.match(cb.headers.get('Location'), /email=taken/, 'refused, not merged');
+
+  const second = await call(env4, '/api/me', { cookie: otherCookie });
+  assert.equal(second.body.email, 'second@example.org', 'the second account is untouched');
+  assert.equal(env4.__db.prepare('SELECT COUNT(*) AS n FROM accounts').get().n, 2, 'no row was stolen');
+});
+
+await test('a Google account with the wrong address cannot claim the change', async () => {
+  const env5 = makeEnv();
+  const cookie = await signIn(env5, { sub: 'sub-victim', email: 'victim@example.org', name: 'Victim' });
+
+  const start = await call(env5, '/api/me/email', {
+    method: 'POST', cookie, body: { email: 'wanted@example.org' },
+  });
+  const state = new URL(start.body.authorizeUrl).searchParams.get('state');
+
+  // Signing in as some other Google account must not move the account onto the
+  // address that was typed.
+  tokenToReturn = await makeIdToken({ sub: 'sub-attacker', email: 'attacker@example.org', name: 'Attacker' });
+  const cb = await call(env5, `/api/auth/callback?code=c&state=${encodeURIComponent(state)}`);
+  assert.match(cb.headers.get('Location'), /email=mismatch/, 'a different address is rejected');
+
+  const me = await call(env5, '/api/me', { cookie });
+  assert.equal(me.body.email, 'victim@example.org', 'the account did not move');
+});
+
+await test('a forged or tampered state cannot move an account', async () => {
+  const env6 = makeEnv();
+  const cookie = await signIn(env6, { sub: 'sub-forge', email: 'forge@example.org', name: 'Forge' });
+  const start = await call(env6, '/api/me/email', {
+    method: 'POST', cookie, body: { email: 'target@example.org' },
+  });
+  const state = new URL(start.body.authorizeUrl).searchParams.get('state');
+
+  // Swap the payload for one naming a different account, keeping the signature.
+  const [payload, sig] = state.split('.');
+  const decoded = JSON.parse(Buffer.from(payload.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString());
+  decoded.a = 99999;
+  const forged = Buffer.from(JSON.stringify(decoded)).toString('base64url') + '.' + sig;
+
+  tokenToReturn = await makeIdToken({ sub: 'sub-forge', email: 'target@example.org', name: 'Forge' });
+  const cb = await call(env6, `/api/auth/callback?code=c&state=${encodeURIComponent(forged)}`);
+  assert.match(cb.headers.get('Location'), /auth=error/, 'a tampered state is not accepted');
+
+  const me = await call(env6, '/api/me', { cookie });
+  assert.equal(me.body.email, 'forge@example.org', 'nothing moved');
+});
+
+await test('an email change needs a session and a real address', async () => {
+  const env7 = makeEnv();
+  const anon = await call(env7, '/api/me/email', {
+    method: 'POST', body: { email: 'x@example.org' },
+  });
+  assert.equal(anon.status, 401, 'signed out, the endpoint is closed');
+
+  const cookie = await signIn(env7, { sub: 'sub-val', email: 'val@example.org', name: 'Val' });
+  const nonsense = await call(env7, '/api/me/email', {
+    method: 'POST', cookie, body: { email: 'not-an-address' },
+  });
+  assert.equal(nonsense.status, 400);
+  assert.equal(nonsense.body.error, 'invalid_email');
+
+  const same = await call(env7, '/api/me/email', {
+    method: 'POST', cookie, body: { email: 'VAL@example.org' },
+  });
+  assert.equal(same.status, 400, 'the same address, ignoring case, is a no-op');
+  assert.equal(same.body.error, 'same_email');
+});
+
 console.log(results.join('\n'));
 console.log(`\n${passed} passed, ${results.length - passed} failed`);
 process.exit(results.length - passed ? 1 : 0);
