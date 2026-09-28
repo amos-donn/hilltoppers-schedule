@@ -69,6 +69,12 @@
     var onEmptyAction = opts.onEmptyAction || null;
     var baseDate = state.schedule.dateKey ? H.parseDateKey(state.schedule.dateKey) : H.parseDateKey(H.todayKey());
 
+    // The live countdown and progress bar, captured on each full render so a
+    // clock tick can update their text and width in place. Rebuilding the whole
+    // card once a second to move a countdown is what made it look like it was
+    // refreshing; only these two elements change between ticks.
+    var live = { status: null, progress: null };
+
     function selectedFriend() {
       var list = state.friends || [];
       for (var i = 0; i < list.length; i++) {
@@ -177,15 +183,19 @@
       var body;
       if (currentBlock) {
         var currentDisplay = H.resolveBlockDisplay(currentBlock.name, state.schedule.dayType, friend.blockPrefs);
+        var currentRemaining = el('span', { class: 'time-value', text: H.formatCountdown(status.remainingMs) });
+        live.status = { kind: 'current', value: currentRemaining, endMs: H.parseBlockTime(currentBlock.end, baseDate).getTime() };
         body = el('div', { class: 'status-current' }, [
           el('div', { class: 'current-details' }, [el('p', { class: 'current-name', text: currentDisplay.label })]),
           el('span', { class: 'time-remaining' }, [
             el('span', { class: 'time-label', text: 'ends in' }),
-            el('span', { class: 'time-value', text: H.formatCountdown(status.remainingMs) })
+            currentRemaining
           ])
         ]);
       } else if (nextBlock) {
         var nextDisplay = H.resolveBlockDisplay(nextBlock.name, state.schedule.dayType, friend.blockPrefs);
+        var nextStarts = el('span', { class: 'time-value', text: H.formatCountdown(status.nextStartsInMs) });
+        live.status = { kind: 'next', value: nextStarts, startMs: H.parseBlockTime(nextBlock.start, baseDate).getTime() };
         body = el('div', { class: 'status-current upcoming-status' }, [
           el('div', { class: 'current-details' }, [
             el('span', { class: 'next-label', text: 'Next up' }),
@@ -193,10 +203,11 @@
           ]),
           el('span', { class: 'time-remaining' }, [
             el('span', { class: 'time-label', text: 'starts in' }),
-            el('span', { class: 'time-value', text: H.formatCountdown(status.nextStartsInMs) })
+            nextStarts
           ])
         ]);
       } else {
+        live.status = null;
         var h2, p;
         if (isNetworkFailed) { h2 = 'No internet connection'; p = 'Please check your internet.'; }
         else if (isNoSchool) { h2 = state.schedule.details || 'No school today'; p = 'Have a good day!'; }
@@ -210,15 +221,31 @@
       ]);
       var section = el('section', { class: 'status' }, [heading, body]);
       if (progressBar) {
+        var fill = el('div', { class: 'progress-bar-fill', style: { width: (progressBar.percent * 100) + '%' } });
+        live.progress = { fill: fill, span: progressSpan(filtered, status.currentBlock, status.nextBlock) };
         var container = el('div', { class: 'progress-bar-container' + (progressBar.isBreak ? ' progress-break' : '') }, [
           el('div', { class: 'progress-bar-labels' }, [el('span', { text: progressBar.startLabel }), el('span', { text: progressBar.endLabel })]),
-          el('div', { class: 'progress-bar-track' }, [
-            el('div', { class: 'progress-bar-fill', style: { width: (progressBar.percent * 100) + '%' } })
-          ])
+          el('div', { class: 'progress-bar-track' }, [fill])
         ]);
         section.appendChild(container);
       }
       return section;
+    }
+
+    // The interval the progress bar measures, mirroring computeProgressBar: the
+    // current block's own span, or the break before the next one. Before the
+    // first block there is no break to measure and the bar sits full, so that
+    // case carries a fixed percent rather than a span.
+    function progressSpan(blocks, currentBlock, nextBlock) {
+      if (currentBlock) {
+        return { startMs: H.parseBlockTime(currentBlock.start, baseDate).getTime(), endMs: H.parseBlockTime(currentBlock.end, baseDate).getTime() };
+      }
+      var index = blocks.map(function (b) { return b.id; }).indexOf(nextBlock.id);
+      var prev = index > 0 ? blocks[index - 1] : null;
+      if (prev) {
+        return { startMs: H.parseBlockTime(prev.end, baseDate).getTime(), endMs: H.parseBlockTime(nextBlock.start, baseDate).getTime() };
+      }
+      return { fixed: 1 };
     }
 
     function lunchCountdown(friend, currentBlock) {
@@ -345,6 +372,8 @@
 
     function render() {
       baseDate = state.schedule.dateKey ? H.parseDateKey(state.schedule.dateKey) : H.parseDateKey(H.todayKey());
+      live.status = null;
+      live.progress = null;
       root.innerHTML = '';
 
       var friend = selectedFriend();
@@ -374,6 +403,38 @@
       root.appendChild(main);
     }
 
+    // Advance the clock without rebuilding the card. Only the countdown text and
+    // the progress fill move between ticks; everything else is unchanged, so
+    // updating those two nodes in place is enough. When a countdown reaches zero
+    // the card is due a transition -- the next block becomes the current one --
+    // and that is a full render, which recomputes the status from scratch.
+    function tick(now) {
+      state.now = now || new Date();
+      var atBoundary = false;
+      if (live.status) {
+        var target = live.status.kind === 'current' ? live.status.endMs : live.status.startMs;
+        atBoundary = state.now.getTime() >= target;
+      }
+      if (!atBoundary && live.progress && live.progress.span.fixed === undefined) {
+        atBoundary = state.now.getTime() >= live.progress.span.endMs;
+      }
+      if (atBoundary) {
+        render();
+        return;
+      }
+      if (live.status) {
+        var target = live.status.kind === 'current' ? live.status.endMs : live.status.startMs;
+        live.status.value.textContent = H.formatCountdown(target - state.now.getTime());
+      }
+      if (live.progress && live.progress.span.fixed === undefined) {
+        var span = live.progress.span;
+        var total = span.endMs - span.startMs;
+        var elapsed = state.now.getTime() - span.startMs;
+        var percent = total > 0 ? Math.min(Math.max(elapsed / total, 0), 1) : 1;
+        live.progress.fill.style.width = (percent * 100) + '%';
+      }
+    }
+
     render();
 
     return {
@@ -382,6 +443,7 @@
         Object.assign(state, patch || {});
         render();
       },
+      tick: tick,
       getState: function () { return state; }
     };
   }

@@ -151,9 +151,11 @@
           refreshAccountFriends().catch(function () { /* the card still shows local friends */ });
         }
 
-        // Same cadence as the popup: the countdown ticks once a second.
+        // Same cadence as the popup: the countdown ticks once a second. Only the
+        // countdown and the progress bar move, so the card patches them in place
+        // instead of rebuilding itself every tick.
         setInterval(function () {
-          card.update({ now: new Date() });
+          card.tick(new Date());
         }, 1000);
 
         // Only meaningful when not embedded, since that is when these two files
@@ -166,6 +168,9 @@
           }
         });
 
+        // How often the schedule and the account's friends are re-fetched. This
+        // is the only thing that hits the network on a timer; the once-a-second
+        // countdown above is purely local and never re-fetches.
         var refreshTimer = setInterval(refresh, 15 * 60 * 1000);
         document.addEventListener('visibilitychange', function () {
           if (!document.hidden) refresh();
