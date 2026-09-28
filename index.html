@@ -31,19 +31,32 @@
       @media (max-width: 480px) {
         .popup { min-width: 0; }
       }
+
+      /* The empty state's sign-in offer, shown when an embedded card cannot
+         reach the account. Matches the extension's small button styling. */
+      .empty-action { margin-top: 10px; }
+      .empty-action button {
+        border: 1px solid #dce2de; border-radius: 6px; background: #fff;
+        padding: 6px 10px; color: inherit; font: inherit; cursor: pointer;
+      }
+      .empty-action button:hover { background: #f1f5f2; }
     </style>
   </head>
   <body>
     <div id="root"></div>
 
     <script src="schedule-core.js"></script>
+    <script src="account.js"></script>
+    <script src="schedule-friends.js"></script>
     <script src="schedule-card.js"></script>
     <script>
       (function () {
         'use strict';
         var H = window.HT;
+        var A = window.HTAccount;
+        var F = window.HTFriends;
 
-        // A shared link carries the sender's preferences in the fragment. Import
+        // A share link carries the sender's preferences in the fragment. Import
         // it before mounting so the friend appears in the Friends list immediately.
         // A link opened while the card is already loaded is a same-document
         // navigation, so hashchange handles it too.
@@ -58,9 +71,25 @@
         }
         importShare();
 
+        // The friends the card is showing, whichever source they came from.
+        // Account friends are only fetched when embedded -- see
+        // schedule-friends.js for why -- so this mirrors the account's grants.
+        var friends = H.loadFriends();
+        var selectedFriend = H.loadSelectedFriend();
+        var signInPrompt = null;
+
         var card = window.ScheduleCard.mount(document.getElementById('root'), {
-          friends: H.loadFriends(),
-          selectedFriend: H.loadSelectedFriend(),
+          friends: friends,
+          selectedFriend: selectedFriend,
+          emptyActionHtml: function () { return signInPrompt; },
+          onEmptyAction: function () {
+            // Not A.signIn(): that navigates the current page, and this page is
+            // inside the Topping's iframe. Google blocks its consent screen from
+            // being framed, so the frame would just go blank. Open the sign-in
+            // in a tab instead; it returns to settings.html, and the card picks
+            // up the new session on its next visibilitychange refresh.
+            window.open(A.API + '/api/auth/login', '_blank', 'noopener');
+          },
           onOpenSettings: function () {
             window.open('settings.html', '_blank', 'noopener');
           }
@@ -68,17 +97,35 @@
 
         window.addEventListener('hashchange', function () {
           if (importShare()) {
-            card.update({ friends: H.loadFriends(), selectedFriend: H.loadSelectedFriend() });
+            friends = H.loadFriends();
+            selectedFriend = H.loadSelectedFriend();
+            card.update({ friends: friends, selectedFriend: selectedFriend });
           }
         });
 
+        async function refreshAccountFriends() {
+          if (!F.isEmbedded(window)) return;
+          var outcome = await F.loadAccountFriends(A);
+          if (outcome.signedOut) {
+            // Either signed out, or the browser withheld the third-party cookie.
+            // Both are the same to us: offer sign-in rather than looking empty.
+            signInPrompt = '<button type="button">Sign in to see friends</button>';
+          } else if (outcome.friends.length > 0) {
+            signInPrompt = null;
+          }
+          friends = F.mergeFriends(H.loadFriends(), outcome.friends);
+          card.update({ friends: friends, selectedFriend: selectedFriend });
+        }
+
         function refresh() {
-          card.update({ friends: H.loadFriends(), selectedFriend: H.loadSelectedFriend() });
+          card.update({ friends: friends, selectedFriend: selectedFriend });
           H.loadBlocksForDate(new Date()).then(function (result) {
             card.update({ schedule: result });
           }).catch(function () {
             card.update({ schedule: { dateKey: '', blocks: [], dayType: null, details: null, networkFailed: true } });
           });
+
+          refreshAccountFriends().catch(function () { /* the card still shows local friends */ });
         }
 
         // Same cadence as the popup: the countdown ticks once a second.
@@ -86,9 +133,13 @@
           card.update({ now: new Date() });
         }, 1000);
 
+        // Only meaningful when not embedded, since that is when these two files
+        // share localStorage. Harmless otherwise.
         window.addEventListener('storage', function (e) {
           if (e.key === 'friends' || e.key === 'selectedFriend') {
-            card.update({ friends: H.loadFriends(), selectedFriend: H.loadSelectedFriend() });
+            friends = H.loadFriends();
+            selectedFriend = H.loadSelectedFriend();
+            card.update({ friends: friends, selectedFriend: selectedFriend });
           }
         });
 

@@ -19,7 +19,8 @@ Two pages:
   alternating / free options; **Send Schedule** builds your share link; and
   **Friends** lists the schedules shown on the card. Open it from the gear on
   the card, or directly. Changes save to this browser and the card picks them
-  up.
+  up; friends who share their schedule through the account appear on the card
+  even inside the extension's iframe (see *Where the card's friends come from*).
 
 ## Sharing your schedule
 
@@ -54,18 +55,43 @@ How it works, and its limits:
 
 ## How it works
 
-There is no build step and no backend. `index.html` loads the JSON the project
-already publishes and renders the card in the browser.
+There is no build step. The card itself needs no backend: it loads the JSON the
+project already publishes and renders in the browser. The optional account
+features (friends' schedules, the settings page) use the Cloudflare Worker in
+`worker/`.
 
 ```
-index.html        the card (iframe target)
-settings.html     Class & Schedule Settings
-schedule-core.js  shared: time zone, data loading, block display, preferences
-schedule-card.js  renders the card, ported from the extension's Popup.tsx
-popup.css         the extension's popup.css, copied unchanged
-classSettings.css the extension's classSettings.css, copied unchanged
-schedule/         the bell schedules, bundled (see below)
+index.html          the card (iframe target)
+settings.html       Class & Schedule Settings
+schedule-core.js    shared: time zone, data loading, block display, preferences
+schedule-card.js    renders the card, ported from the extension's Popup.tsx
+schedule-friends.js how the embedded card gets an account's friends
+account.js          talks to the Worker; loaded by both pages
+popup.css           the extension's popup.css, copied unchanged
+classSettings.css   the extension's classSettings.css, copied unchanged
+schedule/           the bell schedules, bundled (see below)
 ```
+
+### Where the card's friends come from
+
+The card shows a friend's schedule, and which friends appear depends on where
+the card is running — this is the one place the two pages differ.
+
+- **Opened directly** (`index.html` on its own, or from the gear) it shares
+  localStorage with `settings.html`, so it reads the friends saved there.
+- **Embedded as a Topping** the card is in a cross-site iframe. Browsers
+  partition localStorage and third-party cookies by top-level site, so inside
+  the extension's frame the card cannot see anything the settings page saved. It
+  would show "No friends yet" for a signed-in account. Instead the card asks the
+  Worker for the account's grants — one per friend who has shared their schedule
+  with you — and renders each grant's schedule as that friend. The Worker
+  returns exactly the courses, lunch, grade and time format the card draws.
+- **No account, or the cookie was withheld**: the empty card offers *Sign in to
+  see friends* rather than looking broken. It opens the sign-in in a tab, since
+  Google will not render its consent screen inside an iframe.
+
+A share link still works in either mode, and a friend who arrives both ways (a
+link and a grant) is shown once, with the account's fresher data.
 
 ### Data sources
 
@@ -126,7 +152,14 @@ Measure, don't eyeball: render both at the same width and compare
 
 - `allow-scripts` — renders and ticks the countdown
 - `allow-same-origin` — reads the published JSON
-- `allow-popups` — opens the Daily Bulletin and the settings page in a new tab
+- `allow-popups` — opens the Daily Bulletin, the settings page, and sign-in in a
+  new tab (sign-in must be a tab: Google will not render its consent screen in
+  an iframe)
+
+Note `allow-same-origin` together with `allow-scripts` means the frame is *not*
+treated as a unique opaque origin, so it can still reach the Worker. The card
+does not rely on sharing localStorage with `settings.html`; inside a frame it
+asks the Worker for friends instead (see *Where the card's friends come from*).
 
 ## Preferences
 

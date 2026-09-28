@@ -3,12 +3,8 @@
  *
  * Loads the real settings.html in jsdom, with the real schedule-core.js and
  * account.js, and lets it talk to the real Worker running against a real
- * database backed by node:sqlite. Only two things are faked:
- *
- *   - Google's token/JWKS endpoints, with a locally generated RSA key.
- *   - fetch's cookie jar: jsdom does not store cookies, so this shim keeps the
- *     ht_session cookie on the reducer's behalf, which is exactly what a
- *     browser does automatically.
+ * database backed by node:sqlite. The Worker wiring, the fake Google endpoints
+ * and the cookie jar live in ./harness.mjs, shared with card.test.mjs.
  *
  * This is the only way to catch the bugs that matter here: a missing element
  * id, a class that the stylesheet does not define, a button that never wires
@@ -16,111 +12,19 @@
  */
 import { JSDOM } from 'jsdom';
 import { readFileSync } from 'node:fs';
-import { DatabaseSync } from 'node:sqlite';
 import assert from 'node:assert/strict';
 
-import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import {
+  API_ORIGIN, PAGE_ORIGIN, repoPath, routerFetch, wait,
+  signInAs as signInAsShared, setCookieJar, getCookieJar, db,
+} from './harness.mjs';
 
-// The repository root, so the tests can be run from anywhere.
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const repoPath = (...parts) => join(ROOT, ...parts);
-
-
-const CLIENT_ID = 'test-client-id.apps.googleusercontent.com';
-const API_ORIGIN = 'https://hilltoppers-schedule-friends.amos-donn.workers.dev';
-const PAGE_ORIGIN = 'https://amos-donn.github.io';
-
-// ---------------------------------------------------------------------------
-// Real Worker over a real database
-// ---------------------------------------------------------------------------
-class Stmt {
-  constructor(db, sql) { this.db = db; this.sql = sql; this.params = []; }
-  bind(...p) { this.params = p; return this; }
-  async first() { const r = this.db.prepare(this.sql).get(...this.params); return r === undefined ? null : r; }
-  async all() { return { results: this.db.prepare(this.sql).all(...this.params) }; }
-  async run() { this.db.prepare(this.sql).run(...this.params); return { success: true }; }
-}
-
-const db = new DatabaseSync(':memory:');
-db.exec(readFileSync(repoPath('worker/schema.sql'), 'utf8'));
-db.exec('PRAGMA foreign_keys = ON');
-const env = {
-  DB: { prepare: (sql) => new Stmt(db, sql) },
-  GOOGLE_CLIENT_ID: CLIENT_ID,
-  GOOGLE_CLIENT_SECRET: 'test-secret',
-  SESSION_SECRET: 'test-session-secret',
-};
-
-const keyPair = await crypto.subtle.generateKey(
-  { name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' },
-  true, ['sign', 'verify']
-);
-const publicJwk = { ...(await crypto.subtle.exportKey('jwk', keyPair.publicKey)), kid: 'test-kid', alg: 'RS256', use: 'sig' };
-const b64url = (bytes) => {
-  const v = new Uint8Array(bytes); let s = '';
-  for (let i = 0; i < v.length; i++) s += String.fromCharCode(v[i]);
-  return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-};
-const b64urlJson = (o) => b64url(new TextEncoder().encode(JSON.stringify(o)));
-
-let tokenFor = null;
-async function idToken(sub, email, name) {
-  const h = { alg: 'RS256', typ: 'JWT', kid: 'test-kid' };
-  const p = { sub, email, name, aud: CLIENT_ID, iss: 'https://accounts.google.com',
-    exp: Math.floor(Date.now() / 1000) + 3600 };
-  const input = `${b64urlJson(h)}.${b64urlJson(p)}`;
-  const sig = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', keyPair.privateKey, new TextEncoder().encode(input));
-  return `${input}.${b64url(sig)}`;
-}
-
-// Cookie jar, standing in for the browser.
-let cookieJar = '';
-const realFetch = globalThis.fetch;
-
-async function routerFetch(input, init = {}) {
-  const url = typeof input === 'string' ? input : input.url;
-  if (url.startsWith('https://oauth2.googleapis.com/token')) {
-    return new Response(JSON.stringify({ id_token: tokenFor }), { status: 200 });
-  }
-  if (url.startsWith('https://www.googleapis.com/oauth2/v3/certs')) {
-    return new Response(JSON.stringify({ keys: [publicJwk] }), { status: 200 });
-  }
-  if (url.startsWith(API_ORIGIN)) {
-    // A real browser holds several cookies at once and sends them together, so
-    // merge rather than overwrite: the OAuth state cookie and the session
-    // cookie must coexist, or the second sign-in fails its state check.
-    const passed = (init.headers && init.headers.Cookie) ? init.headers.Cookie : '';
-    const jar = cookieJar ? cookieJar : '';
-    const merged = [jar, passed].filter(Boolean).join('; ');
-    const headers = { ...(init.headers || {}) };
-    if (merged) headers.Cookie = merged;
-    else delete headers.Cookie;
-    const res = await worker.fetch(new Request(url, { ...init, headers, redirect: 'manual' }), env);
-    const setCookies = res.headers.getSetCookie ? res.headers.getSetCookie() : [];
-    for (const c of setCookies) {
-      if (c.startsWith('ht_session=')) cookieJar = c.split(';')[0];
-    }
-    return res;
-  }
-  return realFetch(input, init);
-}
+// jsdom does not fetch, so every page request goes through the shared router.
 globalThis.fetch = routerFetch;
-
-const worker = (await import(repoPath('worker/api.js'))).default;
-
-function sessionFrom(res) {
-  const all = res.headers.getSetCookie ? res.headers.getSetCookie() : [];
-  const c = all.find((x) => x.startsWith('ht_session='));
-  assert.ok(c, 'the callback should set a session cookie');
-  return c.split(';')[0];
-}
 
 // ---------------------------------------------------------------------------
 // Load the real page in jsdom
 // ---------------------------------------------------------------------------
-const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-
 const html = readFileSync(repoPath('settings.html'), 'utf8');
 
 /**
@@ -165,34 +69,21 @@ const { window, errors } = page;
 const $ = page.$;
 const settle = page.settle;
 
-/**
- * Sign in as an account and return its session cookie, without disturbing the
- * jar the page is using. Each signed-in identity gets its own cookie so tests
- * can act as one person while the page stays signed in as another.
- */
-async function signInAs(sub, email, name) {
-  tokenFor = await idToken(sub, email, name);
-  const login = await routerFetch(`${API_ORIGIN}/api/auth/login`);
-  const state = new URL(login.headers.get('Location')).searchParams.get('state');
-  const cb = await routerFetch(`${API_ORIGIN}/api/auth/callback?code=c&state=${state}`, {
-    headers: { Cookie: `ht_oauth_${state.slice(0, 8)}=1` },
-  });
-  const cookie = sessionFrom(cb);
-  cookieJar = cookie;
-  return cookie;
-}
+// Sign in as someone else, leaving the jar set to them; signInAsShared also
+// returns their session cookie so a test can act as them for one call.
+const signInAs = signInAsShared;
 
 // A second identity that later tests need to act as.
 const bob = { cookie: null, profileId: null };
 
 /** Act as someone else for the duration of one call, then hand the page back. */
 async function asOther(cookie, fn) {
-  const mine = cookieJar;
-  cookieJar = cookie;
+  const mine = getCookieJar();
+  setCookieJar(cookie);
   try {
     return await fn();
   } finally {
-    cookieJar = mine;
+    setCookieJar(mine);
   }
 }
 
@@ -234,12 +125,7 @@ await test('the class table renders all five blocks with working controls', asyn
 
 await test('signing in reveals every account section', async () => {
   // Drive the real OAuth callback, exactly as the browser would.
-  tokenFor = await idToken('sub-page-alice', 'alice@example.org', 'Alice');
-  const login = await routerFetch(`${API_ORIGIN}/api/auth/login`);
-  const state = new URL(login.headers.get('Location')).searchParams.get('state');
-  await routerFetch(`${API_ORIGIN}/api/auth/callback?code=c&state=${state}`, {
-    headers: { Cookie: `ht_oauth_${state.slice(0, 8)}=1` },
-  });
+  await signInAs('sub-page-alice', 'alice@example.org', 'Alice');
   await window.HTAccount.refresh();
   await settle();
 
@@ -303,10 +189,10 @@ await test('course changes made in another browser load on sign-in', async () =>
 await test('the directory search renders public profiles', async () => {
   // A second account, public, to find. signInAs leaves the page signed in as
   // whoever it signs in last, so restore the page's own session afterwards.
-  const pageCookie = cookieJar;
+  const pageCookie = getCookieJar();
   const bobCookie = await signInAs('sub-page-bob', 'bob@example.org', 'Bob');
   await window.HTAccount.updateProfile({ isPublic: true, displayName: 'Bob B.' });
-  cookieJar = pageCookie;
+  setCookieJar(pageCookie);
   await window.HTAccount.refresh();
   await settle();
 
@@ -350,12 +236,12 @@ await test('asking for a schedule either grants access or records a request', as
 
 await test('a request from someone else can be accepted in the UI', async () => {
   // Bob asks Alice. Alice has auto-grant off, so it lands as pending for her.
-  const pageCookie = cookieJar;
+  const pageCookie = getCookieJar();
   const aliceProfileId = db.prepare(
     "SELECT profile_id FROM accounts WHERE google_sub = 'sub-page-alice'"
   ).get().profile_id;
   await asOther(bob.cookie, () => window.HTAccount.askForSchedule(aliceProfileId));
-  cookieJar = pageCookie;
+  setCookieJar(pageCookie);
   await window.HTAccount.refresh();
   await settle();
 
@@ -407,7 +293,7 @@ await test('accepting a request puts the granter on the asker\'s card', async ()
   await asOther(daveCookie, () => window.HTAccount.askForSchedule(carolId.profile_id));
 
   // Carol accepts, in her own session.
-  cookieJar = carolCookie;
+  setCookieJar(carolCookie);
   await window.HTAccount.refresh();
   await settle();
   const accept = [...$('requests-incoming').querySelectorAll('button')].find((b) => b.textContent === 'Accept');
@@ -456,7 +342,7 @@ await test('a friend added from the directory carries real course data for the c
   });
 
   const frankCookie = await signInAs('sub-page-frank', 'frank@example.org', 'Frank');
-  cookieJar = frankCookie;
+  setCookieJar(frankCookie);
   await window.HTAccount.refresh();
   await settle();
 
