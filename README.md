@@ -14,12 +14,13 @@ Two pages:
   At a narrow width the card fills the frame edge to edge, matching the
   extension's card at the same width (see *Sizing* below).
 - **`settings.html` — Class & Schedule Settings.** A dashboard, laid out like
-  the Hilltoppers extension's own settings: a sidebar of five tabs — Account,
-  My Profile, Friends, Notices, and Settings — with one section shown at a time
-  instead of one long scroll. Each tab is in the URL (`settings.html#friends`),
-  so a refresh returns to it and Back steps between them. The schedule-affecting
-  part of the extension's page lives under **My Profile** (time format, grade
-  level, lunch, and your A–E courses with their alternating / free options);
+  the Hilltoppers extension's own settings: a sidebar of three tabs — Account,
+  Friends, and Notices — with one section shown at a time instead of one long
+  scroll. Each tab is in the URL (`settings.html#friends`), so a refresh returns
+  to it and Back steps between them. **Account** holds everything about you and
+  your own schedule: signing in, your display name, profile ID and visibility,
+  then time format, grade level, lunch, and your A–E courses with their
+  alternating / free options, and finally the option to delete your account.
   **Friends** lists the schedules shown on the card and who can see yours. Open
   it from the gear on the card, or directly. Changes save to this browser and
   the card picks them up; friends who share their schedule through the account

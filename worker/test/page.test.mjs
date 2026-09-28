@@ -374,22 +374,22 @@ await test('the revoked viewer sees a notice in the UI', async () => {
 });
 
 await test('selecting a tab shows its panel and updates the title', async () => {
-  // The four sections share one document; only the selected panel is visible.
+  // The sections share one document; only the selected panel is visible.
   const click = (name) => $(`tab-${name}-btn`).dispatchEvent(new window.Event('click'));
 
-  click('profile');
+  click('friends');
   await settle(2);
-  assert.equal($('panel-profile').hidden, false, 'My Profile is shown');
+  assert.equal($('panel-friends').hidden, false, 'Friends is shown');
   assert.equal($('panel-account').hidden, true, 'Account is hidden');
-  assert.equal($('page-title').textContent, 'My Profile');
-  assert.equal($('tab-profile-btn').getAttribute('aria-selected'), 'true');
+  assert.equal($('page-title').textContent, 'Friends');
+  assert.equal($('tab-friends-btn').getAttribute('aria-selected'), 'true');
   assert.equal($('tab-account-btn').getAttribute('aria-selected'), 'false');
-  assert.equal(window.location.hash, '#profile', 'the section is in the URL, so a refresh returns to it');
+  assert.equal(window.location.hash, '#friends', 'the section is in the URL, so a refresh returns to it');
 
   click('notices');
   await settle(2);
   assert.equal($('panel-notices').hidden, false);
-  assert.equal($('panel-profile').hidden, true);
+  assert.equal($('panel-friends').hidden, true);
 
   click('account');
   await settle(2);
@@ -397,23 +397,39 @@ await test('selecting a tab shows its panel and updates the title', async () => 
   assert.equal($('page-title').textContent, 'Account');
 });
 
-await test('Settings merged into Account, so there is no Settings tab', async () => {
-  assert.equal($('tab-settings-btn'), null, 'the Settings tab is gone');
-  assert.equal($('panel-settings'), null, 'and so is its panel');
+await test('My Profile merged into Account, so identity and classes share one section', async () => {
+  assert.equal($('tab-profile-btn'), null, 'the My Profile tab is gone');
+  assert.equal($('panel-profile'), null, 'and so is its panel');
 
-  // Deleting the account is the only thing Settings held, so it now lives in
-  // the Account panel, still gated on being signed in.
-  const danger = $('danger-panel');
-  assert.ok(danger, 'the delete card exists');
-  assert.ok($('panel-account').contains(danger), 'inside the Account panel');
-  assert.equal(danger.hidden, $('account-signed-in').hidden, 'and keeps its own sign-in gate');
+  // The settings that lived in My Profile now sit in the Account panel.
+  const account = $('panel-account');
+  for (const id of ['block-rows', 'time-format', 'grade-level', 'lunch-wave', 'danger-panel', 'profile-id']) {
+    assert.ok(account.contains($(id)), `${id} is inside the Account panel`);
+  }
+  // Deleting stays gated on being signed in, wherever it now lives.
+  assert.equal($('danger-panel').hidden, $('account-signed-in').hidden, 'and keeps its own sign-in gate');
 
-  // An old bookmark to the removed section still lands somewhere sensible.
-  window.location.hash = '#settings';
-  window.dispatchEvent(new window.Event('popstate'));
-  await settle(2);
-  assert.equal($('panel-account').hidden, false, '#settings resolves to Account');
+  // An old bookmark to a removed section still lands somewhere sensible.
+  for (const stale of ['#profile', '#settings']) {
+    window.location.hash = stale;
+    window.dispatchEvent(new window.Event('popstate'));
+    await settle(2);
+    assert.equal($('panel-account').hidden, false, `${stale} resolves to Account`);
+    assert.equal($('tab-account-btn').getAttribute('aria-selected'), 'true');
+  }
   window.location.hash = '';
+});
+
+await test('Reset to Defaults only appears where those settings live', async () => {
+  // Reset restores classes and schedule preferences, so it is hidden on the
+  // sections that hold neither.
+  const click = (name) => $(`tab-${name}-btn`).dispatchEvent(new window.Event('click'));
+  click('account');
+  await settle(2);
+  assert.equal($('reset').hidden, false, 'shown on Account');
+  click('notices');
+  await settle(2);
+  assert.equal($('reset').hidden, true, 'hidden on Notices');
 });
 
 await test('accepting a request puts the granter on the asker\'s card', async () => {
