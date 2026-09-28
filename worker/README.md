@@ -141,5 +141,11 @@ Three suites, all plain `node`:
   Worker and database. Catches the bugs a unit test cannot: a missing element
   id, an unstyled class, a button that never wires up, a render that throws.
 - `worker/test/card.test.mjs` — `index.html`, the schedule card the Topping
-  embeds, confirming it consumes the friend entries the settings page writes.
+  embeds. Confirms it consumes the friend entries the settings page writes, and
+  that embedded in a frame it finds an account's friends through the Worker
+  rather than localStorage.
+
+`worker/test/harness.mjs` holds the shared Worker wiring: the in-memory
+database, the fake Google token/JWKS endpoints and the cookie jar. Both page
+suites run against it, so they cannot drift apart.
 

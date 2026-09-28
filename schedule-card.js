@@ -63,6 +63,10 @@
       scheduleExpanded: Boolean(opts.scheduleExpanded),
       expandedBlockId: null
     };
+    // Drawn on the empty state only, so an embedded card with no reachable
+    // account can offer sign-in instead of looking broken.
+    var emptyActionHtml = opts.emptyActionHtml || null;
+    var onEmptyAction = opts.onEmptyAction || null;
     var baseDate = state.schedule.dateKey ? H.parseDateKey(state.schedule.dateKey) : H.parseDateKey(H.todayKey());
 
     function selectedFriend() {
@@ -312,6 +316,18 @@
     }
 
     function renderEmpty() {
+      var action = null;
+      if (emptyActionHtml) {
+        var html = typeof emptyActionHtml === 'function' ? emptyActionHtml() : emptyActionHtml;
+        if (html) {
+          action = el('div', { class: 'empty-action', html: html });
+          if (onEmptyAction) {
+            action.addEventListener('click', function (event) {
+              if (event.target.closest('button')) onEmptyAction();
+            });
+          }
+        }
+      }
       return el('main', { class: 'popup' }, [
         el('section', { class: 'status' }, [
           el('div', { class: 'status-heading-row' }, [
@@ -321,7 +337,8 @@
           el('div', { class: 'status-ended' }, [
             el('h2', { text: 'Get a life.' }),
             el('p', { text: 'Open settings to add one.' })
-          ])
+          ]),
+          action
         ])
       ]);
     }

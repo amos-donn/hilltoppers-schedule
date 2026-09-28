@@ -1,30 +1,38 @@
 /**
  * Integration test for the schedule card (index.html).
  *
- * The settings page writes friend entries that carry courses, lunch wave, grade
- * and time format. This proves the existing card consumes that shape. It mounts
- * the real page (with the schedule data served locally) and then, rather than
- * asserting on the rendered text, drives the card's own display resolver with a
- * saved friend entry.
+ * Two things are proved here.
  *
- * Rendering the block names depends on the time of day -- outside school hours
- * the card correctly shows "School ended" -- so asserting on visible course
- * names would pass or fail depending on when the suite runs. The resolver is the
- * function the card uses to turn a friend's blockPrefs into a label, so testing
- * it directly proves the integration without depending on the clock.
+ * 1. The card consumes the friend shape the settings page writes -- courses,
+ *    lunch wave, grade, time format. Rendering block names depends on the time
+ *    of day (outside school hours the card correctly shows "School ended"), so
+ *    rather than assert on visible text the card's own display resolver is
+ *    driven with a saved friend entry. That resolver is what turns a friend's
+ *    blockPrefs into a label, so testing it directly proves the integration
+ *    without depending on the clock.
+ *
+ * 2. Embedded as a Topping, the card can still find the account's friends.
+ *    A cross-site iframe does not share localStorage with the settings page and
+ *    the browser withholds third-party cookies, so the card asks the Worker for
+ *    the account's grants instead. The embedded card is mounted with an empty
+ *    localStorage, so any friend that appears can only have come from the Worker.
+ *
+ * jsdom cannot express a frame: window.top is non-configurable and always self.
+ * The page asks schedule-friends.js whether it is embedded, so that decision is
+ * injected for the embedded case and left alone otherwise. The Worker, the fake
+ * Google endpoints and the cookie jar come from ./harness.mjs, so this suite and
+ * page.test.mjs share one backend.
  */
 import { JSDOM } from 'jsdom';
 import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 
-import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import {
+  API_ORIGIN, repoPath, routerFetch, wait, signInAs, setCookieJar, getCookieJar,
+} from './harness.mjs';
 
-// The repository root, so the tests can be run from anywhere.
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const repoPath = (...parts) => join(ROOT, ...parts);
-
-
+// jsdom does not fetch, so the shared router serves both the Worker and the
+// published schedule JSON.
 const rawHtml = readFileSync(repoPath('index.html'), 'utf8');
 const EST = 'America/New_York';
 
@@ -36,33 +44,84 @@ for (let offset = -2; offset <= 14; offset++) {
 }
 const abdec = readFileSync(repoPath('schedule/abdec.json'), 'utf8');
 
-function serve(url) {
-  if (url.endsWith('special_days.json')) return new Response(JSON.stringify(specialDays), { status: 200 });
-  if (url.endsWith('special_periods.json')) return new Response('[]', { status: 200 });
-  if (url.endsWith('day_type.json')) return new Response('{}', { status: 200 });
-  if (url.endsWith('abdec.json')) return new Response(abdec, { status: 200 });
-  return new Response('null', { status: 200 });
-}
+globalThis.fetch = async (input, init) => {
+  const url = typeof input === 'string' ? input : input.url;
+  if (url.endsWith('.json')) {
+    if (url.endsWith('special_days.json')) return new Response(JSON.stringify(specialDays), { status: 200 });
+    if (url.endsWith('special_periods.json')) return new Response('[]', { status: 200 });
+    if (url.endsWith('day_type.json')) return new Response('{}', { status: 200 });
+    if (url.endsWith('abdec.json')) return new Response(abdec, { status: 200 });
+    return new Response('null', { status: 200 });
+  }
+  return routerFetch(input, init);
+};
 
 // jsdom runs the page's own inline script during parse, before the externals can
 // be supplied, so strip every script and inject them in order.
 const inline = rawHtml.split('<script>').pop().split('</script>')[0];
 const html = rawHtml.replace(/<script[\s\S]*?<\/script>/g, '');
 
-const dom = new JSDOM(html, {
-  url: 'https://amos-donn.github.io/hilltoppers-schedule/index.html',
-  runScripts: 'dangerously',
-  pretendToBeVisual: true,
-  beforeParse(window) {
-    window.fetch = async (input) => serve(typeof input === 'string' ? input : input.url);
-  },
+/** Mount a fresh card. `frame` forces the embedded decision the page makes. */
+function mountPage({ frame = false, seed = null } = {}) {
+  const errors = [];
+  const opens = [];
+  const d = new JSDOM(html, {
+    url: 'https://amos-donn.github.io/hilltoppers-schedule/index.html',
+    runScripts: 'dangerously',
+    pretendToBeVisual: true,
+    beforeParse(window) {
+      window.fetch = (input, init) => globalThis.fetch(input, init);
+      window.open = (url) => { opens.push(url); return null; };
+    },
+  });
+  const w = d.window;
+  w.addEventListener('error', (e) => errors.push(String(e.error || e.message)));
+
+  for (const f of ['schedule-core.js', 'account.js', 'schedule-friends.js']) {
+    const s = w.document.createElement('script');
+    s.textContent = readFileSync(repoPath(f), 'utf8');
+    w.document.head.appendChild(s);
+  }
+  // The one seam: reading window.top is the only thing that decides framing,
+  // and jsdom cannot be made to answer "framed".
+  if (frame) w.HTFriends.isEmbedded = () => true;
+
+  // Seeded before the page script runs, the way a returning visitor's browser
+  // already holds it when the page loads.
+  if (seed) {
+    w.localStorage.setItem('friends', JSON.stringify(seed.friends));
+    w.localStorage.setItem('selectedFriend', seed.selectedFriend);
+  }
+
+  const cardScript = w.document.createElement('script');
+  cardScript.textContent = readFileSync(repoPath('schedule-card.js'), 'utf8');
+  w.document.head.appendChild(cardScript);
+
+  const pageScript = w.document.createElement('script');
+  pageScript.textContent = inline;
+  w.document.body.appendChild(pageScript);
+
+  return {
+    window: w,
+    errors,
+    opens,
+    settle: async (times = 30) => { for (let i = 0; i < times; i++) await wait(25); },
+    text: () => w.document.getElementById('root').textContent,
+    // The page refreshes on visibilitychange, which is how a test re-runs the
+    // load path after changing who is signed in.
+    pokeRefresh: () => w.document.dispatchEvent(new w.Event('visibilitychange')),
+  };
+}
+
+const patchProfile = (body) => routerFetch(`${API_ORIGIN}/api/me`, {
+  method: 'PATCH',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(body),
 });
-const { window } = dom;
-const errors = [];
-window.addEventListener('error', (e) => errors.push(String(e.error || e.message)));
+const myProfile = async () => (await routerFetch(`${API_ORIGIN}/api/me`)).json();
 
 // Exactly what the settings page saves for a friend added from the directory.
-const friend = {
+const seeded = {
   email: 'brave-heron-4821',
   name: 'Erin',
   grade: 11,
@@ -76,19 +135,7 @@ const friend = {
     E: { name: 'Free Block', alternating: false, free: true },
   },
 };
-window.localStorage.setItem('friends', JSON.stringify([friend]));
-window.localStorage.setItem('selectedFriend', 'brave-heron-4821');
 
-for (const f of ['schedule-core.js', 'schedule-card.js']) {
-  const s = window.document.createElement('script');
-  s.textContent = readFileSync(repoPath(f), 'utf8');
-  window.document.head.appendChild(s);
-}
-const s2 = window.document.createElement('script');
-s2.textContent = inline;
-window.document.body.appendChild(s2);
-
-const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const results = [];
 let passed = 0;
 async function test(name, fn) {
@@ -96,38 +143,118 @@ async function test(name, fn) {
   catch (e) { results.push(`FAIL  ${name}\n        ${e && e.message}`); }
 }
 
+// ---------------------------------------------------------------------------
+// Opened directly: friends come from localStorage, as before.
+// ---------------------------------------------------------------------------
+const local = mountPage({ frame: false, seed: { friends: [seeded], selectedFriend: seeded.email } });
+
 await test('the card mounts without error', async () => {
-  await wait(300);
-  assert.equal(errors.length, 0, errors.join(' | '));
-  assert.ok(window.document.getElementById('root').children.length > 0, 'something rendered');
+  await local.settle();
+  assert.equal(local.errors.length, 0, local.errors.join(' | '));
+  assert.ok(local.window.document.getElementById('root').children.length > 0, 'something rendered');
 });
 
 await test('the seeded friend appears as the selected friend', async () => {
-  const text = window.document.getElementById('root').textContent;
-  assert.match(text, /Erin/, 'the friend name is shown');
-  assert.match(text, /brave-heron-4821/, 'and their profile ID');
-});
-
-await test('the card can load a real school day of blocks', async () => {
-  const schedule = await window.HT.loadBlocksForDate(new Date());
-  assert.notEqual(schedule.networkFailed, true, 'the schedule data loaded');
-  assert.ok(schedule.blocks.length > 0, 'blocks are available to render');
+  assert.match(local.text(), /Erin/, 'the friend name is shown');
+  assert.match(local.text(), /brave-heron-4821/, 'and their profile ID');
 });
 
 await test('the saved friend entry resolves to their custom course names', async () => {
-  // This is the exact function the card calls to label each block for a friend.
-  const display = window.HT.resolveBlockDisplay('A Block', 'Green Day', friend.blockPrefs);
-  assert.equal(display.label, 'Chemistry', 'the friend\'s own course name is used');
+  const H = local.window.HT;
+  const display = H.resolveBlockDisplay('A Block', 'Green Day', seeded.blockPrefs);
+  assert.equal(display.label, 'Chemistry', "the friend's own course name is used");
   assert.equal(display.isFree, false);
-
-  const free = window.HT.resolveBlockDisplay('E Block', 'Green Day', friend.blockPrefs);
+  const free = H.resolveBlockDisplay('E Block', 'Green Day', seeded.blockPrefs);
   assert.equal(free.isFree, true, 'a free block stays free');
 });
 
 await test('a friend with no courses still resolves to the real block name', async () => {
-  // The card always passes a normalised prefs object, never a bare {}.
-  const display = window.HT.resolveBlockDisplay('A Block', 'Green Day', window.HT.createEmptyPreferences());
+  const H = local.window.HT;
+  const display = H.resolveBlockDisplay('A Block', 'Green Day', H.createEmptyPreferences());
   assert.equal(display.label, 'A Block', 'the default label is used rather than a blank');
+});
+
+await test('the card can load a real school day of blocks', async () => {
+  const schedule = await local.window.HT.loadBlocksForDate(new Date());
+  assert.notEqual(schedule.networkFailed, true, 'the schedule data loaded');
+  assert.ok(schedule.blocks.length > 0, 'blocks are available to render');
+});
+
+await test('not embedded, the card does not ask the Worker for friends', async () => {
+  // Same origin as settings.html, so localStorage already has the friends. This
+  // also keeps the direct page working for a visitor with no account.
+  const page = mountPage({ frame: false });
+  let asked = false;
+  page.window.HTAccount.listGrants = async () => { asked = true; return { ok: false }; };
+  await page.settle();
+  page.pokeRefresh();
+  await page.settle();
+  assert.equal(asked, false, 'the Worker was not asked for friends');
+  assert.equal(page.errors.length, 0, page.errors.join(' | '));
+});
+
+// ---------------------------------------------------------------------------
+// Embedded as a Topping: friends must come from the Worker.
+// ---------------------------------------------------------------------------
+await test('embedded with no session, the card offers sign-in', async () => {
+  setCookieJar('');
+  const page = mountPage({ frame: true });
+  await page.settle();
+  page.pokeRefresh();
+  await page.settle();
+  assert.equal(page.errors.length, 0, page.errors.join(' | '));
+  assert.match(page.text(), /Sign in to see friends/, 'the empty card explains how to get friends');
+
+  // Clicking it must open a tab. Navigating the frame would blank it, because
+  // Google refuses to render its consent screen inside an iframe.
+  const button = page.window.document.querySelector('.empty-action button');
+  assert.ok(button, 'the sign-in button rendered');
+  button.dispatchEvent(new page.window.Event('click', { bubbles: true }));
+  assert.equal(page.opens.length, 1, 'sign-in opened exactly one tab');
+  assert.match(page.opens[0], /\/api\/auth\/login$/, 'pointing at the Worker login');
+});
+
+await test('embedded, the card shows the friends the account was granted', async () => {
+  // Erin publishes her profile with auto-grant and saves real course data, the
+  // way the settings page does.
+  await signInAs('sub-card-erin', 'erin@example.org', 'Erin');
+  await patchProfile({
+    isPublic: true, autoGrant: true, displayName: 'Erin',
+    grade: seeded.grade, lunchWave: seeded.lunchWave, timeFormat: seeded.timeFormat,
+    blockPrefs: seeded.blockPrefs,
+  });
+  const erinProfile = (await myProfile()).profileId;
+
+  // Alex signs in and asks for Erin's schedule. Public + auto-grant means the
+  // grant is created immediately, which is the case the card has to render.
+  await signInAs('sub-card-alex', 'alex@example.org', 'Alex');
+  const alexCookie = getCookieJar();
+  const ask = await routerFetch(`${API_ORIGIN}/api/requests`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ profileId: erinProfile }),
+  });
+  assert.equal((await ask.json()).status, 'granted', 'the public profile granted access at once');
+
+  // Mount as the Topping iframe would: Alex's session, empty localStorage.
+  setCookieJar(alexCookie);
+  const page = mountPage({ frame: true });
+  await page.settle(60);
+
+  assert.equal(page.errors.length, 0, page.errors.join(' | '));
+  assert.doesNotMatch(page.text(), /Get a life/, 'the empty state is not shown');
+  assert.match(page.text(), /Erin/, 'the granted friend reaches the card');
+  assert.match(page.text(), new RegExp(erinProfile), 'identified by profile id');
+
+  // And the entry carries the real schedule data, not just a name.
+  const outcome = await page.window.HTFriends.loadAccountFriends(page.window.HTAccount);
+  const friend = outcome.friends.find((f) => f.email === erinProfile);
+  assert.ok(friend, 'the grant became a friend entry');
+  assert.equal(friend.grade, seeded.grade);
+  assert.equal(friend.lunchWave, seeded.lunchWave);
+  assert.equal(friend.timeFormat, seeded.timeFormat);
+  const display = page.window.HT.resolveBlockDisplay('A Block', 'Green Day', friend.blockPrefs);
+  assert.equal(display.label, 'Chemistry', 'the course the account saved reaches the card');
 });
 
 console.log(results.join('\n'));
