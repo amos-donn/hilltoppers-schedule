@@ -229,50 +229,6 @@ body, html {
   font-weight: 500;
 }
 
-.class-settings__notification {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 16px;
-  padding: 14px 18px;
-  border-radius: 10px;
-  border: 1px solid transparent;
-  margin-bottom: 20px;
-  font-weight: 500;
-}
-
-.class-settings__notification p {
-  margin: 0;
-}
-
-.class-settings__notification button {
-  white-space: nowrap;
-}
-
-.class-settings__notification--info {
-  background: rgba(45, 107, 195, 0.12);
-  border-color: rgba(45, 107, 195, 0.3);
-  color: #2d6bc3;
-}
-
-.class-settings__notification--warning {
-  background: rgba(178, 106, 0, 0.12);
-  border-color: rgba(178, 106, 0, 0.35);
-  color: #b26a00;
-}
-
-.class-settings__notification--success {
-  background: var(--accent-muted);
-  border-color: rgba(26, 127, 55, 0.35);
-  color: var(--accent);
-}
-
-.class-settings__notification--error {
-  background: rgba(188, 76, 44, 0.12);
-  border-color: rgba(188, 76, 44, 0.35);
-  color: var(--danger);
-}
-
 .class-settings__status {
   padding: 12px 16px;
   border-radius: 8px;
@@ -350,6 +306,21 @@ body, html {
 
 .class-settings__field > :last-child {
   width: 100%;
+}
+
+/* Each label sits directly above its own control, the way a form reads top to
+   bottom, rather than beside it in a two-column group. */
+.class-settings__fields--stacked {
+  grid-template-columns: minmax(0, 380px);
+}
+
+.class-settings__fields--stacked .class-settings__field {
+  display: grid;
+  gap: 6px;
+}
+
+.class-settings__fields--stacked .class-settings__field label {
+  white-space: normal;
 }
 
 .class-settings__field select {
@@ -702,10 +673,18 @@ body, html {
   margin-top: 16px;
 }
 
+/* Groups inside a panel that are separated by a rule rather than by being
+   their own card; used where a panel holds two related lists. */
 .class-settings__subsection {
   margin-top: 24px;
   padding-top: 20px;
   border-top: 1px solid var(--border);
+}
+
+.class-settings__subsection:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
 }
 
 .class-settings__subsection h3 {
@@ -752,6 +731,34 @@ body, html {
   display: flex;
   gap: 6px;
   flex-shrink: 0;
+}
+
+/* A notice row opens to reveal what it is about; the whole row is the target,
+   so it takes a pointer and a hover cue the way a button would. */
+.class-settings__notice {
+  cursor: pointer;
+}
+
+.class-settings__notice:hover {
+  border-color: var(--muted);
+}
+
+.class-settings__notice:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.class-settings__notice--open {
+  border-color: var(--accent);
+}
+
+/* The actions of an open notice read as one block with it, not as another
+   separate card in the list. */
+.class-settings__notice-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: -6px;
 }
 
 .class-settings__icon-button {

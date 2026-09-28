@@ -303,6 +303,14 @@ body, html {
 .dashboard__panel { display: grid; gap: 20px; }
 .dashboard__panel > * { margin: 0; }
 
+/* One rhythm inside a panel, so a section built from several cards (Account)
+   reads the same as one built from a single list (Friends). Each panel is a
+   grid, and its blocks carry no margins of their own -- the gap is the space. */
+.dashboard__panel > .class-settings__panel { display: grid; gap: 16px; }
+.dashboard__panel .class-settings__panel > *,
+.class-settings__account-card > *,
+.class-settings__account-header > * { margin: 0; }
+
 /* The classes table is the one wide element; it stays inside its panel. */
 .dashboard__panel .class-settings__table { margin-top: 4px; }
 

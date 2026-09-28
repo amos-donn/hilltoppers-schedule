@@ -898,7 +898,12 @@ async function handleRevokeGrant(env, account, grantId) {
 
 async function handleListNotices(env, account) {
   const rows = await env.DB.prepare(
-    'SELECT id, kind, payload, created_at, seen_at FROM notices WHERE account_id = ? ORDER BY created_at DESC LIMIT 50'
+    `SELECT n.id, n.kind, n.payload, n.created_at, n.seen_at,
+            COALESCE(a.display_name, a.name) AS actor_name, a.profile_id AS actor_profile_id
+       FROM notices n
+       LEFT JOIN accounts a ON a.profile_id = json_extract(n.payload, '$.profileId')
+      WHERE n.account_id = ?
+      ORDER BY n.created_at DESC LIMIT 50`
   )
     .bind(account.id)
     .all();
@@ -909,8 +914,20 @@ async function handleListNotices(env, account) {
       payload: safeJson(r.payload),
       createdAt: r.created_at,
       seen: Boolean(r.seen_at),
+      // Who did this, so the page can name them instead of saying "Someone".
+      // Resolved at read time, so a name change is reflected on old notices.
+      actorName: r.actor_name || '',
+      actorProfileId: r.actor_profile_id || '',
     })),
   });
+}
+
+/** Dismiss one notice, so a student can clear an item without clearing all. */
+async function handleDismissNotice(env, account, noticeId) {
+  await env.DB.prepare('DELETE FROM notices WHERE id = ? AND account_id = ?')
+    .bind(noticeId, account.id)
+    .run();
+  return json({ ok: true });
 }
 
 async function handleMarkNoticesSeen(env, account) {
@@ -1030,6 +1047,10 @@ async function route(request, env, url, path, method) {
 
   if (path === '/api/notices' && method === 'GET') return handleListNotices(env, account);
   if (path === '/api/notices/seen' && method === 'POST') return handleMarkNoticesSeen(env, account);
+  const noticeMatch = path.match(/^\/api\/notices\/(\d+)$/);
+  if (noticeMatch && method === 'DELETE') {
+    return handleDismissNotice(env, account, Number(noticeMatch[1]));
+  }
 
   const scheduleMatch = path.match(/^\/api\/schedule\/([^/]+)$/);
   if (scheduleMatch && method === 'GET') {

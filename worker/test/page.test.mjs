@@ -373,6 +373,118 @@ await test('the revoked viewer sees a notice in the UI', async () => {
   assert.equal($('notices-tab-badge').hidden, false, 'and the Notices tab is flagged');
 });
 
+await test('a notice names its sender and opens to reveal its actions', async () => {
+  // The row should say who acted, not "Someone", and the whole row is the
+  // control that opens it.
+  const findRevoked = () => [...$('notice-list').querySelectorAll('.class-settings__notice')]
+    .find((r) => /revoked your access/i.test(r.textContent));
+  const row = findRevoked();
+  assert.ok(row, 'the revocation notice renders as an openable row');
+  assert.match(row.textContent, /Alice revoked your access/i, 'the sender is named');
+  assert.equal(row.getAttribute('aria-expanded'), 'false', 'closed to start');
+
+  row.dispatchEvent(new window.Event('click'));
+  await settle(2);
+
+  const open = findRevoked();
+  assert.equal(open.getAttribute('aria-expanded'), 'true', 'clicking opens it');
+  const buttons = [...$('notice-list').querySelectorAll('.class-settings__notice-actions button')]
+    .map((b) => b.textContent);
+  assert.ok(buttons.includes('Clear'), 'a Clear action is offered');
+  assert.ok(buttons.includes('Ask for their schedule'), 'and a way to ask for their schedule');
+
+  // Clicking again closes it, so the row is a toggle rather than a one-way door.
+  open.dispatchEvent(new window.Event('click'));
+  await settle(2);
+  assert.equal(findRevoked().getAttribute('aria-expanded'), 'false', 'clicking an open notice closes it');
+});
+
+await test('a request notice offers Accept, and accepting grants access', async () => {
+  // A private owner with auto-grant off produces a pending request, which the
+  // notice should let them answer there rather than only under Friends.
+  await signInAs('sub-page-owner-notice', 'owner.notice@example.org', 'Owner Notice');
+  await window.HTAccount.updateProfile({ isPublic: false, autoGrant: false, displayName: 'Owner Notice' });
+  await window.HTAccount.refresh();
+  const ownerId = db.prepare("SELECT profile_id FROM accounts WHERE google_sub = 'sub-page-owner-notice'").get();
+
+  const daveCookie = await signInAs('sub-page-dave-notice', 'dave.notice@example.org', 'Dave Notice');
+  await asOther(daveCookie, async () => {
+    await window.HTAccount.updateProfile({ displayName: 'Dave Notice' });
+    const ask = await window.HTAccount.askForSchedule(ownerId.profile_id);
+    assert.equal(ask.data.status, 'pending', 'the private owner is asked, not granted');
+  });
+
+  await signInAs('sub-page-owner-notice', 'owner.notice@example.org', 'Owner Notice');
+  await window.HTAccount.refresh();
+  await settle();
+
+  const rows = [...$('notice-list').querySelectorAll('.class-settings__notice')];
+  const requestRow = rows.find((r) => /asked for your schedule/i.test(r.textContent));
+  assert.ok(requestRow, 'the request notice is listed: ' + rows.map((r) => r.textContent).join(' || '));
+  assert.match(requestRow.textContent, /Dave Notice/, 'and names who asked');
+
+  requestRow.dispatchEvent(new window.Event('click'));
+  await settle(2);
+  const accept = [...$('notice-list').querySelectorAll('.class-settings__notice-actions button')]
+    .find((b) => b.textContent === 'Accept');
+  assert.ok(accept, 'the open notice offers Accept');
+  accept.dispatchEvent(new window.Event('click'));
+  await settle();
+
+  assert.ok(db.prepare(
+    `SELECT 1 FROM grants WHERE viewer_account_id =
+       (SELECT id FROM accounts WHERE google_sub = 'sub-page-dave-notice') AND revoked_at IS NULL`
+  ).get(), 'accepting from the notice created a live grant');
+});
+
+await test('clearing a notice removes just that row', async () => {
+  await signInAs('sub-page-bob', 'bob@example.org', 'Bob');
+  await window.HTAccount.refresh();
+  await settle();
+  const before = $('notice-list').querySelectorAll('.class-settings__notice').length;
+  assert.ok(before >= 1, 'there is a notice to clear');
+
+  const row = $('notice-list').querySelector('.class-settings__notice');
+  row.dispatchEvent(new window.Event('click'));
+  await settle(2);
+  const clear = [...$('notice-list').querySelectorAll('.class-settings__notice-actions button')]
+    .find((b) => b.textContent === 'Clear');
+  assert.ok(clear, 'the open notice offers Clear');
+  clear.dispatchEvent(new window.Event('click'));
+  await settle();
+
+  const after = $('notice-list').querySelectorAll('.class-settings__notice').length;
+  assert.equal(after, before - 1, 'only the cleared notice is gone');
+});
+
+await test('the account page is built from cards, like every other tab', async () => {
+  // Account used to be one oversized card with subsections separated by rules,
+  // while Friends and Notices were lists of cards. Every tab now uses the same
+  // card: one .class-settings__panel per topic.
+  const accountPanel = $('panel-account');
+  const cards = [...accountPanel.querySelectorAll('.class-settings__panel')];
+  assert.ok(cards.length >= 3, 'Account is several cards, not one long scroll');
+
+  // The blocks that used to be subsections are now their own cards.
+  for (const id of ['schedule-panel', 'classes-panel', 'danger-panel']) {
+    assert.ok($(id).classList.contains('class-settings__panel'), `${id} is its own card`);
+  }
+
+  // The page-wide notification banner is gone; the sign-in outcome now reports
+  // inline on the Account card.
+  assert.equal($('auth-notice'), null, 'the notification card was removed');
+  assert.ok($('auth-status'), 'and the account card carries its own status line');
+});
+
+await test('account labels sit above their fields, not beside them', async () => {
+  // The identity fields were laid out in two columns (label | control), which
+  // read as one row of boxes. They are now a single stacked column.
+  const stacked = $('account-signed-in').querySelector('.class-settings__fields--stacked');
+  assert.ok(stacked, 'the identity fields use the stacked layout');
+  const labels = [...stacked.querySelectorAll('label')].map((l) => l.textContent.trim());
+  assert.deepEqual(labels, ['Display name', 'Your profile ID', 'Who can find you']);
+});
+
 await test('selecting a tab shows its panel and updates the title', async () => {
   // The sections share one document; only the selected panel is visible.
   const click = (name) => $(`tab-${name}-btn`).dispatchEvent(new window.Event('click'));
