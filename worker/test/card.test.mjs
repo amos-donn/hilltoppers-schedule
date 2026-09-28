@@ -62,7 +62,7 @@ const inline = rawHtml.split('<script>').pop().split('</script>')[0];
 const html = rawHtml.replace(/<script[\s\S]*?<\/script>/g, '');
 
 /** Mount a fresh card. `frame` forces the embedded decision the page makes. */
-function mountPage({ frame = false, seed = null } = {}) {
+function mountPage({ frame = false, seed = null, friendsSource = null } = {}) {
   const errors = [];
   const opens = [];
   const d = new JSDOM(html, {
@@ -79,7 +79,7 @@ function mountPage({ frame = false, seed = null } = {}) {
 
   for (const f of ['schedule-core.js', 'account.js', 'schedule-friends.js']) {
     const s = w.document.createElement('script');
-    s.textContent = readFileSync(repoPath(f), 'utf8');
+    s.textContent = friendsSource && f === 'schedule-friends.js' ? friendsSource : readFileSync(repoPath(f), 'utf8');
     w.document.head.appendChild(s);
   }
   // The one seam: reading window.top is the only thing that decides framing,
@@ -526,6 +526,27 @@ await test('signed in, the primary card is your own schedule even opened directl
   assert.equal(display.label, 'Calculus', 'the account courses are used');
 });
 
+
+
+// GitHub Pages caches every file for ten minutes under an unversioned name, so
+// a just-deployed index.html can briefly run against a schedule-friends.js from
+// before that deploy. PR #22 made the page call two exports that file did not
+// have, and a missing one threw before the card mounted -- the page came up
+// blank. The page now degrades to "no self schedule" instead, so the card still
+// renders. This runs the real index.html with the pre-#22 friend module.
+await test('a stale cached schedule-friends.js does not blank the page', async () => {
+  const staleFriends = readFileSync(repoPath('schedule-friends.js'), 'utf8')
+    // Strip the two exports the page gained, leaving the older module behind.
+    .replace(/selfFromAccount: selfFromAccount,?\n/, '')
+    .replace(/selfFromLocal: selfFromLocal,?\n/, '');
+
+  const page = mountPage({ friendsSource: staleFriends });
+  await page.settle(40);
+
+  assert.equal(page.errors.length, 0, 'no uncaught error escapes: ' + page.errors.join(' | '));
+  assert.ok(page.text().length > 0, 'the card renders rather than coming up blank');
+  assert.match(page.text(), /Settings/, 'the card still shows its settings affordance');
+});
 
 console.log(results.join('\n'));
 console.log(`\n${passed} passed, ${results.length - passed} failed`);

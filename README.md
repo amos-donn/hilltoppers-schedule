@@ -58,6 +58,26 @@ How it works, and its limits:
   and friends are stored in each browser's `localStorage`. A friend added on one
   device or browser will not appear on another.
 
+
+### Deploying a change
+
+GitHub Pages serves every file with `Cache-Control: max-age=600` under an
+unversioned name, so `index.html` and the scripts it loads can come from
+different deploys for up to ten minutes after a push. New HTML running against a
+script from before the change is how the page once came up blank: the page called
+an export the older script did not have, and the throw happened before the card
+mounted.
+
+Two things keep that from recurring:
+
+- `index.html` loads its scripts and stylesheet with a `?v=YYYYMMDD` query
+  (**bump it when you change any of them**). The query is part of the cache key,
+  so a fresh HTML pulls fresh scripts instead of a cached older copy.
+- The page never depends on a new cross-file export without a fallback. Calls
+  into `schedule-friends.js` are guarded, and a window `error` handler paints a
+  "refresh the page" message if startup ever throws with an empty card, so a
+  mismatch degrades instead of showing nothing.
+
 ## How it works
 
 There is no build step. The card itself needs no backend: it loads the JSON the
