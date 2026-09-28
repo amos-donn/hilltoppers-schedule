@@ -107,8 +107,10 @@ await test('the page loads without throwing', async () => {
 await test('signed out, the page offers sign-in and hides account panels', async () => {
   assert.equal($('account-signed-out').hidden, false);
   assert.equal($('account-signed-in').hidden, true);
-  assert.equal($('topbar-auth').hidden, false);
-  assert.equal($('topbar-signout').hidden, true);
+  assert.equal($('topbar-auth').hidden, true, 'the sidebar only offers sign-out when there is an account');
+  const google = $('signin-google');
+  assert.match(google.textContent, /Sign in to view friends!/, 'the sign-in button says what it is for');
+  assert.ok(google.querySelector('.google-button__icon'), 'and carries the Google mark');
   assert.equal($('requests-panel').hidden, true);
   assert.equal($('access-panel').hidden, true);
   assert.equal($('notices-panel').hidden, true);
@@ -131,7 +133,7 @@ await test('signing in reveals every account section', async () => {
 
   assert.equal($('account-signed-in').hidden, false, 'the signed-in card shows');
   assert.equal($('account-signed-out').hidden, true);
-  assert.equal($('topbar-signout').hidden, false);
+  assert.equal($('topbar-auth').hidden, false, 'the sidebar now offers sign-out');
   assert.equal($('requests-panel').hidden, false);
   assert.equal($('access-panel').hidden, false);
   assert.equal($('notices-panel').hidden, false);
@@ -279,6 +281,37 @@ await test('the revoked viewer sees a notice in the UI', async () => {
   const notices = $('notice-list').textContent;
   assert.match(notices, /revoked/i, 'the revocation is shown to the affected student');
   assert.ok($('notice-list').querySelector('.class-settings__badge'), 'marked as new');
+  // The Notices tab is always in the sidebar, so it needs its own marker or a
+  // student who never opens that tab would never see the notice.
+  assert.equal($('notices-tab-badge').hidden, false, 'and the Notices tab is flagged');
+});
+
+await test('selecting a tab shows its panel and updates the title', async () => {
+  // The five sections share one document; only the selected panel is visible.
+  const click = (name) => $(`tab-${name}-btn`).dispatchEvent(new window.Event('click'));
+
+  click('profile');
+  await settle(2);
+  assert.equal($('panel-profile').hidden, false, 'My Profile is shown');
+  assert.equal($('panel-account').hidden, true, 'Account is hidden');
+  assert.equal($('page-title').textContent, 'My Profile');
+  assert.equal($('tab-profile-btn').getAttribute('aria-selected'), 'true');
+  assert.equal($('tab-account-btn').getAttribute('aria-selected'), 'false');
+  assert.equal(window.location.hash, '#profile', 'the section is in the URL, so a refresh returns to it');
+
+  click('settings');
+  await settle(2);
+  assert.equal($('panel-settings').hidden, false);
+  assert.equal($('panel-profile').hidden, true);
+  // The panel itself still follows sign-in state underneath the tab: reaching
+  // Settings by tab must not reveal the delete card to a signed-out visitor.
+  const signedIn = $('account-signed-in').hidden === false;
+  assert.equal($('danger-panel').hidden, !signedIn, 'the panel keeps its own sign-in gate');
+
+  click('account');
+  await settle(2);
+  assert.equal($('panel-account').hidden, false);
+  assert.equal($('page-title').textContent, 'Account');
 });
 
 await test('accepting a request puts the granter on the asker\'s card', async () => {
@@ -317,10 +350,11 @@ await test('marking notices read clears the new badge', async () => {
   $('notices-seen').dispatchEvent(new window.Event('click'));
   await settle();
   assert.equal($('notice-list').querySelector('.class-settings__badge'), null);
+  assert.equal($('notices-tab-badge').hidden, true, 'the Notices tab marker clears too');
 });
 
-await test('the topbar sign-out returns the page to the signed-out state', async () => {
-  $('topbar-signout').dispatchEvent(new window.Event('click'));
+await test('the sidebar sign-out returns the page to the signed-out state', async () => {
+  $('topbar-auth').dispatchEvent(new window.Event('click'));
   await settle();
   assert.equal($('account-signed-out').hidden, false);
   assert.equal($('account-signed-in').hidden, true);

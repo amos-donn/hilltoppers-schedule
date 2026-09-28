@@ -203,7 +203,9 @@ await test('embedded with no session, the card offers sign-in', async () => {
   page.pokeRefresh();
   await page.settle();
   assert.equal(page.errors.length, 0, page.errors.join(' | '));
-  assert.match(page.text(), /Sign in to see friends/, 'the empty card explains how to get friends');
+  assert.match(page.text(), /Sign in to view friends!/, 'the empty card explains how to get friends');
+  assert.ok(page.window.document.querySelector('.empty-action .google-button__icon'),
+    'and carries the Google mark');
 
   // Clicking it must open a tab. Navigating the frame would blank it, because
   // Google refuses to render its consent screen inside an iframe.

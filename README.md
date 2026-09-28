@@ -13,14 +13,18 @@ Two pages:
 - **`index.html` — the schedule card.** This is what the Topping iframe shows.
   At a narrow width the card fills the frame edge to edge, matching the
   extension's card at the same width (see *Sizing* below).
-- **`settings.html` — Class & Schedule Settings.** The schedule-affecting part
-  of the extension's Class settings page. **My Profile** holds the display
-  settings (time format, grade level, lunch) and your A–E courses with their
-  alternating / free options; **Send Schedule** builds your share link; and
-  **Friends** lists the schedules shown on the card. Open it from the gear on
-  the card, or directly. Changes save to this browser and the card picks them
-  up; friends who share their schedule through the account appear on the card
-  even inside the extension's iframe (see *Where the card's friends come from*).
+- **`settings.html` — Class & Schedule Settings.** A dashboard, laid out like
+  the Hilltoppers extension's own settings: a sidebar of five tabs — Account,
+  My Profile, Friends, Notices, and Settings — with one section shown at a time
+  instead of one long scroll. Each tab is in the URL (`settings.html#friends`),
+  so a refresh returns to it and Back steps between them. The schedule-affecting
+  part of the extension's page lives under **My Profile** (time format, grade
+  level, lunch, and your A–E courses with their alternating / free options);
+  **Friends** lists the schedules shown on the card and who can see yours. Open
+  it from the gear on the card, or directly. Changes save to this browser and
+  the card picks them up; friends who share their schedule through the account
+  appear on the card even inside the extension's iframe (see *Where the card's
+  friends come from*).
 
 ## Sharing your schedule
 
@@ -69,6 +73,8 @@ schedule-friends.js how the embedded card gets an account's friends
 account.js          talks to the Worker; loaded by both pages
 popup.css           the extension's popup.css, copied unchanged
 classSettings.css   the extension's classSettings.css, copied unchanged
+dashboard.css       the settings page's Hilltoppers shell: sidebar tabs, the
+                    sage palette, custom dropdowns, and the Google button
 schedule/           the bell schedules, bundled (see below)
 ```
 
@@ -87,7 +93,7 @@ the card is running — this is the one place the two pages differ.
   with you — and renders each grant's schedule as that friend. The Worker
   returns exactly the courses, lunch, grade and time format the card draws.
 - **No account, or the cookie was withheld**: the empty card offers *Sign in to
-  see friends* rather than looking broken. It opens the sign-in in a tab, since
+  view friends!* rather than looking broken. It opens the sign-in in a tab, since
   Google will not render its consent screen inside an iframe.
 
 A share link still works in either mode, and a friend who arrives both ways (a
