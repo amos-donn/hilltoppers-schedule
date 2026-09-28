@@ -28,7 +28,15 @@
     if (event.source !== parent || event.origin !== host) return;
     const data = event.data;
     if (data?.channel !== 'hilltoppers-topping-v1' || data.session !== session || data.type !== 'context') return;
-    enabled = data.heightMode === 'content';
+    const next = data.heightMode === 'content';
+    // The host drops its frame back to the fixed layout whenever the mode
+    // changes and waits for a fresh report. Re-entering content mode therefore
+    // has to report even when the height is unchanged, or choosing "Fit
+    // content" would leave the frame at the fixed height until the content
+    // happened to change. Steady-state content mode keeps suppressing
+    // duplicates, so the repeating context message does not spam reports.
+    if (next && !enabled) lastHeight = 0;
+    enabled = next;
     schedule();
   });
   window.addEventListener('resize', schedule);
