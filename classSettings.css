@@ -689,8 +689,11 @@ body, html {
 
 .class-settings__friend-list {
   display: grid;
-  gap: 8px;
-  margin-top: 12px;
+  /* Cards were packed too tightly. Match the rhythm the extension's own
+     repeated rows use (see classSettings' .class-settings__table-row): 16px
+     between cards, 16px/20px of interior padding, 12px radius. */
+  gap: 16px;
+  margin-top: 16px;
 }
 
 .class-settings__friend-row {
@@ -698,9 +701,9 @@ body, html {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 10px 12px;
+  padding: 16px 20px;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 12px;
   background: var(--surface-muted);
 }
 
