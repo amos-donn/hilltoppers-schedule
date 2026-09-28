@@ -32,7 +32,7 @@ const html = readFileSync(repoPath('settings.html'), 'utf8');
  * DOM, empty localStorage, scripts run in order. Used both for the main test
  * page and to simulate "another device" signing in.
  */
-function mountPage() {
+function mountPage(options = {}) {
   const errors = [];
   const d = new JSDOM(html, {
     url: `${PAGE_ORIGIN}/hilltoppers-schedule/settings.html`,
@@ -42,6 +42,11 @@ function mountPage() {
       window.fetch = (input, init) => routerFetch(input, init);
       window.confirm = () => true;
       window.alert = () => {};
+      // Seed storage before the page scripts run, the way a returning browser
+      // would already have it on a cold load.
+      for (const [key, value] of Object.entries(options.storage || {})) {
+        window.localStorage.setItem(key, JSON.stringify(value));
+      }
     },
   });
   const w = d.window;
@@ -648,6 +653,84 @@ await test('the course and lunch still reach the card after a page-level update'
   ).get().block_prefs);
   const names = Object.values(stored).map((b) => b.name);
   assert.ok(names.some((n) => n.length), 'the account still holds courses: ' + JSON.stringify(names));
+});
+
+await test('friends are reordered by dragging a row onto another', async () => {
+  // The Friends list is the card's running order, so reordering it is a drag
+  // from the grip onto the row it should take the place of. A cold page with
+  // the list already stored is how a returning student sees it.
+  const dragPage = mountPage({ storage: { friends: [
+    { email: 'a@example.org', name: 'Ana' },
+    { email: 'b@example.org', name: 'Ben' },
+    { email: 'c@example.org', name: 'Cleo' },
+  ] } });
+  await dragPage.settle();
+
+  const rows = () => [...dragPage.$('friend-rows').querySelectorAll('.class-settings__friend-row')];
+  const SEEDED = ['a@example.org', 'b@example.org', 'c@example.org'];
+  // The page also adopts friends it has been granted, so only the three seeded
+  // rows are asserted on; their relative order is what the drag changes.
+  const seededNames = () => rows()
+    .map((r) => r.querySelector('strong').textContent)
+    .filter((label) => SEEDED.some((email) => label.includes(email)))
+    .map((label) => label.replace(/\s*\(.*\)$/, ''));
+  const order = () => JSON.parse(dragPage.window.localStorage.getItem('friends') || '[]')
+    .filter((f) => SEEDED.includes(f.email))
+    .map((f) => f.name);
+
+  assert.deepEqual(seededNames(), ['Ana', 'Ben', 'Cleo'], 'the list renders in the stored order');
+
+  // Each row carries a grip that says what it does and draws its dots.
+  const grip = rows()[0].querySelector('.class-settings__grip');
+  assert.ok(grip, 'the row has a drag grip');
+  assert.match(grip.getAttribute('aria-label'), /Reorder Ana/, 'the grip names the friend');
+  assert.ok(grip.querySelector('circle'), 'the grip draws its dots');
+
+  // A drag: dragstart on Cleo, dragover/drop on Ana, so Cleo takes Ana's place.
+  const dataTransfer = { effectAllowed: '', dropEffect: '', setData() {}, getData: () => '' };
+  const dragEvent = (type) => {
+    const e = new dragPage.window.Event(type, { bubbles: true, cancelable: true });
+    e.dataTransfer = dataTransfer;
+    return e;
+  };
+  const rowFor = (name) => rows().find((r) => r.querySelector('strong').textContent.startsWith(name));
+  rowFor('Cleo').dispatchEvent(dragEvent('dragstart'));
+  rowFor('Ana').dispatchEvent(dragEvent('dragover'));
+  assert.ok(rowFor('Ana').classList.contains('is-drop-target'), 'the target row is marked');
+  rowFor('Ana').dispatchEvent(dragEvent('drop'));
+  await dragPage.settle();
+
+  assert.deepEqual(order(), ['Cleo', 'Ana', 'Ben'], 'Cleo moved to the front');
+  assert.deepEqual(seededNames(), ['Cleo', 'Ana', 'Ben'], 'and the list re-rendered in the new order');
+  assert.equal(dragPage.$('friend-rows').querySelector('.is-drop-target'), null, 'the drop mark is cleared');
+
+  // The grip is also a keyboard control, for anyone who cannot drag.
+  rowFor('Ben').querySelector('.class-settings__grip').dispatchEvent(
+    new dragPage.window.KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true, cancelable: true })
+  );
+  await dragPage.settle();
+  assert.deepEqual(order(), ['Cleo', 'Ben', 'Ana'], 'ArrowUp moves the focused friend up');
+
+  // And it is clickable, for touch: pick a row up, then click where it lands.
+  rowFor('Ana').querySelector('.class-settings__grip').dispatchEvent(new dragPage.window.Event('click'));
+  await dragPage.settle();
+  assert.ok(rowFor('Ana').classList.contains('is-picked'), 'the picked row is marked');
+  rowFor('Cleo').querySelector('.class-settings__grip').dispatchEvent(new dragPage.window.Event('click'));
+  await dragPage.settle();
+  assert.deepEqual(order(), ['Ana', 'Cleo', 'Ben'], 'the picked friend took the clicked row\'s place');
+  assert.equal(dragPage.$('friend-rows').querySelector('.is-picked'), null, 'the pick is cleared after the move');
+
+  // The order survives a reload, which is the whole point of reordering.
+  const reloaded = mountPage({ storage: { friends: JSON.parse(dragPage.window.localStorage.getItem('friends')) } });
+  await reloaded.settle();
+  assert.deepEqual(
+    [...reloaded.$('friend-rows').querySelectorAll('strong')].map((n) => n.textContent)
+      .filter((label) => SEEDED.some((email) => label.includes(email)))
+      .map((label) => label.replace(/\s*\(.*\)$/, '')),
+    ['Ana', 'Cleo', 'Ben'],
+    'the new order is what the card will show'
+  );
+  assert.equal(dragPage.errors.length + reloaded.errors.length, 0, 'no errors in either page');
 });
 
 await test('no uncaught errors occurred across the whole run', async () => {

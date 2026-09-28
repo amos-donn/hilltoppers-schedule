@@ -712,6 +712,51 @@ body, html {
   background: var(--surface-muted);
 }
 
+/* Rows you can drag by their grip. The grip sits at the leading edge, the way
+   the Toppings list does it, and the row carries no padding there. */
+.class-settings__friend-row--sortable {
+  justify-content: flex-start;
+  padding-left: 10px;
+}
+
+.class-settings__friend-row--sortable .class-settings__friend-info {
+  margin-right: auto;
+}
+
+.class-settings__grip {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 28px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: grab;
+}
+
+.class-settings__grip:active {
+  cursor: grabbing;
+}
+
+.class-settings__grip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* The row the dragged one would land on, marked the way the Toppings list
+   marks it: a tint and a rule along the top edge. */
+.class-settings__friend-row.is-drop-target {
+  background: var(--accent-muted);
+  box-shadow: inset 0 2px var(--accent);
+}
+
+.class-settings__friend-row.is-picked {
+  border-color: var(--accent);
+}
+
 .class-settings__friend-info {
   display: grid;
   gap: 2px;

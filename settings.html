@@ -212,8 +212,9 @@
         <section class="class-settings__panel">
           <h2>Friends</h2>
           <p class="class-settings__hint class-settings__hint--intro">
-            Shown on the card in this order, top to bottom. Use the arrows to
-            reorder. The card never shows your own schedule.
+            Shown on the card in this order, top to bottom. Drag a friend by the
+            grip to reorder, or use the arrow keys on the grip. The card never
+            shows your own schedule.
           </p>
           <div id="friend-rows" class="class-settings__friend-list"></div>
 
@@ -297,9 +298,15 @@
         function icon(path, size) {
           return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 256 256" fill="currentColor" aria-hidden="true"><path d="' + path + '"/></svg>';
         }
-        var ICON_ARROW_UP = 'M205.66,117.66a8,8,0,0,1-11.32,0L136,59.31V216a8,8,0,0,1-16,0V59.31L61.66,117.66a8,8,0,0,1-11.32-11.32l72-72a8,8,0,0,1,11.32,0l72,72A8,8,0,0,1,205.66,117.66Z';
-        var ICON_ARROW_DOWN = 'M205.66,149.66l-72,72a8,8,0,0,1-11.32,0l-72-72a8,8,0,0,1,11.32-11.32L120,196.69V40a8,8,0,0,1,16,0V196.69l58.34-58.35a8,8,0,0,1,11.32,11.32Z';
         var ICON_X = 'M205.66,194.34a8,8,0,0,1-11.32,11.32L128,139.31,61.66,205.66a8,8,0,0,1-11.32-11.32L116.69,128,50.34,61.66A8,8,0,0,1,61.66,50.34L128,116.69l66.34-66.35a8,8,0,0,1,11.32,11.32L139.31,128Z';
+        // The grip is a 2x3 dot grid, the same affordance the extension's
+        // Toppings manager uses, so reordering reads the same in both places.
+        var ICON_GRIP = '<svg width="20" height="24" viewBox="0 0 20 24" aria-hidden="true">'
+          + [6, 12, 18].map(function (y) {
+            return [7, 13].map(function (x) {
+              return '<circle cx="' + x + '" cy="' + y + '" r="1.3" />';
+            }).join('');
+          }).join('') + '</svg>';
 
         var state = {
           blockPrefs: H.loadBlockPrefs(),
@@ -349,6 +356,7 @@
           if (props) Object.keys(props).forEach(function (k) {
             if (k === 'class') node.className = props[k];
             else if (k === 'text') node.textContent = props[k];
+            else if (k === 'html') node.innerHTML = props[k];
             else if (k === 'disabled') node.disabled = props[k];
             else if (props[k] !== null && props[k] !== undefined) node.setAttribute(k, props[k]);
           });
@@ -531,6 +539,19 @@
         // --- friends ------------------------------------------------------
         var friendRows = document.getElementById('friend-rows');
 
+        // Drag to reorder, as on the extension's Toppings page. A plain drag is
+        // unreliable on touch, so the grip also takes arrow keys and a click
+        // selects the row so the same grip can be clicked on a target row.
+        var draggedFriend = null;
+        var friendDropTarget = null;
+        var pickedFriend = null;
+
+        function clearFriendDropTarget() {
+          if (!friendDropTarget) return;
+          friendDropTarget.classList.remove('is-drop-target');
+          friendDropTarget = null;
+        }
+
         function renderFriends() {
           friendRows.innerHTML = '';
           if (state.friends.length === 0) {
@@ -539,13 +560,30 @@
           }
           state.friends.forEach(function (friend, index) {
             var label = friend.name ? friend.name + ' (' + friend.email + ')' : friend.email;
-            var up = el('button', { type: 'button', class: 'class-settings__icon-button', 'aria-label': 'Move ' + label + ' up', html: icon(ICON_ARROW_UP, 16) });
-            var down = el('button', { type: 'button', class: 'class-settings__icon-button', 'aria-label': 'Move ' + label + ' down', html: icon(ICON_ARROW_DOWN, 16) });
+            var grip = el('button', {
+              type: 'button', class: 'class-settings__grip',
+              'aria-label': 'Reorder ' + label,
+              title: 'Drag to reorder, or use arrow keys', html: ICON_GRIP
+            });
             var remove = el('button', { type: 'button', class: 'class-settings__icon-button', 'aria-label': 'Remove ' + label, html: icon(ICON_X, 16) });
-            up.disabled = index === 0;
-            down.disabled = index === state.friends.length - 1;
-            up.addEventListener('click', function () { move(friend.email, -1); });
-            down.addEventListener('click', function () { move(friend.email, 1); });
+            grip.addEventListener('click', function () {
+              // A click without a drag means "pick up this row"; clicking a
+              // second grip drops it there.
+              if (pickedFriend && pickedFriend !== friend.email) {
+                var from = pickedFriend;
+                pickedFriend = null;
+                moveFriendTo(from, friend.email);
+                return;
+              }
+              pickedFriend = pickedFriend === friend.email ? null : friend.email;
+              renderFriends();
+            });
+            grip.addEventListener('keydown', function (event) {
+              var delta = event.key === 'ArrowUp' ? -1 : event.key === 'ArrowDown' ? 1 : 0;
+              if (!delta) return;
+              event.preventDefault();
+              move(friend.email, delta);
+            });
             remove.addEventListener('click', function () {
               state.friends = H.removeFriend(state.friends, friend.email);
               H.saveFriends(state.friends);
@@ -555,18 +593,69 @@
             var meta = [];
             if (friend.grade != null) meta.push(H.GRADE_LABELS[friend.grade] || ('Grade ' + friend.grade));
             if (friend.lunchWave != null) meta.push(H.LUNCH_WAVE_LABELS[friend.lunchWave]);
-            friendRows.appendChild(el('div', { class: 'class-settings__friend-row' }, [
+            var row = el('div', {
+              class: 'class-settings__friend-row class-settings__friend-row--sortable'
+                + (pickedFriend === friend.email ? ' is-picked' : '')
+            }, [
+              grip,
               el('div', { class: 'class-settings__friend-info' }, [
                 el('strong', { text: label }),
                 el('span', { class: 'class-settings__friend-meta', text: meta.join(' \u00b7 ') })
               ]),
-              el('div', { class: 'class-settings__friend-actions' }, [up, down, remove])
-            ]));
+              el('div', { class: 'class-settings__friend-actions' }, [remove])
+            ]);
+            row.setAttribute('draggable', 'true');
+            row.addEventListener('dragstart', function (event) {
+              draggedFriend = friend.email;
+              if (event.dataTransfer) {
+                event.dataTransfer.effectAllowed = 'move';
+                event.dataTransfer.setData('text/plain', friend.email);
+              }
+            });
+            row.addEventListener('dragover', function (event) {
+              if (!draggedFriend || draggedFriend === friend.email) return;
+              event.preventDefault();
+              if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+              if (friendDropTarget !== row) {
+                clearFriendDropTarget();
+                friendDropTarget = row;
+                row.classList.add('is-drop-target');
+              }
+            });
+            row.addEventListener('drop', function (event) {
+              event.preventDefault();
+              var from = draggedFriend;
+              draggedFriend = null;
+              clearFriendDropTarget();
+              if (from) moveFriendTo(from, friend.email);
+            });
+            row.addEventListener('dragend', function () {
+              draggedFriend = null;
+              clearFriendDropTarget();
+            });
+            friendRows.appendChild(row);
           });
         }
 
         function move(email, delta) {
           state.friends = H.moveFriend(state.friends, email, delta);
+          H.saveFriends(state.friends);
+          renderFriends();
+        }
+
+        /** Move a friend onto another's position, the way a drop reads. */
+        function moveFriendTo(fromEmail, targetEmail) {
+          if (fromEmail === targetEmail) return;
+          var from = -1;
+          var to = -1;
+          state.friends.forEach(function (friend, index) {
+            if (friend.email === fromEmail) from = index;
+            if (friend.email === targetEmail) to = index;
+          });
+          if (from < 0 || to < 0) return;
+          var list = state.friends.slice();
+          list.splice(to, 0, list.splice(from, 1)[0]);
+          state.friends = list;
           H.saveFriends(state.friends);
           renderFriends();
         }
