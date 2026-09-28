@@ -137,12 +137,17 @@ body, html {
   position: sticky;
   top: 0;
   align-self: start;
+  /* Must be border-box. box-sizing is content-box by default, so height
+     100dvh plus the vertical padding made the column 100dvh + 44px tall --
+     taller than the viewport. That overflowed the page, and because the
+     column is sticky it then travelled with the scroll, which reads as a
+     scrollable sidebar. */
+  box-sizing: border-box;
   height: 100dvh;
   display: flex;
   flex-direction: column;
-  /* The nav is five rows and the footer is fixed, so the column never needs to
-     scroll; hiding the overflow stops a short window from growing a scrollbar
-     and shifting the layout. */
+  /* The nav is five rows and the footer sits at the bottom, so the column
+     itself never needs to scroll. */
   overflow: hidden;
   padding: 28px 14px 16px;
   background: #f2f5ee;
