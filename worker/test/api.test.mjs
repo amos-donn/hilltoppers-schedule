@@ -358,6 +358,62 @@ await test('only the owner can revoke their grant', async () => {
   assert.equal(r.status, 404, 'a non-owner must not be able to revoke');
 });
 
+await test('a notice names the person it is about, and reads through a rename', async () => {
+  // Bob asked Alice for her schedule; Alice accepted, then revoked. Bob's
+  // notice list should name Alice rather than leaving the page to say
+  // "Someone", and the name is resolved when the list is read.
+  const notices = await call(env, '/api/notices', { cookie: env.bob.cookie });
+  const received = notices.body.notices.find((n) => n.kind === 'access.revoked');
+  assert.ok(received, 'the revocation notice is still there');
+  assert.equal(received.actorName, 'Alice A.', 'the notice carries the actor\'s display name');
+  assert.equal(received.actorProfileId, env.alice.profileId);
+
+  // Renaming does not need a backfill: old notices follow the new name.
+  await call(env, '/api/me', {
+    method: 'PATCH',
+    cookie: env.alice.cookie,
+    body: { displayName: 'Alice Renamed' },
+  });
+  const after = await call(env, '/api/notices', { cookie: env.bob.cookie });
+  const renamed = after.body.notices.find((n) => n.kind === 'access.revoked');
+  assert.equal(renamed.actorName, 'Alice Renamed', 'the name is resolved at read time');
+});
+
+await test('a single notice can be cleared without touching the others', async () => {
+  const before = await call(env, '/api/notices', { cookie: env.bob.cookie });
+  const first = before.body.notices[0];
+  assert.ok(before.body.notices.length >= 1, 'there is something to clear');
+
+  const cleared = await call(env, `/api/notices/${first.id}`, { method: 'DELETE', cookie: env.bob.cookie });
+  assert.equal(cleared.status, 200);
+
+  const after = await call(env, '/api/notices', { cookie: env.bob.cookie });
+  assert.ok(
+    !after.body.notices.some((n) => n.id === first.id),
+    'the cleared notice is gone'
+  );
+  assert.equal(
+    after.body.notices.length,
+    before.body.notices.length - 1,
+    'only that one notice was removed'
+  );
+});
+
+await test('a notice cannot be cleared out of another account', async () => {
+  const bobNotices = await call(env, '/api/notices', { cookie: env.bob.cookie });
+  const target = bobNotices.body.notices[0];
+  assert.ok(target, 'Bob has a notice to protect');
+
+  const attempt = await call(env, `/api/notices/${target.id}`, { method: 'DELETE', cookie: env.alice.cookie });
+  assert.equal(attempt.status, 200, 'the request is answered, not leaked');
+
+  const after = await call(env, '/api/notices', { cookie: env.bob.cookie });
+  assert.ok(
+    after.body.notices.some((n) => n.id === target.id),
+    'a foreign notice survives another account\'s delete'
+  );
+});
+
 await test('auto-grant gives access immediately for a public profile', async () => {
   const carol = await signIn(env, { sub: 'sub-carol', email: 'carol@x.org', name: 'Carol' });
   await call(env, '/api/me', {

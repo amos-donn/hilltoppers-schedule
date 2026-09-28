@@ -63,11 +63,6 @@
           </div>
         </header>
 
-        <div class="class-settings__notification" id="auth-notice" hidden>
-          <span id="auth-notice-text"></span>
-          <button type="button" class="tertiary" id="auth-notice-dismiss">Dismiss</button>
-        </div>
-
         <section class="dashboard__panel" id="panel-account" role="tabpanel" aria-labelledby="tab-account-btn" tabindex="-1">
         <section class="class-settings__panel" id="account-panel">
           <h2>Account</h2>
@@ -75,6 +70,7 @@
             Your account, and how your schedule appears on the card.
           </p>
           <p class="class-settings__loading" id="account-loading">Checking sign-in&hellip;</p>
+          <p class="class-settings__account-status class-settings__account-status--success" id="auth-status" hidden></p>
           <div id="account-signed-out" hidden>
             <p class="class-settings__hint class-settings__hint--intro">
               Sign in to keep your schedule, friends, and settings on your
@@ -120,7 +116,7 @@
                 signed in.
               </p>
               <p class="class-settings__account-status" id="email-status" hidden></p>
-              <div class="class-settings__fields">
+              <div class="class-settings__fields class-settings__fields--stacked">
                 <div class="class-settings__field">
                   <label for="display-name">Display name</label>
                   <input type="text" id="display-name" maxlength="80" placeholder="Shown to other students" />
@@ -153,62 +149,62 @@
             </div>
           </div>
 
-          <div class="class-settings__subsection">
-            <h3>Your schedule</h3>
-            <p class="class-settings__hint class-settings__hint--intro">
-              How your schedule is shown on the card.
-            </p>
-            <div class="class-settings__fields">
-              <div class="class-settings__field">
-                <label for="time-format">Time format</label>
-                <select id="time-format">
-                  <option value="12h">12-hour</option>
-                  <option value="24h">24-hour</option>
-                </select>
-              </div>
-              <div class="class-settings__field">
-                <label for="grade-level">Grade level</label>
-                <select id="grade-level">
-                  <option value="">Not set</option>
-                </select>
-              </div>
-              <div class="class-settings__field">
-                <label for="lunch-wave">My lunch</label>
-                <select id="lunch-wave">
-                  <option value="">Not set</option>
-                </select>
-              </div>
+        </section>
+
+        <section class="class-settings__panel" id="schedule-panel">
+          <h2>Your schedule</h2>
+          <p class="class-settings__hint class-settings__hint--intro">
+            How your schedule is shown on the card.
+          </p>
+          <div class="class-settings__fields">
+            <div class="class-settings__field">
+              <label for="time-format">Time format</label>
+              <select id="time-format">
+                <option value="12h">12-hour</option>
+                <option value="24h">24-hour</option>
+              </select>
+            </div>
+            <div class="class-settings__field">
+              <label for="grade-level">Grade level</label>
+              <select id="grade-level">
+                <option value="">Not set</option>
+              </select>
+            </div>
+            <div class="class-settings__field">
+              <label for="lunch-wave">My lunch</label>
+              <select id="lunch-wave">
+                <option value="">Not set</option>
+              </select>
             </div>
           </div>
+        </section>
 
-          <div class="class-settings__subsection">
-            <h3>Classes</h3>
-            <p class="class-settings__hint class-settings__hint--intro">
-              Your A&ndash;E courses. Turn on Alternating for classes that switch
-              between Green and White days, or Free for a free block.
-            </p>
-            <div class="class-settings__table" role="table" aria-label="Class block preferences">
-              <div class="class-settings__table-row class-settings__table-row--header" role="row">
-                <div role="columnheader">Block</div>
-                <div role="columnheader">Course name</div>
-                <div role="columnheader">Alternating</div>
-              </div>
-              <div id="block-rows"></div>
+        <section class="class-settings__panel" id="classes-panel">
+          <h2>Classes</h2>
+          <p class="class-settings__hint class-settings__hint--intro">
+            Your A&ndash;E courses. Turn on Alternating for classes that switch
+            between Green and White days, or Free for a free block.
+          </p>
+          <div class="class-settings__table" role="table" aria-label="Class block preferences">
+            <div class="class-settings__table-row class-settings__table-row--header" role="row">
+              <div role="columnheader">Block</div>
+              <div role="columnheader">Course name</div>
+              <div role="columnheader">Alternating</div>
             </div>
+            <div id="block-rows"></div>
           </div>
+        </section>
 
-          <div class="class-settings__subsection" id="danger-panel" hidden>
-            <h3>Delete account</h3>
-            <p class="class-settings__hint">
-              Removes your account, your schedule, and every code you have given
-              out. Anyone who could see your schedule is told it is gone. This
-              cannot be undone.
-            </p>
-            <div class="class-settings__share-actions">
-              <button type="button" class="secondary" id="delete-account">Delete my account</button>
-            </div>
+        <section class="class-settings__panel" id="danger-panel" hidden>
+          <h2>Delete account</h2>
+          <p class="class-settings__hint">
+            Removes your account, your schedule, and every code you have given
+            out. Anyone who could see your schedule is told it is gone. This
+            cannot be undone.
+          </p>
+          <div class="class-settings__share-actions">
+            <button type="button" class="secondary" id="delete-account">Delete my account</button>
           </div>
-
         </section>
         </section>
 
@@ -275,7 +271,8 @@
         <section class="class-settings__panel" id="notices-panel" hidden>
           <h2>Notices</h2>
           <p class="class-settings__hint class-settings__hint--intro">
-            What has changed about your access to other people's schedules.
+            What has changed about your access to other people's schedules, and
+            who is waiting on you. Open a notice to act on it.
           </p>
           <div id="notice-list" class="class-settings__friend-list"></div>
           <div class="class-settings__share-actions">
@@ -904,6 +901,7 @@
         });
 
         function renderRequests(data) {
+          latestRequests = data;
           requestsIncoming.innerHTML = '';
           requestsOutgoing.innerHTML = '';
 
@@ -1048,15 +1046,105 @@
         // --- notices ------------------------------------------------------
         var noticeList = document.getElementById('notice-list');
 
+        // The subject of a notice is named whenever we know it, so a row reads
+        // "Alex asked for your schedule" rather than the faceless "Someone".
+        // The API resolves the name at read time, so a rename shows through.
         var NOTICE_TEXT = {
+          'access.revoked': '%s revoked your access.',
+          'access.granted': '%s can now see your schedule.',
+          'request.received': '%s asked for your schedule.',
+          'request.accepted': '%s accepted your request for their schedule.',
+          'request.declined': '%s declined your request for their schedule.'
+        };
+        var NOTICE_TEXT_SOMEONE = {
           'access.revoked': 'Your access was revoked.',
-          'access.granted': 'Someone was given access to your schedule.',
+          'access.granted': 'Someone can now see your schedule.',
           'request.received': 'Someone asked for your schedule.',
-          'request.accepted': 'Your request for a schedule was accepted.',
-          'request.declined': 'Your request for a schedule was declined.'
+          'request.accepted': 'Someone accepted your request for a schedule.',
+          'request.declined': 'Someone declined your request for a schedule.'
         };
 
-        function renderNotices(notices) {
+        var latestNotices = [];
+        var latestRequests = { incoming: [], outgoing: [] };
+        // Open rows survive a re-render, so acting on one does not collapse it.
+        var expandedNotices = {};
+
+        function noticeWho(notice) {
+          return notice.actorName
+            || (notice.payload && notice.payload.displayName)
+            || notice.actorProfileId
+            || (notice.payload && notice.payload.profileId)
+            || '';
+        }
+
+        function noticeText(notice) {
+          var who = noticeWho(notice);
+          var pattern = NOTICE_TEXT[notice.kind] || notice.kind;
+          if (who) return pattern.replace('%s', who);
+          return NOTICE_TEXT_SOMEONE[notice.kind] || pattern;
+        }
+
+        /** The request a request.* notice points at, when we already hold it. */
+        function requestForNotice(notice) {
+          var who = notice.actorProfileId || (notice.payload && notice.payload.profileId);
+          if (!who) return null;
+          return latestRequests.incoming.concat(latestRequests.outgoing)
+            .filter(function (r) { return r.profileId === who; })[0] || null;
+        }
+
+        function decideNotice(notice, decision) {
+          var request = requestForNotice(notice);
+          if (!request) return;
+          A.decideRequest(request.id, decision).then(function (result) {
+            if (!result.ok) { setAccountStatus(friendlyError(result), 'error'); return; }
+            setAccountStatus(decision === 'accept' ? 'Access granted.' : 'Request declined.', 'success');
+            refreshRequests();
+            refreshGrants();
+          });
+        }
+
+        function askFromNotice(notice) {
+          var who = notice.actorProfileId || (notice.payload && notice.payload.profileId);
+          if (!who) return;
+          A.askForSchedule(who).then(function (result) {
+            if (!result.ok) { setAccountStatus(friendlyError(result), 'error'); return; }
+            setAccountStatus(result.data.status === 'granted'
+              ? 'Access granted. Add them so their schedule shows on the card.' : 'Request sent.', 'success');
+            if (result.data.status === 'granted') {
+              addFriendFromProfile({ profileId: who, displayName: noticeWho(notice) });
+            }
+            refreshRequests();
+            refreshGrants();
+          });
+        }
+
+        /** The actions a notice offers, matched to what it actually reports. */
+        function noticeActions(notice) {
+          var actions = el('div', { class: 'class-settings__notice-actions' });
+          var request = requestForNotice(notice);
+          if (notice.kind === 'request.received' && request && request.status === 'pending') {
+            var accept = el('button', { type: 'button', class: 'primary', text: 'Accept' });
+            var decline = el('button', { type: 'button', class: 'secondary', text: 'Decline' });
+            accept.addEventListener('click', function (e) { e.stopPropagation(); decideNotice(notice, 'accept'); });
+            decline.addEventListener('click', function (e) { e.stopPropagation(); decideNotice(notice, 'decline'); });
+            actions.appendChild(accept);
+            actions.appendChild(decline);
+          } else {
+            var ask = el('button', { type: 'button', class: 'secondary', text: 'Ask for their schedule' });
+            ask.addEventListener('click', function (e) { e.stopPropagation(); askFromNotice(notice); });
+            actions.appendChild(ask);
+          }
+          var clear = el('button', { type: 'button', class: 'tertiary', text: 'Clear' });
+          clear.addEventListener('click', function (e) {
+            e.stopPropagation();
+            A.dismissNotice(notice.id).then(function () { refreshNotices(); });
+          });
+          actions.appendChild(clear);
+          return actions;
+        }
+
+        function renderNotices() {
+          var notices = latestNotices;
           noticeList.innerHTML = '';
           var unseen = notices.filter(function (notice) { return !notice.seen; }).length;
           // The tab is always visible, so an unseen notice needs a marker there
@@ -1068,16 +1156,29 @@
             return;
           }
           notices.forEach(function (notice) {
-            var who = notice.payload && notice.payload.profileId ? notice.payload.profileId : '';
-            var text = NOTICE_TEXT[notice.kind] || notice.kind;
+            var open = !!expandedNotices[notice.id];
             var when = new Date(notice.createdAt * 1000).toLocaleString();
-            noticeList.appendChild(el('div', { class: 'class-settings__friend-row' }, [
+            var row = el('div', {
+              class: 'class-settings__friend-row class-settings__notice'
+                + (open ? ' class-settings__notice--open' : ''),
+              role: 'button', tabindex: '0', 'aria-expanded': open ? 'true' : 'false'
+            }, [
               el('div', { class: 'class-settings__friend-info' }, [
-                el('strong', { text: text }),
-                el('span', { class: 'class-settings__friend-meta', text: (who ? who + ' \u00b7 ' : '') + when })
+                el('strong', { text: noticeText(notice) }),
+                el('span', { class: 'class-settings__friend-meta', text: when })
               ]),
               notice.seen ? null : el('span', { class: 'class-settings__badge', text: 'New' })
-            ]));
+            ]);
+            function toggle() {
+              expandedNotices[notice.id] = !expandedNotices[notice.id];
+              renderNotices();
+            }
+            row.addEventListener('click', toggle);
+            row.addEventListener('keydown', function (e) {
+              if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+            });
+            noticeList.appendChild(row);
+            if (open) noticeList.appendChild(noticeActions(notice));
           });
         }
 
@@ -1085,11 +1186,13 @@
           if (!A.isSignedIn()) return;
           A.listNotices().then(function (result) {
             if (!result.ok) return;
-            renderNotices(result.data.notices || []);
+            latestNotices = result.data.notices || [];
+            renderNotices();
           });
         }
 
         document.getElementById('notices-seen').addEventListener('click', function () {
+          expandedNotices = {};
           A.markNoticesSeen().then(function () { refreshNotices(); });
         });
 
@@ -1104,47 +1207,40 @@
           });
         });
 
-        // --- auth notice from the redirect --------------------------------
+        // --- auth result from the redirect ---------------------------------
+        // Reported inline on the Account card instead of a page-wide banner;
+        // the outcome belongs to the sign-in button that caused it.
+        var authStatus = document.getElementById('auth-status');
         (function () {
           var params = new URLSearchParams(location.search);
           var authResult = params.get('auth');
-          if (!authResult) return;
-          var notice = document.getElementById('auth-notice');
-          var text = document.getElementById('auth-notice-text');
-          if (authResult === 'ok') {
-            text.textContent = 'Signed in.';
-          } else {
-            text.textContent = 'Sign-in did not finish. If you used a school Google account, your school may block third-party apps \u2014 a personal Google account will work.';
-          }
-          notice.hidden = false;
-          // Clean the query so a refresh does not replay the message.
-          history.replaceState(null, '', location.pathname);
-        })();
-
-        // --- email change result from the redirect ------------------------
-        (function () {
-          var params = new URLSearchParams(location.search);
           var result = params.get('email');
-          if (!result) return;
-          var notice = document.getElementById('auth-notice');
-          var text = document.getElementById('auth-notice-text');
-          if (result === 'ok') {
-            text.textContent = 'Your account now uses the new email address. You are still signed in.';
+          if (!authResult && !result) return;
+          var message;
+          var kind = 'success';
+          if (authResult === 'ok') {
+            message = 'Signed in.';
+          } else if (authResult) {
+            message = 'Sign-in did not finish. If you used a school Google account, your school may block third-party apps \u2014 a personal Google account will work.';
+            kind = 'error';
+          } else if (result === 'ok') {
+            message = 'Your account now uses the new email address. You are still signed in.';
           } else if (result === 'taken') {
-            text.textContent = 'There is already an account with this email';
+            message = 'There is already an account with this email.';
+            kind = 'error';
           } else if (result === 'mismatch') {
-            text.textContent = 'That Google account uses a different email. Sign in with the address you typed to move your account onto it.';
+            message = 'That Google account uses a different email. Sign in with the address you typed to move your account onto it.';
+            kind = 'error';
           } else {
-            text.textContent = 'The email change did not finish. Nothing was changed.';
+            message = 'The email change did not finish. Nothing was changed.';
+            kind = 'error';
           }
-          notice.hidden = false;
+          authStatus.textContent = message;
+          authStatus.className = 'class-settings__account-status class-settings__account-status--' + kind;
+          authStatus.hidden = false;
           // Clean the query so a refresh does not replay the message.
           history.replaceState(null, '', location.pathname);
         })();
-
-        document.getElementById('auth-notice-dismiss').addEventListener('click', function () {
-          document.getElementById('auth-notice').hidden = true;
-        });
 
         // --- tabs ---------------------------------------------------------
         // The sections share one page. Selecting a tab shows its panel; each

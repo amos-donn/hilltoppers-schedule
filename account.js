@@ -148,6 +148,10 @@
     return api('/api/notices/seen', { method: 'POST' });
   }
 
+  function dismissNotice(id) {
+    return api('/api/notices/' + encodeURIComponent(id), { method: 'DELETE' });
+  }
+
   function getSchedule(profileId) {
     return api('/api/schedule/' + encodeURIComponent(profileId));
   }
@@ -180,6 +184,7 @@
     revokeGrant: revokeGrant,
     listNotices: listNotices,
     markNoticesSeen: markNoticesSeen,
+    dismissNotice: dismissNotice,
     getSchedule: getSchedule,
     syncPrefs: syncPrefs,
     onAuthChange: onAuthChange,
