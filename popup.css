@@ -1402,27 +1402,34 @@ header {
   white-space: nowrap;
 }
 
-/* --- status card heading (friend name + gear) -------------------------- */
+/* --- status card heading (friend name + block badge + gear) ------------- */
 .status-heading-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
   margin-bottom: 6px;
 }
 
 .status-heading-row .friend-heading {
   margin: 0;
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-width: 0;
+}
+
+/* The block the card is about, sitting right beside the name rather than on a
+   line of its own above the subject. */
+.status-heading-row .current-block-badge {
+  margin-bottom: 0;
+  flex: 0 0 auto;
 }
 
 /* Tucked into the card's top-right corner so it reads as part of the card
    rather than a bar above it. The negative offsets pull back the button's own
-   padding, keeping the name and heading flush with the card edges. */
+   padding, keeping the name and heading flush with the card edges; the auto
+   margin keeps it on the right now that the badge shares the row. */
 .status-heading-row .settings-button-wrapper {
   flex: 0 0 auto;
-  margin: -6px -6px -6px 0;
+  margin: -6px -6px -6px auto;
 }
 
 /* --- friends list (standalone page; not in the extension) -------------- */

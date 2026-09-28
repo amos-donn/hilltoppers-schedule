@@ -263,10 +263,8 @@
         var display = H.resolveBlockDisplay(currentBlock.name, state.schedule.dayType, owner.blockPrefs);
         var value = el('span', { class: 'time-value', text: H.formatCountdown(status.remainingMs) });
         trackCountdown(value, H.parseBlockTime(currentBlock.end, baseDate).getTime());
-        var key = H.getBlockKey(currentBlock.name);
         return el('div', { class: 'status-current' }, [
           el('div', { class: 'current-details' }, [
-            key ? el('span', { class: 'current-block-badge', text: key + ' Block' }) : null,
             el('p', { class: 'current-name', text: display.label }),
             el('p', { class: 'current-period', text: H.toDisplayTime(H.parseBlockTime(currentBlock.start, baseDate), owner.timeFormat) + ' \u2013 ' + H.toDisplayTime(H.parseBlockTime(currentBlock.end, baseDate), owner.timeFormat) })
           ]),
@@ -277,11 +275,9 @@
         var nextDisplay = H.resolveBlockDisplay(nextBlock.name, state.schedule.dayType, owner.blockPrefs);
         var nextValue = el('span', { class: 'time-value', text: H.formatCountdown(status.nextStartsInMs) });
         trackCountdown(nextValue, H.parseBlockTime(nextBlock.start, baseDate).getTime());
-        var nextKey = H.getBlockKey(nextBlock.name);
         return el('div', { class: 'status-current upcoming-status' }, [
           el('div', { class: 'current-details' }, [
             el('span', { class: 'next-label', text: 'Next up' }),
-            nextKey ? el('span', { class: 'current-block-badge', text: nextKey + ' Block' }) : null,
             el('p', { class: 'current-name', text: nextDisplay.label }),
             el('p', { class: 'current-period', text: H.toDisplayTime(H.parseBlockTime(nextBlock.start, baseDate), owner.timeFormat) + ' \u2013 ' + H.toDisplayTime(H.parseBlockTime(nextBlock.end, baseDate), owner.timeFormat) })
           ]),
@@ -296,15 +292,21 @@
     }
 
     // Your own day, collapsed to the live status card and expandable to the
-    // whole timetable. The name row carries the gear.
+    // whole timetable. The name row carries the block period and the gear.
     function renderPrimary(owner, headingText) {
       var filtered = ownerBlocks(owner);
       var status = H.computeStatus(filtered, baseDate, state.now);
       var progressBar = H.computeProgressBar(filtered, status.currentBlock, status.nextBlock, baseDate, state.now, owner.timeFormat);
 
+      // The block the status below is about, named on the name row so the card
+      // reads in one line instead of stacking a badge above the subject.
+      var statusBlock = status.currentBlock || status.nextBlock;
+      var blockKey = statusBlock ? H.getBlockKey(statusBlock.name) : '';
+
       var section = el('section', { class: 'status' }, [
         el('div', { class: 'status-heading-row' }, [
           el('p', { class: 'friend-heading', text: headingText }),
+          blockKey ? el('span', { class: 'current-block-badge', text: blockKey + ' Block' }) : null,
           settingsButton()
         ]),
         statusBody(owner, status)
