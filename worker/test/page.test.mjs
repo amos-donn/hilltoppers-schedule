@@ -104,6 +104,18 @@ await test('the page loads without throwing', async () => {
   assert.equal($('account-loading').hidden, true, 'the sign-in check finished');
 });
 
+await test('every id in the page is unique', async () => {
+  // getElementById silently returns the first match, so a duplicated id means
+  // one of the two elements is never wired up and the bug is invisible.
+  const seen = new Map();
+  for (const el of window.document.querySelectorAll('[id]')) {
+    const id = el.id;
+    seen.set(id, (seen.get(id) || 0) + 1);
+  }
+  const dupes = [...seen.entries()].filter(([, n]) => n > 1).map(([id]) => id);
+  assert.deepEqual(dupes, [], 'duplicate ids: ' + dupes.join(', '));
+});
+
 await test('signed out, the page offers sign-in and hides account panels', async () => {
   assert.equal($('account-signed-out').hidden, false);
   assert.equal($('account-signed-in').hidden, true);
@@ -139,9 +151,84 @@ await test('signing in reveals every account section', async () => {
   assert.equal($('notices-panel').hidden, false);
   assert.equal($('danger-panel').hidden, false);
   assert.match($('profile-id').value, /^[a-z]+-[a-z]+-\d{4}$/, 'a profile ID is shown');
-  assert.equal($('account-email').textContent, 'alice@example.org');
+  assert.equal($('account-email').value, 'alice@example.org', 'the email is shown in an editable field');
+  assert.equal($('account-email').readOnly, false, 'and can be edited');
   assert.equal($('visibility').value, 'private', 'new accounts default to private');
   assert.equal($('auto-grant').checked, true, 'auto-grant defaults on');
+});
+
+/**
+ * Watch the page's own network calls. The page navigates away on a successful
+ * email change, which jsdom cannot do, so the request it makes on the way out
+ * is what tells us whether it did the right thing.
+ */
+function spyOnFetch(window) {
+  const calls = [];
+  const real = window.fetch;
+  window.fetch = async (input, init) => {
+    const url = typeof input === 'string' ? input : input.url;
+    const response = await real(input, init);
+    if (url.includes('/api/me/email')) {
+      const body = init && init.body ? JSON.parse(init.body) : null;
+      // Clone before handing the response back: the page reads it, so the copy
+      // is what the assertions can still inspect afterwards.
+      calls.push({ url, method: (init && init.method) || 'GET', body, response: response.clone() });
+    }
+    return response;
+  };
+  return calls;
+}
+
+await test('the email field saves by sending the browser to Google', async () => {
+  // Saving must not write anything on its own: it asks the Worker for the
+  // Google URL that proves the address, and the change happens on the way back.
+  const calls = spyOnFetch(window);
+
+  $('account-email').value = 'alice.new@example.org';
+  $('save-email').dispatchEvent(new window.Event('click'));
+  await settle(6);
+
+  assert.equal(calls.length, 1, 'exactly one request is made');
+  assert.equal(calls[0].method, 'POST');
+  assert.equal(calls[0].body.email, 'alice.new@example.org', 'carrying the address that was typed');
+
+  const started = await calls[0].response.json();
+  assert.ok(started.authorizeUrl, 'the Worker answers with the Google URL to visit');
+  const url = new URL(started.authorizeUrl);
+  assert.equal(url.searchParams.get('login_hint'), 'alice.new@example.org', 'hinting the address that was typed');
+  assert.ok(url.searchParams.get('state'), 'with a signed state the Worker can verify on the way back');
+
+  // Nothing about the account changed just by pressing Save.
+  assert.equal(window.HTAccount.current().email, 'alice@example.org', 'the account is untouched until Google confirms');
+});
+
+await test('an email already in use is refused before leaving the page', async () => {
+  // Another account already holds this address.
+  await signInAs('sub-page-bob', 'bob@example.org', 'Bob');
+  await window.HTAccount.refresh();
+  await settle();
+  await signInAs('sub-page-alice', 'alice@example.org', 'Alice');
+  await window.HTAccount.refresh();
+  await settle();
+
+  const calls = spyOnFetch(window);
+
+  $('account-email').value = 'bob@example.org';
+  $('save-email').dispatchEvent(new window.Event('click'));
+  await settle(6);
+
+  assert.equal(calls.length, 1, 'the Worker is asked');
+  const refused = await calls[0].response.json();
+  assert.equal(refused.error, 'email_taken', 'and it says the address is in use');
+
+  assert.equal($('email-status').hidden, false, 'so the page shows why');
+  assert.equal(
+    $('email-status').textContent,
+    'There is already an account with this email',
+    'worded exactly as asked'
+  );
+  assert.equal($('account-email').value, 'bob@example.org', 'the field keeps what was typed, so it can be corrected');
+  assert.equal(window.HTAccount.current().email, 'alice@example.org', 'and the account did not move');
 });
 
 await test('the visibility toggle writes through to the account', async () => {
@@ -287,7 +374,7 @@ await test('the revoked viewer sees a notice in the UI', async () => {
 });
 
 await test('selecting a tab shows its panel and updates the title', async () => {
-  // The five sections share one document; only the selected panel is visible.
+  // The four sections share one document; only the selected panel is visible.
   const click = (name) => $(`tab-${name}-btn`).dispatchEvent(new window.Event('click'));
 
   click('profile');
@@ -299,19 +386,34 @@ await test('selecting a tab shows its panel and updates the title', async () => 
   assert.equal($('tab-account-btn').getAttribute('aria-selected'), 'false');
   assert.equal(window.location.hash, '#profile', 'the section is in the URL, so a refresh returns to it');
 
-  click('settings');
+  click('notices');
   await settle(2);
-  assert.equal($('panel-settings').hidden, false);
+  assert.equal($('panel-notices').hidden, false);
   assert.equal($('panel-profile').hidden, true);
-  // The panel itself still follows sign-in state underneath the tab: reaching
-  // Settings by tab must not reveal the delete card to a signed-out visitor.
-  const signedIn = $('account-signed-in').hidden === false;
-  assert.equal($('danger-panel').hidden, !signedIn, 'the panel keeps its own sign-in gate');
 
   click('account');
   await settle(2);
   assert.equal($('panel-account').hidden, false);
   assert.equal($('page-title').textContent, 'Account');
+});
+
+await test('Settings merged into Account, so there is no Settings tab', async () => {
+  assert.equal($('tab-settings-btn'), null, 'the Settings tab is gone');
+  assert.equal($('panel-settings'), null, 'and so is its panel');
+
+  // Deleting the account is the only thing Settings held, so it now lives in
+  // the Account panel, still gated on being signed in.
+  const danger = $('danger-panel');
+  assert.ok(danger, 'the delete card exists');
+  assert.ok($('panel-account').contains(danger), 'inside the Account panel');
+  assert.equal(danger.hidden, $('account-signed-in').hidden, 'and keeps its own sign-in gate');
+
+  // An old bookmark to the removed section still lands somewhere sensible.
+  window.location.hash = '#settings';
+  window.dispatchEvent(new window.Event('popstate'));
+  await settle(2);
+  assert.equal($('panel-account').hidden, false, '#settings resolves to Account');
+  window.location.hash = '';
 });
 
 await test('accepting a request puts the granter on the asker\'s card', async () => {

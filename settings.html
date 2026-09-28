@@ -45,10 +45,6 @@
             Notices
             <span class="class-settings__badge" id="notices-tab-badge" hidden>New</span>
           </button>
-          <button type="button" class="dashboard__tab" role="tab" data-tab="settings" aria-selected="false" aria-controls="panel-settings" id="tab-settings-btn">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.67 4.14a2.34 2.34 0 0 1 4.66 0 2.34 2.34 0 0 0 3.32 1.91 2.34 2.34 0 0 1 2.33 4.04 2.34 2.34 0 0 0 0 3.83 2.34 2.34 0 0 1-2.33 4.03 2.34 2.34 0 0 0-3.32 1.92 2.34 2.34 0 0 1-4.66 0 2.34 2.34 0 0 0-3.32-1.92 2.34 2.34 0 0 1-2.33-4.03 2.34 2.34 0 0 0 0-3.83 2.34 2.34 0 0 1 2.33-4.04 2.34 2.34 0 0 0 3.32-1.91Z" /><circle cx="12" cy="12" r="3" /></svg>
-            Settings
-          </button>
         </nav>
 
         <div class="dashboard__bottom">
@@ -61,10 +57,6 @@
             </div>
             <p class="dashboard__account-note" id="topbar-text">Not signed in. Settings are saved in this browser.</p>
           </div>
-          <a class="dashboard__back" href="index.html">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6" /></svg>
-            Back to schedule
-          </a>
         </div>
       </aside>
 
@@ -115,9 +107,21 @@
             <div class="class-settings__account-card">
               <div class="class-settings__account-header">
                 <h3>Signed in</h3>
-                <p class="class-settings__account-email" id="account-email"></p>
                 <p class="class-settings__account-status class-settings__account-status--success" id="account-status">Signed in.</p>
               </div>
+              <div class="class-settings__field-block">
+                <label for="account-email">Email</label>
+                <div class="class-settings__email-actions">
+                  <input type="email" id="account-email" autocomplete="email" spellcheck="false" />
+                  <button type="button" class="secondary" id="save-email">Save</button>
+                </div>
+              </div>
+              <p class="class-settings__hint" id="email-hint">
+                Changing this signs you in with Google as the new address, then
+                moves your account, schedule, and friends onto it. You stay
+                signed in.
+              </p>
+              <p class="class-settings__account-status" id="email-status" hidden></p>
               <div class="class-settings__fields">
                 <div class="class-settings__field">
                   <label for="display-name">Display name</label>
@@ -148,6 +152,18 @@
                 revoked code never works again.
               </p>
               <p class="class-settings__hint" id="account-save-status" hidden></p>
+            </div>
+          </div>
+
+          <div class="class-settings__subsection" id="danger-panel" hidden>
+            <h3>Delete account</h3>
+            <p class="class-settings__hint">
+              Removes your account, your schedule, and every code you have given
+              out. Anyone who could see your schedule is told it is gone. This
+              cannot be undone.
+            </p>
+            <div class="class-settings__share-actions">
+              <button type="button" class="secondary" id="delete-account">Delete my account</button>
             </div>
           </div>
 
@@ -269,20 +285,6 @@
           <div id="notice-list" class="class-settings__friend-list"></div>
           <div class="class-settings__share-actions">
             <button type="button" class="secondary" id="notices-seen">Mark all as read</button>
-          </div>
-        </section>
-        </section>
-
-        <section class="dashboard__panel" id="panel-settings" role="tabpanel" aria-labelledby="tab-settings-btn" tabindex="-1" hidden>
-        <section class="class-settings__panel" id="danger-panel" hidden>
-          <h2>Delete account</h2>
-          <p class="class-settings__hint class-settings__hint--intro">
-            Removes your account, your schedule, and every code you have given
-            out. Anyone who could see your schedule is told it is gone. This
-            cannot be undone.
-          </p>
-          <div class="class-settings__share-actions">
-            <button type="button" class="secondary" id="delete-account">Delete my account</button>
           </div>
         </section>
         </section>
@@ -576,12 +578,14 @@
         // panel instead, where the Google button lives.
         var topbarAuth = document.getElementById('topbar-auth');
         var panelNotices = document.getElementById('panel-notices');
-        var panelSettings = document.getElementById('panel-settings');
         var noticesTabBadge = document.getElementById('notices-tab-badge');
         var displayName = document.getElementById('display-name');
         var profileIdInput = document.getElementById('profile-id');
         var visibility = document.getElementById('visibility');
         var autoGrant = document.getElementById('auto-grant');
+        var accountEmail = document.getElementById('account-email');
+        var emailStatus = document.getElementById('email-status');
+        var saveEmail = document.getElementById('save-email');
         var accountStatus = document.getElementById('account-status');
         var requestsPanel = document.getElementById('requests-panel');
         var accessPanel = document.getElementById('access-panel');
@@ -605,7 +609,6 @@
             accessPanel.hidden = true;
             noticesPanel.hidden = true;
             panelNotices.hidden = true;
-            panelSettings.hidden = true;
             dangerPanel.hidden = true;
             return;
           }
@@ -618,10 +621,14 @@
           accessPanel.hidden = false;
           noticesPanel.hidden = false;
           panelNotices.hidden = false;
-          panelSettings.hidden = false;
           dangerPanel.hidden = false;
 
-          document.getElementById('account-email').textContent = me.email;
+          // Only overwrite the field when it is not being typed into, so a
+          // refetch does not discard an address the student is midway through
+          // editing.
+          if (document.activeElement !== accountEmail) {
+            accountEmail.value = me.email;
+          }
           profileIdInput.value = me.profileId;
           if (document.activeElement !== displayName) {
             displayName.value = me.displayName || '';
@@ -700,6 +707,53 @@
           } else {
             setAccountStatus('The ID is selected \u2014 press Ctrl/Cmd+C to copy.', 'warning');
           }
+        });
+
+        // --- change email -------------------------------------------------
+        // Saving does not write anything: it asks the Worker for the Google URL
+        // that proves the new address, and the change happens when Google sends
+        // the browser back to /api/auth/callback.
+        function setEmailStatus(message, kind) {
+          emailStatus.textContent = message;
+          emailStatus.className = 'class-settings__account-status' +
+            (kind ? ' class-settings__account-status--' + kind : '');
+          emailStatus.hidden = !message;
+        }
+
+        function saveEmailChange() {
+          var wanted = (accountEmail.value || '').trim();
+          if (!wanted) { setEmailStatus('Enter the email address to switch to.', 'error'); return; }
+
+          saveEmail.disabled = true;
+          setEmailStatus('Checking that address\u2026', null);
+          A.changeEmail(wanted).then(function (result) {
+            saveEmail.disabled = false;
+            if (result.ok && result.data && result.data.authorizeUrl) {
+              // Leave the page: the OAuth dance has to happen at the top level.
+              window.location.href = result.data.authorizeUrl;
+              return;
+            }
+            if (result.error === 'email_taken') {
+              setEmailStatus('There is already an account with this email', 'error');
+            } else if (result.error === 'same_email') {
+              setEmailStatus('That is already the email on this account.', 'error');
+            } else if (result.error === 'invalid_email') {
+              setEmailStatus('That does not look like an email address.', 'error');
+            } else {
+              setEmailStatus(friendlyError(result), 'error');
+            }
+          });
+        }
+
+        saveEmail.addEventListener('click', saveEmailChange);
+        accountEmail.addEventListener('keydown', function (event) {
+          if (event.key === 'Enter') { event.preventDefault(); saveEmailChange(); }
+        });
+
+        // The address is the account's sign-in identity, so it is not part of
+        // the autosaved profile: typing in it must not silently change anything.
+        accountEmail.addEventListener('input', function () {
+          if (!emailStatus.hidden) setEmailStatus('', null);
         });
 
         displayName.addEventListener('input', function () {
@@ -1061,25 +1115,50 @@
           history.replaceState(null, '', location.pathname);
         })();
 
+        // --- email change result from the redirect ------------------------
+        (function () {
+          var params = new URLSearchParams(location.search);
+          var result = params.get('email');
+          if (!result) return;
+          var notice = document.getElementById('auth-notice');
+          var text = document.getElementById('auth-notice-text');
+          if (result === 'ok') {
+            text.textContent = 'Your account now uses the new email address. You are still signed in.';
+          } else if (result === 'taken') {
+            text.textContent = 'There is already an account with this email';
+          } else if (result === 'mismatch') {
+            text.textContent = 'That Google account uses a different email. Sign in with the address you typed to move your account onto it.';
+          } else {
+            text.textContent = 'The email change did not finish. Nothing was changed.';
+          }
+          notice.hidden = false;
+          // Clean the query so a refresh does not replay the message.
+          history.replaceState(null, '', location.pathname);
+        })();
+
         document.getElementById('auth-notice-dismiss').addEventListener('click', function () {
           document.getElementById('auth-notice').hidden = true;
         });
 
         // --- tabs ---------------------------------------------------------
-        // The five sections share one page. Selecting a tab shows its panel;
+        // The four sections share one page. Selecting a tab shows its panel;
         // each panel's own content is still shown or hidden by sign-in state,
-        // so the two are independent.
-        var TABS = ['account', 'profile', 'friends', 'notices', 'settings'];
+        // so the two are independent. Deleting an account lives in the Account
+        // panel rather than a section of its own.
+        var TABS = ['account', 'profile', 'friends', 'notices'];
         var TAB_TITLES = {
           account: 'Account', profile: 'My Profile', friends: 'Friends',
-          notices: 'Notices', settings: 'Settings'
+          notices: 'Notices'
         };
         var pageTitle = document.getElementById('page-title');
         var tablist = document.getElementById('tablist');
         var tabIndicator = document.getElementById('tab-indicator');
 
-        var activeTab = TABS.indexOf(location.hash.replace('#', '')) >= 0
-          ? location.hash.replace('#', '') : 'account';
+        // #settings was a section of its own before it merged into Account, so
+        // an old bookmark or a back button still lands somewhere sensible.
+        var hashName = location.hash.replace('#', '');
+        if (hashName === 'settings') hashName = 'account';
+        var activeTab = TABS.indexOf(hashName) >= 0 ? hashName : 'account';
 
         function moveIndicator() {
           var active = tablist.querySelector('.dashboard__tab[aria-selected="true"]');
@@ -1130,6 +1209,7 @@
 
         window.addEventListener('popstate', function () {
           var name = location.hash.replace('#', '');
+          if (name === 'settings') name = 'account';
           showTab(TABS.indexOf(name) >= 0 ? name : 'account', false);
         });
 

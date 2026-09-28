@@ -18,6 +18,8 @@
  *   GET  /api/me               the signed-in account
  *   PATCH /api/me              update display name, visibility, auto-grant,
  *                              courses, and schedule settings
+ *   POST /api/me/email         start changing the account's email; returns the
+ *                              Google URL that proves the new address
  *   DELETE /api/me             delete the account and everything it touched
  *   GET  /api/directory        search public profiles
  *   POST /api/requests         ask for a schedule by profile ID
@@ -51,6 +53,10 @@
  */
 
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
+
+// How long an in-progress email change stays valid. Short, because the whole
+// thing is one round trip through Google: ask, then come back.
+const EMAIL_CHANGE_TTL_SECONDS = 60 * 15;
 
 // Where the visible site lives. The pages are GitHub Pages, not this Worker,
 // so a redirect back to this origin after sign-in would land on nothing. The
@@ -268,6 +274,80 @@ function googleCookieName(state) {
   return `ht_oauth_${state.slice(0, 8)}`;
 }
 
+/** Compare two strings without leaking where they first differ. */
+function timingSafeEqual(a, b) {
+  const left = String(a);
+  const right = String(b);
+  if (left.length !== right.length) return false;
+  let diff = 0;
+  for (let i = 0; i < left.length; i++) diff |= left.charCodeAt(i) ^ right.charCodeAt(i);
+  return diff === 0;
+}
+
+/**
+ * An email change is a two-step flow: the page asks for a Google sign-in
+ * against the address the student typed, then Google sends the browser back
+ * here. Nothing about the change may be trusted from the callback's query
+ * string, so the account it belongs to and the address being claimed are
+ * signed into a state token that only this Worker can mint.
+ */
+async function issueEmailChangeState(env, accountId, newEmail) {
+  const payload = utf8B64url(JSON.stringify({
+    a: accountId,
+    e: newEmail,
+    exp: nowSeconds() + EMAIL_CHANGE_TTL_SECONDS,
+    n: randomToken(8),
+  }));
+  const key = await crypto.subtle.importKey(
+    'raw', new TextEncoder().encode(env.SESSION_SECRET),
+    { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
+  );
+  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payload));
+  return `${payload}.${b64url(sig)}`;
+}
+
+/** Verify the signature and expiry; returns {a, e} or null. */
+async function readEmailChangeState(env, state) {
+  const parts = String(state || '').split('.');
+  if (parts.length !== 2) return null;
+  const [payload, sig] = parts;
+
+  let expected;
+  try {
+    const key = await crypto.subtle.importKey(
+      'raw', new TextEncoder().encode(env.SESSION_SECRET),
+      { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
+    );
+    expected = b64url(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payload)));
+  } catch {
+    return null;
+  }
+  if (!timingSafeEqual(expected, sig)) return null;
+
+  let data;
+  try {
+    data = JSON.parse(new TextDecoder().decode(fromB64url(payload)));
+  } catch {
+    return null;
+  }
+  if (!data || typeof data.a !== 'number' || typeof data.e !== 'string') return null;
+  if (Number(data.exp) <= nowSeconds()) return null;
+  return data;
+}
+
+/** Lower-cased and trimmed, since an address is not case sensitive. */
+function normalizeEmail(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+/**
+ * A deliberately loose shape check. Google is the authority on whether an
+ * address exists; this only rejects obvious nonsense before a redirect.
+ */
+function isPlausibleEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) && value.length <= 254;
+}
+
 function authLogin(request, env) {
   const url = new URL(request.url);
   const state = randomToken(16);
@@ -304,29 +384,18 @@ async function authCallback(request, env) {
 
   if (error || !code || !state) return failRedirect;
 
+  // An email change rides the same callback. Its state is signed rather than a
+  // random cookie value, so it is recognised by verifying the signature. A
+  // plain sign-in state is a bare random token and will not verify, so the two
+  // cannot be confused for one another.
+  const emailChange = await readEmailChangeState(env, state);
+  if (emailChange) return completeEmailChange(request, env, url, code, emailChange);
+
   const cookies = parseCookies(request);
   if (!cookies[googleCookieName(state)]) return failRedirect;
 
   // Exchange the code for tokens. The client secret stays on the server.
-  const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      code,
-      client_id: env.GOOGLE_CLIENT_ID,
-      client_secret: env.GOOGLE_CLIENT_SECRET,
-      redirect_uri: `${url.origin}/api/auth/callback`,
-      grant_type: 'authorization_code',
-    }),
-  });
-  if (!tokenResponse.ok) return failRedirect;
-  const tokens = await tokenResponse.json();
-  if (!tokens.id_token) return failRedirect;
-
-  // The ID token is a JWT signed by Google. Verify the signature against
-  // Google's published keys and check the claims that matter, rather than
-  // trusting the payload, so a forged token cannot mint a session.
-  const claims = await verifyGoogleIdToken(tokens.id_token, env.GOOGLE_CLIENT_ID);
+  const claims = await googleClaimsFromCode(url, env, code);
   if (!claims) return failRedirect;
 
   const googleSub = String(claims.sub);
@@ -371,6 +440,104 @@ async function authCallback(request, env) {
   });
   headers.append('Set-Cookie', sessionCookie(token, SESSION_TTL_SECONDS));
   headers.append('Set-Cookie', `${googleCookieName(state)}=; Path=/; Max-Age=0`);
+  return new Response(null, { status: 302, headers });
+}
+
+/**
+ * Trade the authorization code for an ID token and verify it. Shared by the
+ * sign-in callback and the email-change callback, which differ only in what
+ * they do with the verified claims.
+ */
+async function googleClaimsFromCode(url, env, code) {
+  const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      code,
+      client_id: env.GOOGLE_CLIENT_ID,
+      client_secret: env.GOOGLE_CLIENT_SECRET,
+      redirect_uri: `${url.origin}/api/auth/callback`,
+      grant_type: 'authorization_code',
+    }),
+  });
+  if (!tokenResponse.ok) return null;
+  const tokens = await tokenResponse.json();
+  if (!tokens.id_token) return null;
+
+  // The ID token is a JWT signed by Google. Verify the signature against
+  // Google's published keys and check the claims that matter, rather than
+  // trusting the payload, so a forged token cannot mint a session.
+  return verifyGoogleIdToken(tokens.id_token, env.GOOGLE_CLIENT_ID);
+}
+
+/**
+ * Finish an email change: the student signed in with Google and the address
+ * Google reports must be the one they typed, or someone could point an
+ * account at an address they do not control.
+ *
+ * The account is identified by the signed state, never by the email, so
+ * proving control of the address is what moves the account, and a Google
+ * account that already owns a row here is refused rather than merged.
+ */
+async function completeEmailChange(request, env, url, code, change) {
+  const fail = (reason) => new Response(null, {
+    status: 302,
+    headers: { Location: `${APP_URL}/settings.html?email=${reason}` },
+  });
+
+  const claims = await googleClaimsFromCode(url, env, code);
+  if (!claims) return fail('error');
+
+  const googleEmail = normalizeEmail(claims.email);
+  const googleSub = String(claims.sub || '');
+
+  // Google must confirm the exact address that was asked for.
+  if (!googleEmail || googleEmail !== change.e) return fail('mismatch');
+
+  const account = await env.DB.prepare('SELECT * FROM accounts WHERE id = ?')
+    .bind(change.a)
+    .first();
+  if (!account) return fail('error');
+
+  // Someone else already signed in with this Google account. Their row owns
+  // this google_sub, so the address is not free to take.
+  const subTaken = await env.DB.prepare('SELECT id FROM accounts WHERE google_sub = ? AND id != ?')
+    .bind(googleSub, account.id)
+    .first();
+  if (subTaken) return fail('taken');
+
+  // The same address may already be attached to another row (for example the
+  // other account was created before this one), and accounts.email is not
+  // UNIQUE, so this check is what enforces the rule.
+  const emailTaken = await env.DB.prepare(
+    'SELECT id FROM accounts WHERE LOWER(email) = ? AND id != ?'
+  )
+    .bind(googleEmail, account.id)
+    .first();
+  if (emailTaken) return fail('taken');
+
+  const name = String(claims.name || '').trim() || account.name;
+  await env.DB.prepare(
+    'UPDATE accounts SET google_sub = ?, email = ?, name = ?, updated_at = ? WHERE id = ?'
+  )
+    .bind(googleSub, googleEmail, name, nowSeconds(), account.id)
+    .run();
+
+  // The student proved control of the new address, so the browser that comes
+  // back from Google is theirs. Handing it a fresh session keeps them signed
+  // in as the same account, now under the new address.
+  const token = randomToken(32);
+  const ts = nowSeconds();
+  await env.DB.prepare(
+    'INSERT INTO sessions (token_hash, account_id, created_at, expires_at) VALUES (?, ?, ?, ?)'
+  )
+    .bind(await sha256Hex(token), account.id, ts, ts + SESSION_TTL_SECONDS)
+    .run();
+
+  const headers = new Headers({
+    Location: `${APP_URL}/settings.html?email=ok#account`,
+  });
+  headers.append('Set-Cookie', sessionCookie(token, SESSION_TTL_SECONDS));
   return new Response(null, { status: 302, headers });
 }
 
@@ -488,6 +655,48 @@ async function handleMe(request, env, account) {
   }
 
   return json({ error: 'method_not_allowed' }, 405);
+}
+
+/**
+ * Start an email change. The address is checked here so the student finds out
+ * about a collision before being sent through Google, and again on the way
+ * back, because the two checks can disagree if someone else moves first.
+ *
+ * Nothing is written yet: the change only happens once Google has confirmed
+ * the address, which is what completeEmailChange is for.
+ */
+async function handleStartEmailChange(request, env, account) {
+  const body = await request.json().catch(() => ({}));
+  const newEmail = normalizeEmail(body.email);
+
+  if (!isPlausibleEmail(newEmail)) {
+    return json({ error: 'invalid_email' }, 400);
+  }
+
+  if (newEmail === normalizeEmail(account.email)) {
+    return json({ error: 'same_email' }, 400);
+  }
+
+  const taken = await env.DB.prepare('SELECT id FROM accounts WHERE LOWER(email) = ? AND id != ?')
+    .bind(newEmail, account.id)
+    .first();
+  if (taken) return json({ error: 'email_taken' }, 409);
+
+  const state = await issueEmailChangeState(env, account.id, newEmail);
+  const url = new URL(request.url);
+  const authorize = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+  authorize.searchParams.set('client_id', env.GOOGLE_CLIENT_ID);
+  authorize.searchParams.set('redirect_uri', `${url.origin}/api/auth/callback`);
+  authorize.searchParams.set('response_type', 'code');
+  authorize.searchParams.set('scope', 'openid email profile');
+  authorize.searchParams.set('state', state);
+  // select_account is not enough here: a browser already signed into one Google
+  // account would otherwise silently reuse it, and the address it reports would
+  // not be the one being claimed.
+  authorize.searchParams.set('prompt', 'select_account');
+  authorize.searchParams.set('login_hint', newEmail);
+
+  return json({ authorizeUrl: authorize.toString() });
 }
 
 async function handleDeleteMe(env, account) {
@@ -791,6 +1000,10 @@ async function route(request, env, url, path, method) {
   // Everything past this point needs a session.
   const account = await currentAccount(request, env);
   if (!account) return json({ error: 'unauthorized' }, 401);
+
+  if (path === '/api/me/email' && method === 'POST') {
+    return handleStartEmailChange(request, env, account);
+  }
 
   if (path === '/api/me') {
     if (method === 'GET' || method === 'PATCH') return handleMe(request, env, account);

@@ -330,6 +330,14 @@ body, html {
   font-weight: 600;
 }
 
+/* The email is the account's sign-in identity and can be a long address, so it
+   sits outside the two-column group and takes the full width of the card. */
+.class-settings__field-block {
+  display: grid;
+  gap: 6px;
+  font-weight: 600;
+}
+
 .class-settings__field label {
   font-weight: 600;
   white-space: nowrap;
@@ -596,12 +604,6 @@ body, html {
   margin: 0;
 }
 
-.class-settings__account-email {
-  margin: 0;
-  color: var(--muted);
-  font-size: 14px;
-}
-
 .class-settings__signin-grid {
   display: grid;
   gap: 16px;
@@ -638,6 +640,10 @@ body, html {
   gap: 12px;
 }
 
+/* The input takes the room the button does not, so a long address is not cut
+   off in a row that has space to spare. */
+.class-settings__email-actions input { flex: 1 1 auto; }
+
 .class-settings__verification {
   display: grid;
   gap: 12px;
@@ -666,7 +672,9 @@ body, html {
 
 /* --- send schedule and friends (standalone page) ----------------------- */
 .class-settings__field input[type='text'],
-.class-settings__field input[type='email'] {
+.class-settings__field input[type='email'],
+.class-settings__field-block input[type='text'],
+.class-settings__field-block input[type='email'] {
   padding: 8px 12px;
   border-radius: 8px;
   border: 1px solid var(--border);
@@ -788,7 +796,9 @@ body, html {
 
   .class-settings__field select,
   .class-settings__field input[type='text'],
-  .class-settings__field input[type='email'] {
+  .class-settings__field input[type='email'],
+  .class-settings__field-block input[type='text'],
+  .class-settings__field-block input[type='email'] {
     width: 100%;
     max-width: none;
     min-width: 0;

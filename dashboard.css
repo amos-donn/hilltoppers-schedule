@@ -232,20 +232,6 @@ body, html {
   border-top: 1px solid var(--border);
 }
 
-.dashboard__back {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 9px 12px;
-  border-radius: 8px;
-  color: #607367;
-  font-size: 13px;
-  text-decoration: none;
-}
-
-.dashboard__back:hover { background: #eaf0e5; color: var(--text); }
-.dashboard__back svg { width: 18px; height: 18px; flex: none; }
-
 .dashboard__account { display: grid; gap: 8px; }
 
 .dashboard__account-row {
