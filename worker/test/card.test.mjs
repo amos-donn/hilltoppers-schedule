@@ -259,6 +259,66 @@ await test('embedded, the card shows the friends the account was granted', async
   assert.equal(display.label, 'Chemistry', 'the course the account saved reaches the card');
 });
 
+// ---------------------------------------------------------------------------
+// The once-a-second countdown patches the card in place rather than rebuilding
+// it. A full rebuild every tick is what made the card look like it was
+// refreshing every few seconds, and it tore down and recreated every node --
+// losing focus, hover and scroll -- on a clock tick that only moves a countdown.
+// ---------------------------------------------------------------------------
+await test('a clock tick updates the countdown in place instead of rebuilding the card', async () => {
+  const d = new JSDOM('<div id="root"></div>', {
+    url: 'https://amos-donn.github.io/hilltoppers-schedule/index.html',
+    runScripts: 'dangerously',
+  });
+  const w = d.window;
+  for (const f of ['schedule-core.js', 'schedule-card.js']) {
+    const s = w.document.createElement('script');
+    s.textContent = readFileSync(repoPath(f), 'utf8');
+    w.document.head.appendChild(s);
+  }
+
+  const H = w.HT;
+  const dateKey = H.todayKey();
+  const baseDate = H.parseDateKey(dateKey);
+  const schedule = {
+    dateKey,
+    dayType: null,
+    details: null,
+    blocks: [
+      { id: 'b1', name: 'A Block', start: '08:00', end: '09:00' },
+      { id: 'b2', name: 'B Block', start: '09:00', end: '10:00' },
+    ],
+  };
+  const friend = H.normalizeFriend({ email: 'erin@example.com', name: 'Erin', grade: 11 });
+  const now = H.parseBlockTime('08:30', baseDate);
+
+  const root = w.document.getElementById('root');
+  const card = w.ScheduleCard.mount(root, {
+    schedule, friends: [friend], selectedFriend: friend.email, now,
+  });
+
+  const statusBefore = root.querySelector('.status');
+  const countdownBefore = root.querySelector('.time-value');
+  assert.ok(countdownBefore, 'the countdown rendered');
+  assert.equal(countdownBefore.textContent, '30:00', 'it starts at the real remaining time');
+  assert.equal(root.querySelector('.progress-bar-fill').style.width, '50%', 'the bar is half way');
+
+  // One second later: the same nodes, updated.
+  card.tick(new Date(now.getTime() + 1000));
+  assert.equal(root.querySelector('.status'), statusBefore, 'the status card was not rebuilt');
+  assert.equal(root.querySelector('.time-value'), countdownBefore, 'the countdown node is the same node');
+  assert.equal(countdownBefore.textContent, '29:59', 'and it advanced by a second');
+  assert.match(root.querySelector('.progress-bar-fill').style.width, /^50\.0/, 'the bar advanced too');
+
+  // Crossing a block boundary is a real transition, so the card does rebuild
+  // and recomputes the status from the new time.
+  card.tick(new Date(now.getTime() + 31 * 60 * 1000));
+  assert.notEqual(root.querySelector('.status'), statusBefore, 'the boundary re-rendered');
+  assert.match(root.textContent, /B Block/, 'the next block is now the current one');
+  assert.equal(root.querySelector('.time-value').textContent, '59:00', 'counting down the new block');
+});
+
+
 console.log(results.join('\n'));
 console.log(`\n${passed} passed, ${results.length - passed} failed`);
 process.exit(results.length - passed ? 1 : 0);
