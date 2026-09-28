@@ -228,22 +228,27 @@
     }
 
     // The full day as an accordion. Used by the primary card and by each friend
-    // card, so both open the same way.
-    function scheduleAccordion(owner, status, expanded, onToggle, note) {
+    // card, so both open the same way. When no toggle button is asked for, the
+    // caller owns the whole-card tap and the bare list just follows the state.
+    function scheduleAccordion(owner, status, expanded, onToggle, note, bare) {
       var filtered = ownerBlocks(owner);
       if (filtered.length === 0) return null;
 
-      var toggle = el('button', { type: 'button', class: 'schedule-toggle', 'aria-expanded': String(expanded) }, [
-        el('span', { class: 'toggle-title', html: CALENDAR_SVG + '<span>Schedule</span>' })
-      ]);
-      if (note) toggle.appendChild(el('span', { class: 'toggle-note', text: note }));
-      toggle.appendChild(el('span', { class: 'chevron' + (expanded ? ' open' : '') }));
-      toggle.addEventListener('click', onToggle);
-
       var inner = [el('ul', null, filtered.map(function (block) { return renderBlock(owner, block, status); }))];
+      var heading = null;
+
+      if (!bare) {
+        var toggle = el('button', { type: 'button', class: 'schedule-toggle', 'aria-expanded': String(expanded) }, [
+          el('span', { class: 'toggle-title', html: CALENDAR_SVG + '<span>Schedule</span>' })
+        ]);
+        if (note) toggle.appendChild(el('span', { class: 'toggle-note', text: note }));
+        toggle.appendChild(el('span', { class: 'chevron' + (expanded ? ' open' : '') }));
+        toggle.addEventListener('click', onToggle);
+        heading = el('div', { class: 'schedule-heading' }, [toggle]);
+      }
 
       return el('section', { class: 'schedule-list' + (expanded ? '' : ' collapsed') }, [
-        el('div', { class: 'schedule-heading' }, [toggle]),
+        heading,
         animatedCollapse(expanded, inner)
       ]);
     }
@@ -306,11 +311,16 @@
       var section = el('section', { class: 'status' }, [
         el('div', { class: 'status-heading-row' }, [
           el('p', { class: 'friend-heading', text: headingText }),
-          blockKey ? el('span', { class: 'current-block-badge', text: blockKey + ' Block' }) : null,
-          settingsButton()
+          blockKey ? el('span', { class: 'current-block-badge', text: blockKey + ' Block' }) : null
         ]),
         statusBody(owner, status)
       ]);
+
+      // The lunch-wave countdown used to live on the "Schedule" button. The day
+      // list now appears under a whole-card tap, so the note moves onto the
+      // card body where it stays visible whether the day is open or folded.
+      var note = lunchCountdown(owner, status.currentBlock);
+      if (note) section.appendChild(el('p', { class: 'schedule-note', text: note }));
 
       if (progressBar) {
         var fill = el('div', { class: 'progress-bar-fill', style: { width: (progressBar.percent * 100) + '%' } });
@@ -322,21 +332,28 @@
         ]));
       }
 
-      var card = el('div', { class: 'primary-card' }, [section]);
-      // Tapping anywhere on the collapsed card opens the day. The gear and the
-      // accordion toggle keep their own clicks so nothing double-toggles.
-      if (!state.scheduleExpanded) {
-        section.classList.add('is-tappable');
-        section.addEventListener('click', function (event) {
-          if (event.target.closest('.schedule-toggle, .settings-button-wrapper')) return;
-          state.scheduleExpanded = true;
-          render();
-        });
-      }
-      var accordion = scheduleAccordion(owner, status, state.scheduleExpanded, function () {
+      // The card body carries the whole tap target: tapping anywhere on the
+      // status area toggles the day either way, so the separate "Schedule"
+      // button is gone. The gear is pulled out to sit beside the card rather
+      // than inside the tap target, which keeps it reachable on its own (a
+      // button inside a button is not) and stops it toggling the day. The
+      // lunch-wave row is a tap target of its own and lives in the day list
+      // below, out of this handler's reach.
+      var card = el('div', { class: 'primary-card' }, [settingsButton(), section]);
+      section.classList.add('is-tappable');
+      section.setAttribute('role', 'button');
+      section.setAttribute('tabindex', '0');
+      section.setAttribute('aria-expanded', String(state.scheduleExpanded));
+      function toggleDay() {
         state.scheduleExpanded = !state.scheduleExpanded;
         render();
-      }, lunchCountdown(owner, status.currentBlock));
+      }
+      section.addEventListener('click', function () { toggleDay(); });
+      section.addEventListener('keydown', function (event) {
+        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); toggleDay(); }
+      });
+
+      var accordion = scheduleAccordion(owner, status, state.scheduleExpanded, null, null, true);
       if (accordion) card.appendChild(accordion);
       return card;
     }

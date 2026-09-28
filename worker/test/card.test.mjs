@@ -391,7 +391,13 @@ await test('tapping the collapsed primary card expands the whole day', async () 
   w.ScheduleCard.mount(root, { schedule, self, now: H.parseBlockTime('08:30', baseDate) });
 
   const status = root.querySelector('.status');
-  assert.ok(status.classList.contains('is-tappable'), 'the collapsed card reads as tappable');
+  assert.ok(status.classList.contains('is-tappable'), 'the card body reads as tappable');
+  assert.equal(status.querySelector('.schedule-toggle'), null, 'there is no separate Schedule button to aim at');
+  assert.equal(status.getAttribute('aria-expanded'), 'false', 'and the card announces it is folded');
+  // The gear is not inside the tap target: a button nested in a button is not
+  // operable, and it would toggle the day as well as open settings.
+  assert.equal(status.querySelector('.settings-button'), null, 'the gear sits outside the tap target');
+  assert.ok(root.querySelector('.primary-card > .settings-button-wrapper .settings-button'), 'and is still on the card');
   status.dispatchEvent(new w.Event('click', { bubbles: true }));
 
   assert.equal(root.querySelector('.schedule-list.collapsed'), null, 'the day is no longer collapsed');
@@ -399,6 +405,84 @@ await test('tapping the collapsed primary card expands the whole day', async () 
   assert.equal(blocks.length, 2, 'the whole timetable is revealed');
   assert.equal(blocks[0].textContent, 'A Block');
   assert.equal(blocks[1].textContent, 'B Block');
+
+  // The same card folds it back up: one control, both directions. The list
+  // stays in the DOM (collapsed to zero height), so the class is the signal.
+  const opened = root.querySelector('.status');
+  assert.equal(opened.getAttribute('aria-expanded'), 'true', 'the open card says so');
+  opened.dispatchEvent(new w.Event('click', { bubbles: true }));
+  assert.ok(root.querySelector('.schedule-list.collapsed'), 'tapping the card again folds the day away');
+  assert.equal(root.querySelector('.schedule-list .module-collapse').style.height, '0px', 'and it is collapsed to nothing');
+});
+
+await test('tapping the settings gear does not fold the primary card', async () => {
+  const d = new JSDOM('<div id="root"></div>', {
+    url: 'https://amos-donn.github.io/hilltoppers-schedule/index.html',
+    runScripts: 'dangerously',
+  });
+  const w = d.window;
+  for (const f of ['schedule-core.js', 'schedule-card.js']) {
+    const s = w.document.createElement('script');
+    s.textContent = readFileSync(repoPath(f), 'utf8');
+    w.document.head.appendChild(s);
+  }
+  const H = w.HT;
+  const baseDate = H.parseDateKey(H.todayKey());
+  const schedule = {
+    dateKey: H.todayKey(), dayType: null, details: null,
+    blocks: [{ id: 'b1', name: 'A Block', start: '08:00', end: '09:00' }],
+  };
+  const self = H.normalizeFriend({ email: 'me@example.com', name: 'Sam', grade: 11 });
+  const root = w.document.getElementById('root');
+  w.ScheduleCard.mount(root, { schedule, self, now: H.parseBlockTime('08:30', baseDate) });
+
+  root.querySelector('.status').dispatchEvent(new w.Event('click', { bubbles: true }));
+  assert.ok(root.querySelector('.schedule-list:not(.collapsed)'), 'the day is open');
+
+  // The gear is a sibling of the tap target, so its own click cannot also fold
+  // the day. Fire it and check the day is untouched.
+  const gear = root.querySelector('.primary-card > .settings-button-wrapper .settings-button');
+  assert.ok(gear, 'the gear is outside the tap target');
+  gear.dispatchEvent(new w.Event('click', { bubbles: true }));
+  assert.ok(root.querySelector('.schedule-list:not(.collapsed)'), 'the day stays open behind the gear');
+});
+
+await test('tapping a lunch-wave block row opens it without folding the day', async () => {
+  const d = new JSDOM('<div id="root"></div>', {
+    url: 'https://amos-donn.github.io/hilltoppers-schedule/index.html',
+    runScripts: 'dangerously',
+  });
+  const w = d.window;
+  for (const f of ['schedule-core.js', 'schedule-card.js']) {
+    const s = w.document.createElement('script');
+    s.textContent = readFileSync(repoPath(f), 'utf8');
+    w.document.head.appendChild(s);
+  }
+  const H = w.HT;
+  const baseDate = H.parseDateKey(H.todayKey());
+  const schedule = {
+    dateKey: H.todayKey(), dayType: null, details: null,
+    blocks: [{
+      id: 'b1', name: 'C Block', start: '11:20', end: '12:50',
+      subBlocks: [
+        { name: '1st Lunch', start: '11:20', end: '11:50' },
+        { name: '2nd Lunch', start: '11:35', end: '12:05' },
+      ],
+    }],
+  };
+  const self = H.normalizeFriend({ email: 'me@example.com', name: 'Sam', grade: 11, lunchWave: 1 });
+  const root = w.document.getElementById('root');
+  w.ScheduleCard.mount(root, { schedule, self, now: H.parseBlockTime('11:30', baseDate) });
+
+  root.querySelector('.status').dispatchEvent(new w.Event('click', { bubbles: true }));
+  assert.ok(root.querySelector('.schedule-list:not(.collapsed)'), 'the day is open');
+
+  // The row's own handler opens the lunch waves; the card must stay open too.
+  const row = root.querySelector('.block-row.expandable');
+  assert.ok(row, 'the lunch block row is expandable');
+  row.dispatchEvent(new w.Event('click', { bubbles: true }));
+  assert.ok(root.querySelector('.schedule-list:not(.collapsed)'), 'the day stays open behind the row');
+  assert.ok(root.querySelector('.subblock-list'), 'and the lunch waves are revealed');
 });
 
 await test("the friends section is one card per friend, expanding to their day", async () => {
