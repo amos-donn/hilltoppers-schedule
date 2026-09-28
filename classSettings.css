@@ -547,6 +547,18 @@ body, html {
   gap: 18px;
 }
 
+/* The three header lines (name, email, status) are separate stacked lines,
+   not prose, so they need explicit spacing rather than the default paragraph
+   margins. 8px matches the gap used between the card's blocks. */
+.class-settings__account-header {
+  display: grid;
+  gap: 8px;
+}
+
+.class-settings__account-header h3 {
+  margin: 0;
+}
+
 .class-settings__account-header h2 {
   margin: 0 0 6px;
 }
@@ -576,7 +588,8 @@ body, html {
 
 .class-settings__account-card {
   display: grid;
-  gap: 8px;
+  /* Same rhythm as the friends list: 16px between the card's blocks. */
+  gap: 16px;
 }
 
 .class-settings__account-summary {
