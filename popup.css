@@ -946,13 +946,16 @@ header {
   color: #7d8591;
 }
 
+/* Phosphor's caret-down, masked so the triangle keeps its colour and rotation
+   but matches the icon set. The 12px box leaves the visible caret about the
+   same 8x4px the old border triangle drew. */
 .chevron {
   display: inline-block;
-  width: 0;
-  height: 0;
-  border-style: solid;
-  border-width: 4px 4px 0 4px;
-  border-color: #161b22 transparent transparent transparent;
+  width: 12px;
+  height: 12px;
+  background-color: #161b22;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256'%3E%3Cpath fill='%23000' d='M213.66,101.66l-80,80a8,8,0,0,1-11.32,0l-80-80A8,8,0,0,1,53.66,90.34L128,164.69l74.34-74.35a8,8,0,0,1,11.32,11.32Z'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256'%3E%3Cpath fill='%23000' d='M213.66,101.66l-80,80a8,8,0,0,1-11.32,0l-80-80A8,8,0,0,1,53.66,90.34L128,164.69l74.34-74.35a8,8,0,0,1,11.32,11.32Z'/%3E%3C/svg%3E") center / contain no-repeat;
   transition: transform 0.2s ease;
 }
 
@@ -1297,8 +1300,8 @@ header {
   -webkit-appearance: none;
   border: 1px solid rgba(17, 17, 17, 0.14);
   border-radius: 4px;
-  /* Triangle ~8×4px to match .chevron (border 4px sides) */
-  background: #ffffff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='4'%3E%3Cpath d='M0 0l4 4 4-4z' fill='%237d8591'/%3E%3C/svg%3E") no-repeat right 6px center;
+  /* Phosphor caret-down, so the native arrow matches .chevron. */
+  background: #ffffff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256' fill='%237d8591'%3E%3Cpath d='M213.66,101.66l-80,80a8,8,0,0,1-11.32,0l-80-80A8,8,0,0,1,53.66,90.34L128,164.69l74.34-74.35a8,8,0,0,1,11.32,11.32Z'/%3E%3C/svg%3E") no-repeat right 6px center;
   padding: 3px 16px 3px 8px;
   font-size: 12px;
   font-weight: 600;

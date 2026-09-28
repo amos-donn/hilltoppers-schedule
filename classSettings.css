@@ -83,6 +83,11 @@ body, html {
   color: var(--accent);
 }
 
+/* The check was a text glyph; it is a Phosphor icon now, so size it to the
+   label rather than relying on the font. */
+.class-settings__saved-icon { display: inline-flex; }
+.class-settings__saved-icon svg { width: 14px; height: 14px; display: block; }
+
 .class-settings__autosave-spinner {
   width: 14px;
   height: 14px;
@@ -761,6 +766,9 @@ body, html {
   line-height: 1;
   cursor: pointer;
 }
+
+/* The icon is an inline SVG now rather than a text arrow, so centre it. */
+.class-settings__icon-button svg { display: block; margin: 0 auto; }
 
 .class-settings__icon-button:disabled {
   opacity: 0.35;
