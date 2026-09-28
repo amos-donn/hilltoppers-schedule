@@ -9,7 +9,7 @@
       standalone so it can be embedded as a Topping. The CSS below is the
       extension's popup.css, copied unchanged, so the card renders identically.
     -->
-    <link rel="stylesheet" href="popup.css" />
+    <link rel="stylesheet" href="popup.css?v=20260928" />
     <!--
       In the extension the popup is a 352px window with a 320px card inside it.
       Embedded as a Topping the host picks the width, so the 16px gutter would
@@ -81,17 +81,39 @@
     -->
     <div id="root" data-topping-content></div>
 
-    <script src="schedule-core.js"></script>
-    <script src="account.js"></script>
-    <script src="schedule-friends.js"></script>
-    <script src="schedule-card.js"></script>
-    <script src="toppings-resize.js" defer></script>
+    <script src="schedule-core.js?v=20260928"></script>
+    <script src="account.js?v=20260928"></script>
+    <script src="schedule-friends.js?v=20260928"></script>
+    <script src="schedule-card.js?v=20260928"></script>
+    <script src="toppings-resize.js?v=20260928" defer></script>
     <script>
       (function () {
         'use strict';
+
+        // Nothing here may leave the page blank. GitHub Pages caches every file
+        // for ten minutes under an unversioned name, so a just-deployed HTML can
+        // briefly run against a script from before that deploy. If any startup
+        // step throws and the card has nothing to show, put a message up instead
+        // of an empty surface.
+        window.addEventListener('error', function () {
+          var root = document.getElementById('root');
+          if (root && root.children.length === 0) {
+            root.innerHTML = '<main class="popup"><section class="status">' +
+              '<p class="friend-heading">Hilltoppers Schedule</p>' +
+              '<div class="status-ended"><h2>Could not load the card.</h2>' +
+              '<p>Please refresh the page.</p></div></section></main>';
+          }
+        });
+
         var H = window.HT;
         var A = window.HTAccount;
         var F = window.HTFriends;
+
+        // Both of these are new in this page, so a schedule-friends.js cached
+        // from before the deploy may not export them. Calling a missing one
+        // throws before the card mounts, so they degrade to "no self schedule".
+        var selfFromLocal = F && typeof F.selfFromLocal === 'function' ? F.selfFromLocal : function () { return null; };
+        var selfFromAccount = F && typeof F.selfFromAccount === 'function' ? F.selfFromAccount : function () { return null; };
 
         // A share link carries the sender's preferences in the fragment. Import
         // it before mounting so the friend appears in the Friends list immediately.
@@ -116,7 +138,7 @@
         var signInPrompt = null;
         // Your own schedule, when this browser is configured. Inside the frame,
         // where localStorage is unreachable, it comes from the account instead.
-        var self = F.selfFromLocal();
+        var self = selfFromLocal();
 
         var card = window.ScheduleCard.mount(document.getElementById('root'), {
           friends: friends,
@@ -140,7 +162,7 @@
           if (importShare()) {
             friends = H.loadFriends();
             selectedFriend = H.loadSelectedFriend();
-            self = F.selfFromLocal();
+            self = selfFromLocal();
             card.update({ friends: friends, selectedFriend: selectedFriend, self: self });
           }
         });
@@ -159,7 +181,7 @@
           // unreachable; opened directly the friends still come from localStorage
           // so a signed-out visitor and a signed-in one see the same list.
           var me = await A.refresh();
-          if (me) self = F.selfFromAccount(me) || self;
+          if (me) self = selfFromAccount(me) || self;
 
           if (F.isEmbedded(window)) {
             var outcome = await F.loadAccountFriends(A, me);
@@ -203,7 +225,7 @@
             card.update({ friends: friends, selectedFriend: selectedFriend });
           } else if (e.key === 'identity' || e.key === 'schedulePreferences' || e.key === 'blockPreferences') {
             // The settings page saved something that changes your own schedule.
-            self = F.selfFromLocal();
+            self = selfFromLocal();
             card.update({ self: self });
           }
         });
