@@ -637,6 +637,21 @@ await test('a stale cached schedule-friends.js does not blank the page', async (
   assert.match(page.text(), /Settings/, 'the card still shows its settings affordance');
 });
 
+await test('the narrow-frame inset is the same on all four sides', async () => {
+  // A frame narrower than the extension window swaps the card's 16px gutter
+  // for a small inset. That inset was once horizontal-only, so the card sat
+  // flush against the frame's top edge while being gapped on the sides -- a
+  // visibly lopsided frame. The padding is a single shorthand value, so the
+  // sides cannot drift from the top and bottom again.
+  const match = rawHtml.match(/@media \(max-width: 480px\)\s*\{[\s\S]*?\.popup\s*\{([^}]*)\}/);
+  assert.ok(match, 'the narrow-frame rule for .popup is present');
+  const padding = match[1].match(/padding:\s*([^;]+);/);
+  assert.ok(padding, '.popup sets a padding');
+  const parts = padding[1].trim().split(/\s+/);
+  assert.equal(parts.length, 1, 'padding is one value, so every side matches: ' + padding[1]);
+  assert.equal(parts[0], '12px', 'and it is the intended inset');
+});
+
 console.log(results.join('\n'));
 console.log(`\n${passed} passed, ${results.length - passed} failed`);
 process.exit(results.length - passed ? 1 : 0);
