@@ -9,7 +9,7 @@
       standalone so it can be embedded as a Topping. The CSS below is the
       extension's popup.css, copied unchanged, so the card renders identically.
     -->
-    <link rel="stylesheet" href="popup.css?v=20260928c" />
+    <link rel="stylesheet" href="popup.css?v=20260928d" />
     <!--
       In the extension the popup is a 352px window with a 320px card inside it.
       Embedded as a Topping the host picks the width, so the 16px gutter would
@@ -55,10 +55,12 @@
        * frame itself is the edge -- an inner 1px line at nearly the same size
        * read as clutter. Without it the card and the page behind it were two
        * different colours (a white card on a grey page), so they now share one
-       * colour and blend into a single surface. The small controls keep their
-       * own borders, which is where definition still helps.
+       * colour and blend into a single surface. That colour is the friend
+       * cards' white, so the whole page reads as one card stock rather than a
+       * tinted backdrop with cards floating on it. The small controls keep
+       * their own borders, which is where definition still helps.
        */
-      body, html, .popup, .status { background: #fafbf7; }
+      body, html, .popup, .status { background: #ffffff; }
 
       /* The empty state's sign-in offer: the Google button, matching the
          settings page's, shown when an embedded card cannot reach the
@@ -85,11 +87,11 @@
     -->
     <div id="root" data-topping-content></div>
 
-    <script src="schedule-core.js?v=20260928c"></script>
-    <script src="account.js?v=20260928c"></script>
-    <script src="schedule-friends.js?v=20260928c"></script>
-    <script src="schedule-card.js?v=20260928c"></script>
-    <script src="toppings-resize.js?v=20260928c" defer></script>
+    <script src="schedule-core.js?v=20260928d"></script>
+    <script src="account.js?v=20260928d"></script>
+    <script src="schedule-friends.js?v=20260928d"></script>
+    <script src="schedule-card.js?v=20260928d"></script>
+    <script src="toppings-resize.js?v=20260928d" defer></script>
     <script>
       (function () {
         'use strict';
