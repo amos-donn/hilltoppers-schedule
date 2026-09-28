@@ -59,6 +59,71 @@ body, html {
    below (grid, flex) can never beat the hidden attribute. */
 .dashboard [hidden] { display: none !important; }
 
+/* --- buttons ------------------------------------------------------------ */
+
+/* classSettings.css styles `.class-settings button.secondary` and its
+   siblings, but this page's root is .dashboard, not .class-settings, so none
+   of those rules match. Reset, Copy, Search, Dismiss and Delete all fell back
+   to the browser's grey widget with its 2px black border and no radius.
+   These re-state the same three classes wherever they sit in the dashboard:
+   rounded, green, and lighter on hover. */
+.dashboard button.primary,
+.dashboard button.secondary,
+.dashboard button.tertiary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 9px 16px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease,
+    color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.dashboard button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #ffffff;
+}
+
+.dashboard button.primary:not(:disabled):hover {
+  background: #6f9479;
+  border-color: #6f9479;
+  box-shadow: 0 6px 14px rgba(87, 121, 98, 0.22);
+}
+
+.dashboard button.secondary {
+  background: #e7eee0;
+  border-color: #cdddc4;
+  color: #38533f;
+}
+
+.dashboard button.secondary:not(:disabled):hover {
+  background: #eff5e9;
+  border-color: #b7c9ae;
+}
+
+.dashboard button.tertiary {
+  background: transparent;
+  border-color: transparent;
+  color: var(--accent);
+}
+
+.dashboard button.tertiary:not(:disabled):hover {
+  background: #e7eee0;
+  color: #345840;
+}
+
+.dashboard button.primary:disabled,
+.dashboard button.secondary:disabled,
+.dashboard button.tertiary:disabled { opacity: 0.55; cursor: default; }
+
 /* --- shell ------------------------------------------------------------- */
 
 .dashboard {
@@ -75,6 +140,10 @@ body, html {
   height: 100dvh;
   display: flex;
   flex-direction: column;
+  /* The nav is five rows and the footer is fixed, so the column never needs to
+     scroll; hiding the overflow stops a short window from growing a scrollbar
+     and shifting the layout. */
+  overflow: hidden;
   padding: 28px 14px 16px;
   background: #f2f5ee;
   border-right: 1px solid var(--border);
