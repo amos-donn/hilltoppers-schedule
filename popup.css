@@ -1438,8 +1438,11 @@ header {
 
 /* --- friends list (standalone page; not in the extension) -------------- */
 /* The friends section sits below the status card. A hairline rule separates
-   them, so the two card groups read as sections rather than one long stack;
-   the margin and padding put equal air above and below the line. */
+   them, so the two card groups read as sections rather than one long stack.
+   The margin and padding are both 12px, putting equal air above and below the
+   line. The card's own bottom margin is 12px too: these are adjacent siblings,
+   so their margins collapse to the larger one, and a larger card margin would
+   push the line further from the card than from the heading. */
 .friends-list {
   display: flex;
   flex-direction: column;
@@ -1616,7 +1619,10 @@ header {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  margin-bottom: 16px;
+  /* Matches the friends section's top margin below it. Adjacent sibling
+     margins collapse to the larger of the two, so a larger value here would
+     push the divider further from the card than from the heading under it. */
+  margin-bottom: 12px;
   position: relative;
 }
 
