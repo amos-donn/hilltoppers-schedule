@@ -20,16 +20,30 @@
       internal padding, so nothing crowds the border.
     -->
     <style>
+      /* Embedded as a Topping the frame decides the width. The card's min-width
+         is a phone-popup floor that would otherwise force the document wider
+         than a narrow frame and add a horizontal scrollbar. The spec's floor is
+         a ~318px viewport (a 320px card inside the extension's frame), so every
+         row here is built to wrap before it would overflow that. */
+      *, *::before, *::after { box-sizing: border-box; }
+      html, body { max-width: 100%; overflow-x: hidden; }
+      html, body { margin: 0; min-height: 0; }
+      #root { width: 100%; min-width: 0; display: flow-root; }
+      img, video, input, textarea, select { max-width: 100%; }
+
       @media (max-width: 480px) {
-        .popup { padding: 0; }
+        .popup { padding: 0; min-width: 0; }
       }
 
-      /* Embedded as a Topping the frame decides the width. The card's
-         min-width is a phone-popup floor that would otherwise force the
-         document wider than a narrow frame and add a horizontal scrollbar. */
-      html, body { max-width: 100%; overflow-x: hidden; }
-      @media (max-width: 480px) {
-        .popup { min-width: 0; }
+      /* Narrow frames: keep the friend's live status on one line by letting the
+         course shrink, and drop the email before it crowds the row. */
+      @media (max-width: 360px) {
+        .current-name { font-size: 18px; }
+        .time-value { font-size: 20px; }
+        .friend-card-head { padding: 9px 10px; gap: 6px 8px; }
+      }
+      @media (max-width: 320px) {
+        .friend-email { display: none; }
       }
 
       /*
@@ -58,12 +72,20 @@
     </style>
   </head>
   <body>
-    <div id="root"></div>
+    <!--
+      The Topping spec's content-height wrapper. Height mode is the host's
+      choice; in "content" mode resize.js measures this element and reports the
+      height so the frame can grow and shrink with the accordions. It must be a
+      natural-height container, never a viewport-height one, or shrinking would
+      not work. In the default "fixed" mode the helper simply never enables.
+    -->
+    <div id="root" data-topping-content></div>
 
     <script src="schedule-core.js"></script>
     <script src="account.js"></script>
     <script src="schedule-friends.js"></script>
     <script src="schedule-card.js"></script>
+    <script src="toppings-resize.js" defer></script>
     <script>
       (function () {
         'use strict';
@@ -92,10 +114,14 @@
         var friends = H.loadFriends();
         var selectedFriend = H.loadSelectedFriend();
         var signInPrompt = null;
+        // Your own schedule, when this browser is configured. Inside the frame,
+        // where localStorage is unreachable, it comes from the account instead.
+        var self = F.selfFromLocal();
 
         var card = window.ScheduleCard.mount(document.getElementById('root'), {
           friends: friends,
           selectedFriend: selectedFriend,
+          self: self,
           emptyActionHtml: function () { return signInPrompt; },
           onEmptyAction: function () {
             // Not A.signIn(): that navigates the current page, and this page is
@@ -114,7 +140,8 @@
           if (importShare()) {
             friends = H.loadFriends();
             selectedFriend = H.loadSelectedFriend();
-            card.update({ friends: friends, selectedFriend: selectedFriend });
+            self = F.selfFromLocal();
+            card.update({ friends: friends, selectedFriend: selectedFriend, self: self });
           }
         });
 
@@ -127,21 +154,30 @@
           '</svg>';
 
         async function refreshAccountFriends() {
-          if (!F.isEmbedded(window)) return;
-          var outcome = await F.loadAccountFriends(A);
-          if (outcome.signedOut) {
-            // Either signed out, or the browser withheld the third-party cookie.
-            // Both are the same to us: offer sign-in rather than looking empty.
-            signInPrompt = '<button type="button">' + GOOGLE_ICON + 'Sign in to view friends!</button>';
-          } else if (outcome.friends.length > 0) {
-            signInPrompt = null;
+          // Signed in, the account is the source of truth for your own schedule.
+          // The grant list is only needed inside the frame, where localStorage is
+          // unreachable; opened directly the friends still come from localStorage
+          // so a signed-out visitor and a signed-in one see the same list.
+          var me = await A.refresh();
+          if (me) self = F.selfFromAccount(me) || self;
+
+          if (F.isEmbedded(window)) {
+            var outcome = await F.loadAccountFriends(A, me);
+            if (outcome.signedOut) {
+              // Either signed out, or the browser withheld the third-party
+              // cookie. Both are the same to us: offer sign-in rather than
+              // looking empty.
+              signInPrompt = '<button type="button">' + GOOGLE_ICON + 'Sign in to view friends!</button>';
+            } else if (outcome.friends.length > 0) {
+              signInPrompt = null;
+            }
+            friends = F.mergeFriends(H.loadFriends(), outcome.friends);
           }
-          friends = F.mergeFriends(H.loadFriends(), outcome.friends);
-          card.update({ friends: friends, selectedFriend: selectedFriend });
+          card.update({ friends: friends, selectedFriend: selectedFriend, self: self });
         }
 
         function refresh() {
-          card.update({ friends: friends, selectedFriend: selectedFriend });
+          card.update({ friends: friends, selectedFriend: selectedFriend, self: self });
           H.loadBlocksForDate(new Date()).then(function (result) {
             card.update({ schedule: result });
           }).catch(function () {
@@ -165,6 +201,10 @@
             friends = H.loadFriends();
             selectedFriend = H.loadSelectedFriend();
             card.update({ friends: friends, selectedFriend: selectedFriend });
+          } else if (e.key === 'identity' || e.key === 'schedulePreferences' || e.key === 'blockPreferences') {
+            // The settings page saved something that changes your own schedule.
+            self = F.selfFromLocal();
+            card.update({ self: self });
           }
         });
 

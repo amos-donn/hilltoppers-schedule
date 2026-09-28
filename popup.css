@@ -1442,41 +1442,66 @@ header {
   color: #7d8591;
 }
 
-.friend-rows {
+.friend-cards {
   list-style: none;
   margin: 0;
   padding: 0;
-  border: 1px solid rgba(17, 17, 17, 0.18);
-  border-radius: 8px;
-  overflow: hidden;
-  background: #ffffff;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
-.friend-row {
-  display: flex;
+/* One friend per card: the head is the live summary and the tap target, the
+   accordion below it holds their whole day. */
+.friend-card {
+  border: 1px solid rgba(17, 17, 17, 0.14);
+  border-radius: 8px;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.friend-card.is-selected {
+  border-color: rgba(26, 127, 55, 0.38);
+}
+
+.friend-card.is-open {
+  border-color: rgba(26, 127, 55, 0.28);
+}
+
+.friend-card-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  gap: 8px 10px;
   padding: 10px 12px;
   cursor: pointer;
   transition: background 0.2s ease;
 }
 
-.friend-row + .friend-row {
-  border-top: 1px solid rgba(17, 17, 17, 0.08);
-}
-
-.friend-row:hover {
+.friend-card-head:hover {
   background: #f7f8fb;
 }
 
-.friend-row:focus-visible {
+.friend-card-head:focus-visible {
   outline: 2px solid #1a7f37;
   outline-offset: -2px;
 }
 
-.friend-row.is-selected {
-  background: rgba(26, 127, 55, 0.08);
+.friend-card-chevron {
+  flex: none;
+  display: inline-flex;
+  color: #7d8591;
+  transition: transform 0.18s ease;
+}
+
+.friend-card-chevron svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
+.friend-card-chevron.open {
+  transform: rotate(180deg);
 }
 
 .friend-identity {
@@ -1503,14 +1528,16 @@ header {
   white-space: nowrap;
 }
 
-/* The right column answers "what class are they in", so the block badge and
-   course line up across every row instead of starting at each name's width. */
-.friend-class {
+/* What the friend is in right now. Wraps to a second line on a narrow frame
+   rather than squeezing the course out of existence. */
+.friend-status {
   display: flex;
   align-items: center;
-  gap: 6px;
-  flex: 0 0 auto;
-  max-width: 62%;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .friend-block-badge {
@@ -1532,13 +1559,88 @@ header {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 0;
 }
 
-.friend-class.is-free .friend-course {
+.friend-status.is-free .friend-course {
   color: #7d8591;
 }
 
-.friend-class--none span {
+.friend-time {
+  flex: 0 0 auto;
+  font-size: 12px;
+  font-weight: 600;
+  color: #4a5560;
+  font-variant-numeric: tabular-nums;
+}
+
+.friend-status--none span {
   font-size: 12px;
   color: #7d8591;
+}
+
+/* The friend's accordion sits inside the card, so its own border would double
+   up with the card's. Let the list supply the edge. */
+.friend-card .schedule-list {
+  margin: 0;
+}
+
+.friend-card .schedule-list .schedule-heading {
+  display: none;
+}
+
+.friend-card .schedule-list ul {
+  border: 0;
+  border-top: 1px solid rgba(17, 17, 17, 0.08);
+  border-radius: 0;
+}
+
+/* --- primary card accordion (standalone page) -------------------------- */
+.primary-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.primary-card .status {
+  margin-bottom: 0;
+}
+
+/* Collapsed, the whole status card is one tap target, so it reads as
+   pressable without a separate button. */
+.status.is-tappable {
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.status.is-tappable:hover {
+  background: #f4f7f4;
+}
+
+.status.is-tappable:focus-visible {
+  outline: 2px solid #1a7f37;
+  outline-offset: -2px;
+}
+
+/* The period badge and the block's time span, so the collapsed card names the
+   period and its hours as well as the subject. */
+.current-block-badge {
+  display: inline-block;
+  margin-bottom: 2px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #f0f2f5;
+  color: #555f6a;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.current-period {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: #606770;
+  font-variant-numeric: tabular-nums;
 }

@@ -39,9 +39,10 @@ else's card, send them your link:
    your email. It appears in their **Friends** list, where they can reorder or
    remove it.
 
-The card's **Friends** list shows every friend in the order set in Settings, each
-with the class they are in right now (for example `C Block · AP US History`).
-Tapping a row shows that person's schedule in the card above it.
+The card's **Friends' Schedules** section shows every friend in the order set in
+Settings, each as its own card with the class they are in right now (for example
+`C Block · AP US History`). Tapping a friend's card expands their whole day as an
+accordion.
 
 How it works, and its limits:
 
@@ -75,8 +76,28 @@ popup.css           the extension's popup.css, copied unchanged
 classSettings.css   the extension's classSettings.css, copied unchanged
 dashboard.css       the settings page's Hilltoppers shell: sidebar tabs, the
                     sage palette, custom dropdowns, and the Google button
+toppings-resize.js  the Topping spec's content-height helper, copied unchanged
 schedule/           the bell schedules, bundled (see below)
 ```
+
+### The card's shape
+
+Two sections, both built from the same day's blocks:
+
+- **Your schedule** — the primary card. Collapsed it is the live status card: the
+  period badge, the subject, the period's time span and the time left, with the
+  progress bar underneath. Tapping anywhere on it expands the whole day as an
+  accordion. Who this is depends on how the page is running: opened directly and
+  signed in, it is your account's own courses; opened directly and signed out, it
+  falls back to the selected friend; embedded, it is the signed-in account (the
+  frame cannot read the local settings).
+- **Friends' Schedules** — one card per friend, each showing their name and the
+  class they are in right now. Tapping a card expands their whole day as an
+  accordion of its own.
+
+Both countdowns tick in place; only the text nodes and progress fills are
+written each second, and a full render happens at a block boundary (see the
+commit history for why that matters).
 
 ### Where the card's friends come from
 
@@ -145,6 +166,29 @@ different rules, and that is where discrepancies come from.
 Measure, don't eyeball: render both at the same width and compare
 `getBoundingClientRect()` on `.popup` / `.status` / `.schedule-list ul`.
 
+### Building for the Topping frame
+
+From the main repository's `AGENTS.md` and `worker/README.md`:
+
+- The extension's popup has a **320px minimum content width** plus 16px padding,
+  so its window is 352px. The Topping card is 320px wide including its 1px
+  borders, leaving about **318px for the iframe viewport**.
+- Build for the frame's actual width, not a hard-coded 320px. No fixed widths or
+  minimum widths that would overflow; let text wrap and keep images and controls
+  inside their container.
+- Height is the host's choice: `heightMode: "fixed"` (the default, a scrolling
+  frame) or `heightMode: "content"`, where the frame grows and shrinks with the
+  content. Content mode needs the Topping to load the spec's `resize.js` and wrap
+  its content in `[data-topping-content]`; this page copies `resize.js` to
+  `toppings-resize.js` and puts the attribute on `#root`. The wrapper must be a
+  natural-height element (no `100vh`, no fixed scrolling height) or shrinking
+  will not work. The accordions are exactly the case content mode is for.
+
+Verify at 318px, 360px and wider. `index.html` carries the responsive resets the
+spec asks for (`box-sizing`, `max-width: 100%`, `overflow-wrap`) and drops the
+friend's email below 320px so the live-status row never forces a horizontal
+scrollbar.
+
 ## Embedding
 
 ```html
@@ -161,6 +205,12 @@ Measure, don't eyeball: render both at the same width and compare
 - `allow-popups` — opens the Daily Bulletin, the settings page, and sign-in in a
   new tab (sign-in must be a tab: Google will not render its consent screen in
   an iframe)
+
+For **Fit content** height mode, the host should send the context message the
+spec defines. `toppings-resize.js` reports the height only once it has seen a
+`{channel: 'hilltoppers-topping-v1', type: 'context', heightMode: 'content'}`
+message, so a fixed-height host needs no reply and the page simply never
+resizes.
 
 Note `allow-same-origin` together with `allow-scripts` means the frame is *not*
 treated as a unique opaque origin, so it can still reach the Worker. The card
