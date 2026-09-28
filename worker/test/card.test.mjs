@@ -354,11 +354,16 @@ await test('the collapsed primary card shows the period, subject and remaining t
 
   // Collapsed: the day's list is not rendered, only the status card.
   assert.equal(root.querySelector('.schedule-list.collapsed') !== null, true, 'the day starts collapsed');
-  assert.match(root.querySelector('.current-block-badge').textContent, /A Block/, 'the period is named');
-  assert.match(root.querySelector('.current-name').textContent, /Chemistry/, 'the subject is named');
-  assert.match(root.querySelector('.current-period').textContent, /8:00/, 'and its time span');
+  assert.match(root.querySelector('.current-period').textContent, /8:00/, 'the block time span is named');
   assert.equal(root.querySelector('.time-value').textContent, '30:00', 'and the remaining time');
   assert.match(root.querySelector('.friend-heading').textContent, /Sam/, "the card is headed with the viewer's name");
+  // The period badge sits on the name row next to the name, not stacked above
+  // the subject, so the top of the card stays compact.
+  const badge = root.querySelector('.status-heading-row .current-block-badge');
+  assert.ok(badge, 'the period badge lives on the name row');
+  assert.match(badge.textContent, /A Block/, 'and names the period');
+  assert.equal(root.querySelector('.current-details .current-block-badge'), null, 'the badge is not repeated above the subject');
+  assert.match(root.querySelector('.current-name').textContent, /Chemistry/, 'the subject is named on its own line');
 });
 
 await test('tapping the collapsed primary card expands the whole day', async () => {
