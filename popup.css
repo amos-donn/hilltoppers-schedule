@@ -1402,12 +1402,25 @@ header {
   white-space: nowrap;
 }
 
-/* --- status card heading (friend name + block badge + gear) ------------- */
+/* --- status card heading (friend name + block badge) ------------------- */
 .status-heading-row {
   display: flex;
   align-items: center;
   gap: 8px;
   margin-bottom: 6px;
+}
+
+/* The primary card overlays its gear on the corner, so reserve that corner
+   there; elsewhere (the empty state) the gear is inline and needs no inset. */
+.primary-card .status-heading-row {
+  padding-right: 30px;
+}
+
+/* Inline gear, used by the empty state where there is no day to fold. Pushes
+   itself to the right and pulls its padding back to sit flush with the card. */
+.status-heading-row .settings-button-wrapper {
+  flex: 0 0 auto;
+  margin: -6px -6px -6px auto;
 }
 
 .status-heading-row .friend-heading {
@@ -1421,15 +1434,6 @@ header {
 .status-heading-row .current-block-badge {
   margin-bottom: 0;
   flex: 0 0 auto;
-}
-
-/* Tucked into the card's top-right corner so it reads as part of the card
-   rather than a bar above it. The negative offsets pull back the button's own
-   padding, keeping the name and heading flush with the card edges; the auto
-   margin keeps it on the right now that the badge shares the row. */
-.status-heading-row .settings-button-wrapper {
-  flex: 0 0 auto;
-  margin: -6px -6px -6px auto;
 }
 
 /* --- friends list (standalone page; not in the extension) -------------- */
@@ -1608,14 +1612,26 @@ header {
   flex-direction: column;
   gap: 6px;
   margin-bottom: 16px;
+  position: relative;
 }
 
 .primary-card .status {
   margin-bottom: 0;
 }
 
-/* Collapsed, the whole status card is one tap target, so it reads as
-   pressable without a separate button. */
+/* The gear overlays the card's top-right corner. Pulled out of the tap target
+   so it stays its own control: a button nested inside a button is not operable,
+   and this way it never toggles the day. The offsets pull back the button's own
+   padding, keeping the name row flush with the card edge. */
+.primary-card > .settings-button-wrapper {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 1;
+}
+
+/* The card body is the accordion control. It reads as pressable whether the
+   day is open or folded, so either tap is obvious. */
 .status.is-tappable {
   cursor: pointer;
   transition: background 0.15s ease;
@@ -1628,6 +1644,23 @@ header {
 .status.is-tappable:focus-visible {
   outline: 2px solid #1a7f37;
   outline-offset: -2px;
+}
+
+/* The lunch-wave countdown, moved off the old "Schedule" button. */
+.schedule-note {
+  margin: 8px 0 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: #4a5560;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The primary card's day list sits directly below the card body with no toggle
+   bar between them, so it stays inside the same card surface. The card's own
+   6px flex gap supplies the rest of the breathing room. */
+.primary-card > .schedule-list {
+  margin-top: 4px;
+  min-width: 0;
 }
 
 /* The period badge and the block's time span, so the collapsed card names the
