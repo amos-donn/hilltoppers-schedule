@@ -51,9 +51,15 @@ function mountPage(options = {}) {
   });
   const w = d.window;
   w.addEventListener('error', (e) => errors.push(String(e.error || e.message)));
-  for (const file of ['schedule-core.js', 'account.js']) {
+  const sources = {
+    'schedule-core.js': readFileSync(repoPath('schedule-core.js'), 'utf8'),
+    // A stale deploy can pair fresh HTML with the account.js from before it,
+    // so a test can substitute that older module.
+    'account.js': options.accountSource || readFileSync(repoPath('account.js'), 'utf8'),
+  };
+  for (const [file, source] of Object.entries(sources)) {
     const s = w.document.createElement('script');
-    s.textContent = readFileSync(repoPath(file), 'utf8');
+    s.textContent = source;
     w.document.head.appendChild(s);
   }
   const inline = html.split('<script>').pop().split('</script>')[0];
@@ -460,6 +466,47 @@ await test('clearing a notice removes just that row', async () => {
 
   const after = $('notice-list').querySelectorAll('.class-settings__notice').length;
   assert.equal(after, before - 1, 'only the cleared notice is gone');
+});
+
+await test('a stale cached account.js does not leave Clear a silent no-op', async () => {
+  // GitHub Pages caches account.js for ten minutes under an unversioned name,
+  // and PR #32 added dismissNotice to it without bumping the ?v= query, so a
+  // freshly deployed settings.html briefly ran against the older module. The
+  // Clear handler called the missing export, threw, and the notice stayed put.
+  // Bumping the query is the real fix; the button should not fail silently if
+  // the mismatch happens again.
+  const staleAccount = readFileSync(repoPath('account.js'), 'utf8')
+    .replace(/    dismissNotice: dismissNotice,\n/, '');
+
+  await signInAs('sub-stale-owner-page', 'stale.owner@example.org', 'Stale Owner');
+  await window.HTAccount.refresh();
+  await settle();
+  await window.HTAccount.updateProfile({ isPublic: false, autoGrant: false, displayName: 'Stale Owner' });
+  await window.HTAccount.refresh();
+  const ownerId = db.prepare("SELECT profile_id FROM accounts WHERE google_sub = 'sub-stale-owner-page'").get();
+
+  const daveCookie = await signInAs('sub-stale-dave-page', 'stale.dave@example.org', 'Stale Dave');
+  await asOther(daveCookie, async () => {
+    await window.HTAccount.updateProfile({ displayName: 'Stale Dave' });
+    await window.HTAccount.askForSchedule(ownerId.profile_id);
+  });
+
+  const stale = mountPage({ accountSource: staleAccount });
+  await signInAs('sub-stale-owner-page', 'stale.owner@example.org', 'Stale Owner');
+  await stale.window.HTAccount.refresh();
+  await stale.settle();
+
+  const staleRow = stale.$('notice-list').querySelector('.class-settings__notice');
+  assert.ok(staleRow, 'the owner has a notice to clear');
+  staleRow.dispatchEvent(new stale.window.Event('click'));
+  await stale.settle(2);
+  const staleClear = [...stale.$('notice-list').querySelectorAll('.class-settings__notice-actions button')]
+    .find((b) => b.textContent === 'Clear');
+  assert.ok(staleClear, 'the open notice offers Clear');
+  staleClear.dispatchEvent(new stale.window.Event('click'));
+  await stale.settle(2);
+
+  assert.equal(stale.errors.length, 0, 'no uncaught error escapes: ' + stale.errors.join(' | '));
 });
 
 await test('the account page is built from cards, like every other tab', async () => {
