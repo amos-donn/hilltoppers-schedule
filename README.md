@@ -99,6 +99,7 @@ dashboard.css       the settings page's Hilltoppers shell: sidebar tabs, the
                     sage palette, custom dropdowns, and the Google button
 toppings-resize.js  the Topping spec's content-height helper, copied unchanged
 schedule/           the bell schedules, bundled (see below)
+icons/              the site's logo, favicons, and Apple touch icon
 ```
 
 ### The card's shape
