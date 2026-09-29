@@ -128,7 +128,11 @@ body, html {
 
 .dashboard {
   display: grid;
-  grid-template-columns: 236px minmax(0, 1fr);
+  /* 288px, not 236px: the brand is a horizontal lockup (logo + title +
+     subtitle), and at 236px the text column is ~130px -- too narrow for
+     "Hilltopper Friends" to sit on one line once the title is a readable size,
+     so it wrapped to two. */
+  grid-template-columns: 288px minmax(0, 1fr);
   min-height: 100dvh;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
@@ -165,16 +169,27 @@ body, html {
 
 .dashboard__mark {
   display: block;
-  width: 30px;
-  height: 30px;
+  width: 46px;
+  height: 46px;
   flex: none;
-  border-radius: 50%;
+  /* The artwork is its own rounded square; clipping it to a circle would cut
+     the corners off the badge, so it keeps its original shape. */
   object-fit: contain;
 }
 
-.dashboard__brand-text { display: grid; gap: 1px; min-width: 0; }
-.dashboard__brand-text strong { font-size: 15px; font-weight: 650; letter-spacing: -0.3px; }
-.dashboard__brand-text small { font-size: 11px; color: var(--muted); }
+.dashboard__brand-text { display: grid; gap: 4px; min-width: 0; }
+.dashboard__brand-text strong {
+  font-size: 17px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  line-height: 1.3;
+}
+.dashboard__brand-text small {
+  font-size: 11px;
+  line-height: 1.4;
+  letter-spacing: 0.01em;
+  color: var(--muted);
+}
 
 /* --- tabs -------------------------------------------------------------- */
 
