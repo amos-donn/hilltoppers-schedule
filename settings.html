@@ -669,7 +669,6 @@
         // appears with an account; signing in is offered inside the Account
         // panel instead, where the Google button lives.
         var topbarAuth = document.getElementById('topbar-auth');
-        var panelNotices = document.getElementById('panel-notices');
         var noticesTabBadge = document.getElementById('notices-tab-badge');
         var displayName = document.getElementById('display-name');
         var profileIdInput = document.getElementById('profile-id');
@@ -700,7 +699,6 @@
             requestsPanel.hidden = true;
             accessPanel.hidden = true;
             noticesPanel.hidden = true;
-            panelNotices.hidden = true;
             dangerPanel.hidden = true;
             return;
           }
@@ -712,7 +710,6 @@
           requestsPanel.hidden = false;
           accessPanel.hidden = false;
           noticesPanel.hidden = false;
-          panelNotices.hidden = false;
           dangerPanel.hidden = false;
 
           // Only overwrite the field when it is not being typed into, so a
