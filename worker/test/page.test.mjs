@@ -514,6 +514,28 @@ await test('selecting a tab shows its panel and updates the title', async () => 
   assert.equal($('page-title').textContent, 'Account');
 });
 
+await test('signing in does not reveal a tab that is not selected', async () => {
+  // The tabpanels are siblings in the content column, and the wrapper has no
+  // gap of its own -- the space between cards comes from the panel grid. A
+  // second visible wrapper therefore renders its card flush against the first,
+  // at 0px instead of the 20px every other pair of cards uses.
+  //
+  // renderAccount used to unhide the Notices tabpanel itself on sign-in, so a
+  // signed-in refresh left Notices stacked under whichever tab was open. Only
+  // showTab may decide which panel is visible.
+  const click = (name) => $(`tab-${name}-btn`).dispatchEvent(new window.Event('click'));
+
+  click('account');
+  await settle(2);
+  // A refresh re-emits the account, re-running renderAccount.
+  await window.HTAccount.refresh();
+  await settle(2);
+
+  const visible = ['account', 'friends', 'notices']
+    .filter((name) => !$(`panel-${name}`).hidden);
+  assert.deepEqual(visible, ['account'], 'only the selected tab is showing');
+});
+
 await test('My Profile merged into Account, so identity and classes share one section', async () => {
   assert.equal($('tab-profile-btn'), null, 'the My Profile tab is gone');
   assert.equal($('panel-profile'), null, 'and so is its panel');
