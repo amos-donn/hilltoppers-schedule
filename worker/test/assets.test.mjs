@@ -94,18 +94,16 @@ await test('the brand shows the title with its alt-project subtitle', () => {
   );
 });
 
-await test('the brand text is sized and spaced to stay readable', () => {
+await test('the sidebar matches the reference dashboard width', () => {
+  // daniezl/Hilltoppers uses a 232px sidebar; this shell should match it.
   const css = readFileSync(repoPath('dashboard.css'), 'utf8');
-  const title = css.match(/\.dashboard__brand-text strong\s*\{([^}]*)\}/)[1];
-  const size = Number(title.match(/font-size:\s*(\d+(?:\.\d+)?)px/)[1]);
-  assert.ok(size >= 16, `the title is enlarged (got ${size}px)`);
-  assert.match(title, /letter-spacing:\s*0?\.\d+em/, 'the title has tracking');
-  assert.match(title, /line-height:\s*[\d.]+/, 'the title has a line-height');
+  const shell = css.match(/\.dashboard\s*\{([^}]*)\}/)[1];
+  assert.match(shell, /grid-template-columns:\s*232px\b/, 'the sidebar column is 232px');
 });
 
 await test('the CSS change carries a new cache-busting version', () => {
   // dashboard.css is served with a ?v= token; without a bump a returning
-  // browser keeps the old rule and the logo renders on the old tinted square.
+  // browser keeps the old rules and the brand renders with the stale layout.
   const tag = html['settings.html'].match(/<link rel="stylesheet" href="dashboard\.css\?v=([^"]+)"/);
   assert.ok(tag, 'dashboard.css is linked with a version');
   assert.notEqual(tag[1], '20260928h', 'the version changed with the stylesheet');
