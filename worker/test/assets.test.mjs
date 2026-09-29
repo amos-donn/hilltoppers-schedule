@@ -85,13 +85,27 @@ await test('the stylesheet does not crop or tint the logo', () => {
 });
 
 await test('the brand shows the title with its alt-project subtitle', () => {
-  const brand = html['settings.html'].match(/<div class="dashboard__brand">[\s\S]*?<\/div>/)[0];
-  assert.match(brand, /<strong>Hilltopper Friends<\/strong>/, 'the title is present');
+  const brand = html['settings.html'].match(/<div class="dashboard__brand">[\s\S]*?<\/div>\s*<\/div>/)[0];
   assert.match(
     brand,
-    /<small>alt \/ schedule - a hilltoppers\/alt project<\/small>/,
-    'the subtitle sits directly under the title'
+    /<div class="dashboard__brand-head">[\s\S]*?<img[^>]+class="dashboard__mark"[\s\S]*?<strong>Hilltopper Friends<\/strong>[\s\S]*?<\/div>/,
+    'the logo and title share the head row'
   );
+  assert.match(
+    brand,
+    /<\/div>\s*<small>alt \/ schedule - a hilltoppers\/alt project<\/small>/,
+    'the subtitle follows the head, above the line above the tabs'
+  );
+});
+
+await test('a divider sits under the logo + title, above the alt-project note', () => {
+  // Two rules: one under the brand head, and the block's own bottom border,
+  // which is the line above the tabs. The note sits between them.
+  const css = readFileSync(repoPath('dashboard.css'), 'utf8');
+  const head = css.match(/\.dashboard__brand-head\s*\{([^}]*)\}/)[1];
+  assert.match(head, /border-bottom:\s*1px solid var\(--border\)/, 'the head carries the divider');
+  const brand = css.match(/\.dashboard__brand\s*\{([^}]*)\}/)[1];
+  assert.match(brand, /border-bottom:\s*1px solid var\(--border\)/, 'the block keeps the line above the tabs');
 });
 
 await test('the sidebar matches the reference dashboard width', () => {
