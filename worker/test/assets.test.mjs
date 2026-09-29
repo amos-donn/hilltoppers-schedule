@@ -74,13 +74,33 @@ await test('the settings brand mark uses the logo, not a stand-in glyph', () => 
   assert.ok(!/<svg/.test(brand), 'the placeholder SVG is gone');
 });
 
-await test('the stylesheet does not paint a background behind the logo', () => {
-  // The mark used to be a glyph on a tinted rounded square; the logo is its own
-  // filled circle, so any leftover background would ring it.
+await test('the stylesheet does not crop or tint the logo', () => {
+  // The mark used to be a glyph on a tinted rounded square. The artwork is now
+  // the mark itself, and it is its own rounded square -- so nothing may paint
+  // behind it, and clipping it to a circle would slice the corners off.
   const css = readFileSync(repoPath('dashboard.css'), 'utf8');
   const rule = css.match(/\.dashboard__mark\s*\{([^}]*)\}/)[1];
   assert.ok(!/background/.test(rule), 'no background on .dashboard__mark');
-  assert.match(rule, /border-radius:\s*50%/, 'the mark is clipped to its own circle');
+  assert.ok(!/border-radius\s*:\s*50%/.test(rule), 'the mark is not clipped into a circle');
+});
+
+await test('the brand shows the title with its alt-project subtitle', () => {
+  const brand = html['settings.html'].match(/<div class="dashboard__brand">[\s\S]*?<\/div>/)[0];
+  assert.match(brand, /<strong>Hilltopper Friends<\/strong>/, 'the title is present');
+  assert.match(
+    brand,
+    /<small>alt \/ schedule - a hilltoppers\/alt project<\/small>/,
+    'the subtitle sits directly under the title'
+  );
+});
+
+await test('the brand text is sized and spaced to stay readable', () => {
+  const css = readFileSync(repoPath('dashboard.css'), 'utf8');
+  const title = css.match(/\.dashboard__brand-text strong\s*\{([^}]*)\}/)[1];
+  const size = Number(title.match(/font-size:\s*(\d+(?:\.\d+)?)px/)[1]);
+  assert.ok(size >= 16, `the title is enlarged (got ${size}px)`);
+  assert.match(title, /letter-spacing:\s*0?\.\d+em/, 'the title has tracking');
+  assert.match(title, /line-height:\s*[\d.]+/, 'the title has a line-height');
 });
 
 await test('the CSS change carries a new cache-busting version', () => {
