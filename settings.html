@@ -286,7 +286,7 @@
     </div>
 
     <script src="schedule-core.js?v=20260928h"></script>
-    <script src="account.js?v=20260928h"></script>
+    <script src="account.js?v=20260929b"></script>
     <script>
       (function () {
         'use strict';
@@ -1205,6 +1205,16 @@
           });
         }
 
+        // A cached account.js from before dismissNotice shipped would leave the
+        // Clear button a silent no-op: the call throws after the click, the
+        // refresh never runs, and the notice stays. Only the cache-busting query
+        // is supposed to prevent that mismatch, but the button should still not
+        // fail quietly when it happens.
+        function dismissNotice(id) {
+          if (typeof A.dismissNotice !== 'function') return Promise.resolve({ ok: false });
+          return A.dismissNotice(id);
+        }
+
         /** The actions a notice offers, matched to what it actually reports. */
         function noticeActions(notice) {
           var actions = el('div', { class: 'class-settings__notice-actions' });
@@ -1224,7 +1234,7 @@
           var clear = el('button', { type: 'button', class: 'tertiary', text: 'Clear' });
           clear.addEventListener('click', function (e) {
             e.stopPropagation();
-            A.dismissNotice(notice.id).then(function () { refreshNotices(); });
+            dismissNotice(notice.id).then(function () { refreshNotices(); });
           });
           actions.appendChild(clear);
           return actions;
