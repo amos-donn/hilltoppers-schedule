@@ -637,19 +637,28 @@ await test('a stale cached schedule-friends.js does not blank the page', async (
   assert.match(page.text(), /Settings/, 'the card still shows its settings affordance');
 });
 
-await test('the narrow-frame inset is the same on all four sides', async () => {
-  // A frame narrower than the extension window swaps the card's 16px gutter
-  // for a small inset. That inset was once horizontal-only, so the card sat
-  // flush against the frame's top edge while being gapped on the sides -- a
-  // visibly lopsided frame. The padding is a single shorthand value, so the
-  // sides cannot drift from the top and bottom again.
-  const match = rawHtml.match(/@media \(max-width: 480px\)\s*\{[\s\S]*?\.popup\s*\{([^}]*)\}/);
-  assert.ok(match, 'the narrow-frame rule for .popup is present');
-  const padding = match[1].match(/padding:\s*([^;]+);/);
-  assert.ok(padding, '.popup sets a padding');
-  const parts = padding[1].trim().split(/\s+/);
-  assert.equal(parts.length, 1, 'padding is one value, so every side matches: ' + padding[1]);
-  assert.equal(parts[0], '12px', 'and it is the intended inset');
+await test('the embedded card is flush with the top and sides, and inset at the bottom', async () => {
+  // Inside a Topping the frame is the edge, so the card runs to it: no gutter
+  // on the top or the sides. The inset that used to be a gutter now lives on
+  // the card itself, so the text keeps the same distance from the frame while
+  // the card's own surface reaches it.
+  const popup = rawHtml.match(/\.popup\s*\{\s*padding:\s*([^;]+);/);
+  assert.ok(popup, '.popup sets a padding');
+  assert.equal(popup[1].trim(), '0 0 12px', 'flush top and sides, inset at the bottom');
+
+  // The card carries the inset, and it must be one value: the progress bar
+  // hangs off the card's bottom edge with negative margins that assume a
+  // uniform padding, so a zero on any side would pull it out of the card.
+  const status = rawHtml.match(/\.primary-card\s*>\s*\.status\s*\{([^}]*)\}/);
+  assert.ok(status, 'the card body is styled for this page');
+  const pad = status[1].match(/padding:\s*([^;]+);/);
+  assert.ok(pad, 'the card body sets a padding');
+  const parts = pad[1].trim().split(/\s+/);
+  assert.equal(parts.length, 1, 'padding is one value, so every side matches: ' + pad[1]);
+  assert.equal(parts[0], '12px', 'and it is the inset the gutter used to supply');
+
+  // Squared corners, so the hover tint does not leave notches against the frame.
+  assert.match(status[1], /border-radius:\s*0/, 'the card body squares off its corners');
 });
 
 console.log(results.join('\n'));
