@@ -15,10 +15,10 @@
     <link rel="stylesheet" href="popup.css?v=20260928h" />
     <!--
       In the extension the popup is a 352px window with a 320px card inside it.
-      Embedded as a Topping the host picks the width, and the frame itself is
-      the edge, so the card runs to it: no gutter on the top or the sides, and
-      only the page's own bottom padding below. The extension's popup keeps its
-      16px gutter untouched -- everything here is scoped to this standalone
+      Embedded as a Topping the host picks the width. Only the day card runs to
+      the frame's top and sides; the rest of the page -- the heading, the
+      friends list, the title -- keeps its inset. The extension's popup keeps
+      its 16px gutter untouched -- everything here is scoped to this standalone
       page, which is the one that gets embedded.
     -->
     <style>
@@ -34,23 +34,32 @@
       img, video, input, textarea, select { max-width: 100%; }
 
       /*
-       * Full bleed. The card reaches the frame's top and both sides, so the
-       * only gutter left is the page's own padding below it.
+       * Only the day card bleeds to the frame. Everything else keeps the 12px
+       * inset, which is the page's own padding.
        *
-       * This changes the card's shape as much as its position. The card is
-       * white on a white page, so reaching the frame is invisible until it
-       * takes its hover tint, and then its 8px outer corners would read as
-       * notches against the frame -- squaring them is what lets the tint cover
-       * the full width.
+       * The card pulls itself out of that padding with negative margins rather
+       * than the page dropping it, so the change stays confined to the one
+       * card. The bottom margin puts back the 12px the card already carried
+       * below it, so the day list and the friends section below do not move.
        *
-       * The inset that used to sit outside the card now sits inside it, which
-       * does bring the contents 12px closer to the frame than the old gutter
-       * plus padding did. The card's padding stays one value rather than
-       * dropping to 0 on the bottom because the progress bar hangs off the
-       * card's bottom edge with negative margins that assume a uniform inset.
+       * Its contents are left exactly where they were. The card's box reaches
+       * the frame, but the text keeps the 24px inset it had -- the old 12px
+       * gutter plus the card's 12px padding -- now supplied by the card alone.
+       * That keeps the content box the same width it always was, so no line
+       * wraps differently and the card's height does not change.
+       *
+       * The bottom padding stays 12px because that edge is not against the
+       * frame and must not move: the progress bar hangs off it with a -12px
+       * margin, and a larger inset would pull the bar away from the card.
+       *
+       * Reaching the frame exposes the card's top corners, which read as
+       * notches against the frame once the card takes its hover tint, so those
+       * two square off. The bottom corners are not against the frame and stay
+       * rounded.
        */
-      .popup { padding: 0 0 12px; min-width: 0; }
-      .primary-card > .status { border-radius: 0; padding: 12px; }
+      .popup { padding: 12px; min-width: 0; }
+      .primary-card { margin: -12px -12px 12px; }
+      .primary-card > .status { border-radius: 0 0 8px 8px; padding: 24px 24px 12px; }
 
       /* Narrow frames: keep the friend's live status on one line by letting the
          course shrink, and drop the email before it crowds the row. */

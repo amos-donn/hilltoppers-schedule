@@ -179,17 +179,20 @@ different rules, and that is where discrepancies come from.
 
 - In the extension the popup is a `min-width: 320px; padding: 16px` window, so
   the card is a 320px content box inside a 352px window.
-- Here the host picks the iframe width, and the frame is the edge, so the card
-  runs to it. `index.html` overrides the copied `popup.css` gutter with
-  `.popup { padding: 0 0 12px }` and squares the card's outer corners, so the
-  card reaches the frame's top and both sides with only the page's own padding
-  below it. The 12px inset the old gutter used to supply now sits on the card
-  (`.primary-card > .status`), which keeps the text off the frame edge while the
-  card's surface covers the full width.
+- Here the host picks the iframe width, and the frame is the edge. Only the day
+  card runs to it: `index.html` gives the page a 12px inset for everything else
+  (`.popup`), then pulls the card out of it with negative margins
+  (`.primary-card { margin: -12px -12px 12px }`) so the card's surface reaches
+  the frame's top and both sides while the heading, the friends list and the
+  title keep their inset.
 
-That inset is 12px against the extension's 16px, so the two do not line up
-pixel-for-pixel at the same width; the card's own content is what matches, not
-its distance from the frame.
+The card's own contents do not move. Its padding absorbs the gutter it was
+pulled out of (`padding: 24px 24px 12px`), so the text keeps the 24px inset it
+had and the content box stays the same width. The top corners square off because
+they are against the frame and would otherwise read as notches once the card
+takes its hover tint; the bottom corners are not against the frame and stay
+rounded. The bottom padding stays 12px because the progress bar hangs off that
+edge with a `-12px` margin.
 
 Measure, don't eyeball: render both at the same width and compare
 `getBoundingClientRect()` on `.popup` / `.status` / `.schedule-list ul`.
