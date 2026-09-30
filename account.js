@@ -6,9 +6,12 @@
  * signed-in account so the UI can render synchronously, and refetches it after
  * anything that changes it.
  *
- * Every request sends credentials, because the session is a cross-origin
- * cookie (the page is on github.io, the API on workers.dev). Without that flag
- * the browser would omit the cookie and every call would look signed out.
+ * Signing in is a two-step the page owns: auth.js signs in against Hilltoppers
+ * (Firebase) and this hands the resulting ID token to the Worker, which
+ * verifies it and sets the session cookie. Every request after that sends
+ * credentials, because the session is a cross-origin cookie (the page is on
+ * github.io, the API on workers.dev). Without that flag the browser would omit
+ * the cookie and every call would look signed out.
  */
 (function () {
   'use strict';
@@ -80,12 +83,32 @@
     return cachedMe !== null;
   }
 
-  /** Full-page navigation: the OAuth dance has to happen at the top level. */
-  function signIn() {
-    window.location.href = API + '/api/auth/login';
+  /**
+   * Sign in with an ID token from Hilltoppers Auth (Firebase).
+   *
+   * The browser signs in against Firebase directly - see auth.js - and hands
+   * the token here. This Worker verifies it and issues its own session cookie,
+   * so everything downstream is unchanged. The cookie is what carries the
+   * session from here on; the ID token is not kept.
+   */
+  async function signInWithIdToken(idToken) {
+    var result = await api('/api/auth/firebase', { method: 'POST', body: { idToken: idToken } });
+    if (result.ok) {
+      cachedMe = result.data;
+      emit();
+    }
+    return result;
   }
 
   async function signOut() {
+    // Clear the Firebase session too, or a reload would silently sign back in.
+    if (window.HTAuth) {
+      try {
+        await window.HTAuth.signOut();
+      } catch (e) {
+        /* signing out locally is what matters; the Worker session is next */
+      }
+    }
     await api('/api/auth/logout', { method: 'POST' });
     cachedMe = null;
     emit();
@@ -105,15 +128,6 @@
     cachedMe = null;
     emit();
     return result;
-  }
-
-  /**
-   * Start an email change. On success the Worker hands back the Google URL to
-   * visit; the actual change happens on the callback, so the page navigates
-   * away and comes back with ?email=ok or a failure reason.
-   */
-  async function changeEmail(email) {
-    return api('/api/me/email', { method: 'POST', body: { email: email } });
   }
 
   function searchDirectory(query) {
@@ -171,10 +185,9 @@
     current: current,
     isSignedIn: isSignedIn,
     refresh: refresh,
-    signIn: signIn,
+    signInWithIdToken: signInWithIdToken,
     signOut: signOut,
     updateProfile: updateProfile,
-    changeEmail: changeEmail,
     deleteAccount: deleteAccount,
     searchDirectory: searchDirectory,
     askForSchedule: askForSchedule,

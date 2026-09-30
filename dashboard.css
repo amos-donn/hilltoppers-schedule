@@ -367,35 +367,61 @@ body, html {
 .dashboard select:disabled { opacity: 0.6; cursor: default; }
 .dashboard select option { background: #ffffff; color: var(--text); }
 
-/* --- Google sign-in button --------------------------------------------- */
+/* --- Sign-in form ------------------------------------------------------ */
 
-/* Built from the extension's button and card patterns. Used by every sign-in
-   affordance on the page, and mirrored inside the card's empty state. */
-.google-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  padding: 11px 18px;
+/* The sign-in form's buttons use the page's own .primary / .secondary, which
+   classSettings.css already styles. Nothing brand-specific is needed any more,
+   now that signing in is an email and a password rather than a provider
+   button. */
+
+/* classSettings.css dresses text and email inputs but never password, because
+   the extension has no password field. Left alone, the password inputs fall
+   back to the browser default and render at half the height of the email field
+   beside them. Match the surrounding fields exactly. */
+.dashboard .class-settings__signin-grid input[type='password'] {
+  padding: 8px 12px;
+  border-radius: 8px;
   border: 1px solid var(--border);
-  border-radius: 9px;
-  background: var(--surface);
+  background: var(--surface-muted);
   color: var(--text);
-  font: inherit;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background-color 0.15s ease, border-color 0.15s ease;
+  font-size: 15px;
+  font-family: inherit;
+  min-width: 160px;
+  box-sizing: border-box;
 }
 
-.google-button:hover { background: var(--surface-muted); border-color: #c6d2c2; }
-.google-button__icon { width: 18px; height: 18px; flex: none; display: block; }
-.google-button--block { width: 100%; padding: 10px 14px; font-size: 13px; }
+/* The address belongs to Hilltoppers, so it is shown but not editable. Read as
+   a value rather than as an input waiting for a keystroke. */
+.dashboard .class-settings__field-block input[readonly] {
+  color: var(--muted);
+  background: var(--surface);
+}
+
+.dashboard .class-settings__signin-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  align-items: stretch;
+}
+
+/* Two fields side by side once there is room, stacked on a narrow page. */
+@media (min-width: 620px) {
+  .dashboard .class-settings__signin-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    align-items: end;
+  }
+  .dashboard .class-settings__signin-grid > .class-settings__hint,
+  .dashboard .class-settings__signin-grid > .class-settings__account-status,
+  .dashboard .class-settings__signin-grid > .class-settings__oauth-buttons {
+    grid-column: 1 / -1;
+  }
+}
 
 /* classSettings.css grows the oauth button to fill the row (flex: 1 1 220px),
    which here would stretch a single sign-in button into a full-width bar.
    A button reads better at its natural size. */
-.dashboard .class-settings__oauth-buttons { display: block; }
+.dashboard .class-settings__oauth-buttons { display: flex; flex-wrap: wrap; gap: 10px; }
 .dashboard .class-settings__oauth-buttons button { flex: none; }
 
 /* --- friend rows and hints, tuned for the new surface ------------------- */
@@ -459,6 +485,5 @@ body, html {
 @media (prefers-reduced-motion: reduce) {
   .dashboard__indicator,
   .dashboard__tab,
-  .google-button,
   .dashboard select { transition: none; }
 }

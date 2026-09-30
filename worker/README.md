@@ -1,9 +1,14 @@
 # Deploying the API Worker
 
-You need three things before this works: the database tables, the Worker, and
-the Google sign-in credentials. The order matters — the Worker's URL has to
-exist before Google will accept it as a redirect, and the Worker needs the
-Google keys before sign-in can work.
+You need two things before this works: the database tables and the Worker.
+There are no sign-in credentials to create, because sign-in is not ours.
+
+Students sign in with the account they already have for Hilltoppers, which is a
+Firebase Auth project using the email/password provider. The browser signs in
+against Firebase directly and hands the Worker the resulting ID token, which
+the Worker verifies against Google's published keys. Only Google can mint a
+token for that project, so a valid signature is a sound trust boundary — and
+the Worker needs no Firebase secret of its own to check it.
 
 Everything below is done in a browser. There is no build step and nothing to
 install.
@@ -39,45 +44,7 @@ ever dropped.
 3. Variable name: `DB` (exactly — the code looks for this name).
 4. Database: `hilltoppers-schedule`. Save.
 
-## 3. Create the Google sign-in credentials
-
-1. Go to <https://console.cloud.google.com> and create a project (name it
-   anything, e.g. `hilltoppers`).
-2. **APIs & Services → OAuth consent screen** (in newer layouts, **Google Auth
-   Platform → Audience**).
-   - User type: **External** is fine. You are not restricting to school
-     accounts, so there is no reason to need a Workspace admin.
-   - App name: `Hilltoppers Schedule`.
-   - Support email and developer email: your address.
-   - **Privacy policy URL:**
-     `https://amos-donn.github.io/hilltoppers-schedule/privacy.html`
-   - **Terms of service URL:**
-     `https://amos-donn.github.io/hilltoppers-schedule/terms.html`
-   - Scopes: leave the defaults. Sign-in uses `openid`, `email`, `profile`,
-     and all three are non-sensitive, so no review is required.
-   - You do **not** need to publish for testing: add yourself as a test user
-     and it works. Publish only if you want everyone to be able to sign in.
-3. **APIs & Services → Credentials → Create credentials → OAuth client ID**,
-   type **Web application**.
-   - **Authorized JavaScript origins:**
-     `https://amos-donn.github.io`
-   - **Authorized redirect URIs:**
-     `https://hilltoppers-schedule-friends.amos-donn.workers.dev/api/auth/callback`
-   - The redirect URI must match exactly. No trailing slash, `https`, that path.
-4. Copy the **Client ID** and the **Client secret**.
-
-## 4. Give the Worker the Google credentials
-
-Back in the Worker → **Settings → Variables and Secrets**:
-
-| Name | Value | Type |
-| --- | --- | --- |
-| `GOOGLE_CLIENT_ID` | from step 3 | Text |
-| `GOOGLE_CLIENT_SECRET` | from step 3 | **Secret** |
-
-The client secret must be a Secret, never plain text. Save and deploy.
-
-## 5. Put the Worker code in place
+## 3. Put the Worker code in place
 
 1. Worker → **Edit code**.
 2. Delete whatever is in the editor, paste the entire contents of
@@ -86,7 +53,7 @@ The client secret must be a Secret, never plain text. Save and deploy.
 That is the whole deployment. There is no framework and no dependencies, which
 is why the browser editor is enough.
 
-## 6. Check it works
+## 4. Check it works
 
 Open this in a browser:
 
@@ -96,25 +63,33 @@ https://hilltoppers-schedule-friends.amos-donn.workers.dev/api/me
 
 - Signed out, this should say `{"error":"unauthorized"}`. That is correct — it
   means the Worker is running and refusing anonymous access.
-- Now open
-  `https://hilltoppers-schedule-friends.amos-donn.workers.dev/api/auth/login`.
-  You should land on Google's account picker, and after choosing an account you
-  should arrive at
-  `https://amos-donn.github.io/hilltoppers-schedule/settings.html?auth=ok` —
-  the GitHub Pages site, not the Worker. The Worker serves only `/api/*`, so a
-  redirect back to the Worker's own origin would land on a JSON 404.
-- Then run the first URL again. You should now get your own profile, including
-  a `profileId` like `brave-heron-4821`.
 
-If the Google step fails, check the redirect URI in step 3 first — it is the
-cause almost every time.
+The sign-in itself cannot be checked from a URL, because it is a POST of an ID
+token rather than a redirect. Sign in at
+`https://amos-donn.github.io/hilltoppers-schedule/settings.html` with a
+Hilltoppers account, then load `/api/me` again. You should get your own profile,
+including a `profileId` like `brave-heron-4821`.
+
+If signing in fails, open the browser console. The settings page reports what
+Firebase said — a wrong password, an unknown address, or an address that has not
+been confirmed yet.
 
 ## Notes for later
 
+- **The Firebase project.** The Worker accepts tokens for `schedule-59d28`,
+  hard-coded as `FIREBASE_PROJECT_ID` in `worker/api.js` and overridable with a
+  plain-text variable of the same name. The project's web config lives in
+  `auth.js` and is public on purpose: it names the project, it does not
+  authorize anything.
+- **Verifying a token by hand.** The keys are at
+  `https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com`.
+  Note `jwk`, singular — the plural path is a 404, and fetching an error page
+  instead of the key set fails every verification in a way that looks exactly
+  like a signed-out user.
 - **Adding a field to `accounts`.** D1 has no interactive migration tool in the
   dashboard, so use the Console: `ALTER TABLE accounts ADD COLUMN ...`.
 - **Changing the Worker.** Paste the whole file again and Deploy. The bindings
-  you set in steps 2 and 4 survive a code deploy.
+  you set in step 2 survive a code deploy.
 - **If you ever rotate `SESSION_SECRET`**, everyone is signed out and signs back
   in. Nothing is lost, because sessions are the only thing it protects.
 - **Cost.** Workers Free covers D1 at 5 million rows read and 100,000 rows
@@ -135,8 +110,9 @@ npm test
 Three suites, all plain `node`:
 
 - `worker/test/api.test.mjs` — the Worker against a real D1 shape via
-  `node:sqlite`. Covers sign-in, forged and wrong-audience ID tokens, cookie
-  flags, profile edits, directory visibility, grants, revoke and account delete.
+  `node:sqlite`. Covers sign-in, forged, wrong-audience, wrong-project, expired
+  and unverified-email ID tokens, cookie flags, profile edits, directory
+  visibility, grants, revoke and account delete.
 - `worker/test/page.test.mjs` — `settings.html` in jsdom, talking to that same
   Worker and database. Catches the bugs a unit test cannot: a missing element
   id, an unstyled class, a button that never wires up, a render that throws.
@@ -146,6 +122,8 @@ Three suites, all plain `node`:
   rather than localStorage.
 
 `worker/test/harness.mjs` holds the shared Worker wiring: the in-memory
-database, the fake Google token/JWKS endpoints and the cookie jar. Both page
-suites run against it, so they cannot drift apart.
+database, the fake Firebase signing key and the cookie jar. Both page suites run
+against it, so they cannot drift apart. The tests mint real RS256 tokens and the
+Worker verifies them for real, so the whole JWKS → `kid` → `importKey` → `verify`
+path is exercised; only the key's publication is stubbed.
 

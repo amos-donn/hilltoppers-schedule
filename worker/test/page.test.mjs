@@ -3,8 +3,9 @@
  *
  * Loads the real settings.html in jsdom, with the real schedule-core.js and
  * account.js, and lets it talk to the real Worker running against a real
- * database backed by node:sqlite. The Worker wiring, the fake Google endpoints
- * and the cookie jar live in ./harness.mjs, shared with card.test.mjs.
+ * database backed by node:sqlite. The Worker wiring, the fake Firebase
+ * endpoints and the cookie jar live in ./harness.mjs, shared with
+ * card.test.mjs.
  *
  * This is the only way to catch the bugs that matter here: a missing element
  * id, a class that the stylesheet does not define, a button that never wires
@@ -15,7 +16,7 @@ import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 
 import {
-  API_ORIGIN, PAGE_ORIGIN, repoPath, routerFetch, wait,
+  API_ORIGIN, PAGE_ORIGIN, repoPath, routerFetch, wait, idToken,
   signInAs as signInAsShared, setCookieJar, getCookieJar, db,
 } from './harness.mjs';
 
@@ -42,6 +43,25 @@ function mountPage(options = {}) {
       window.fetch = (input, init) => routerFetch(input, init);
       window.confirm = () => true;
       window.alert = () => {};
+      // auth.js loads the Firebase SDK from a CDN with a dynamic import, which
+      // jsdom cannot do. Stand in for it at its own boundary - the ID token -
+      // so the page's own code still runs for real. A test overrides whichever
+      // method it needs.
+      window.HTAuth = options.auth || {
+        CONFIG: {},
+        load: async () => { throw new Error('the Firebase SDK is not available in jsdom'); },
+        currentUser: async () => null,
+        signIn: async () => { throw new Error('signIn is not stubbed'); },
+        register: async () => { throw new Error('register is not stubbed'); },
+        idToken: async () => null,
+        signOut: async () => {},
+        resetPassword: async () => {},
+        reload: async () => null,
+        requestCode: async () => { throw new Error('requestCode is not stubbed'); },
+        redeemCode: async () => { throw new Error('redeemCode is not stubbed'); },
+        completeReset: async () => {},
+        completeVerification: async () => {},
+      };
       // Seed storage before the page scripts run, the way a returning browser
       // would already have it on a cold load.
       for (const [key, value] of Object.entries(options.storage || {})) {
@@ -131,9 +151,11 @@ await test('signed out, the page offers sign-in and hides account panels', async
   assert.equal($('account-signed-out').hidden, false);
   assert.equal($('account-signed-in').hidden, true);
   assert.equal($('topbar-auth').hidden, true, 'the sidebar only offers sign-out when there is an account');
-  const google = $('signin-google');
-  assert.match(google.textContent, /Sign in to view friends!/, 'the sign-in button says what it is for');
-  assert.ok(google.querySelector('.google-button__icon'), 'and carries the Google mark');
+  assert.ok($('signin-form'), 'the page offers a sign-in form');
+  assert.match($('signin-submit').textContent, /Sign in to view friends!/, 'the button says what it is for');
+  assert.ok($('signin-email'), 'with an email field');
+  assert.ok($('signin-password'), 'and a password field');
+  assert.equal($('code-form').hidden, true, 'the code step stays out of the way until it is needed');
   assert.equal($('requests-panel').hidden, true);
   assert.equal($('access-panel').hidden, true);
   assert.equal($('notices-panel').hidden, true);
@@ -149,7 +171,7 @@ await test('the class table renders all five blocks with working controls', asyn
 });
 
 await test('signing in reveals every account section', async () => {
-  // Drive the real OAuth callback, exactly as the browser would.
+  // Drive a real sign-in against the real Worker, the way the page does.
   await signInAs('sub-page-alice', 'alice@example.org', 'Alice');
   await window.HTAccount.refresh();
   await settle();
@@ -162,98 +184,93 @@ await test('signing in reveals every account section', async () => {
   assert.equal($('notices-panel').hidden, false);
   assert.equal($('danger-panel').hidden, false);
   assert.match($('profile-id').value, /^[a-z]+-[a-z]+-\d{4}$/, 'a profile ID is shown');
-  assert.equal($('account-email').value, 'alice@example.org', 'the email is shown in an editable field');
-  assert.equal($('account-email').readOnly, false, 'and can be edited');
+  assert.equal($('account-email').value, 'alice@example.org', 'the email is shown');
+  assert.equal($('account-email').readOnly, true, 'but is not editable here: it belongs to Hilltoppers');
   assert.equal($('visibility').value, 'private', 'new accounts default to private');
   assert.equal($('auto-grant').checked, true, 'auto-grant defaults on');
 });
 
-/**
- * Watch the page's own network calls. The page navigates away on a successful
- * email change, which jsdom cannot do, so the request it makes on the way out
- * is what tells us whether it did the right thing.
- */
-function spyOnFetch(window) {
-  const calls = [];
-  const real = window.fetch;
-  window.fetch = async (input, init) => {
-    const url = typeof input === 'string' ? input : input.url;
-    const response = await real(input, init);
-    if (url.includes('/api/me/email')) {
-      const body = init && init.body ? JSON.parse(init.body) : null;
-      // Clone before handing the response back: the page reads it, so the copy
-      // is what the assertions can still inspect afterwards.
-      calls.push({ url, method: (init && init.method) || 'GET', body, response: response.clone() });
-    }
-    return response;
+await test('the sign-in form hands an ID token to the Worker and starts a session', async () => {
+  // The page cannot really talk to Firebase in jsdom, so stand in for auth.js
+  // at its boundary: the ID token. Everything after that is the page's own code
+  // against the real Worker, which is where the bugs would be.
+  const token = await idToken('sub-form-signin', 'form@example.org', 'Form');
+  let asked = null;
+  window.HTAuth.signIn = async (email, password) => {
+    asked = { email, password };
+    return { email };
   };
-  return calls;
-}
-
-await test('the email field saves by sending the browser to Google', async () => {
-  // Saving must not write anything on its own: it asks the Worker for the
-  // Google URL that proves the address, and the change happens on the way back.
-  const calls = spyOnFetch(window);
-
-  $('account-email').value = 'alice.new@example.org';
-  $('save-email').dispatchEvent(new window.Event('click'));
-  await settle(6);
-
-  assert.equal(calls.length, 1, 'exactly one request is made');
-  assert.equal(calls[0].method, 'POST');
-  assert.equal(calls[0].body.email, 'alice.new@example.org', 'carrying the address that was typed');
-
-  const started = await calls[0].response.json();
-  assert.ok(started.authorizeUrl, 'the Worker answers with the Google URL to visit');
-  const url = new URL(started.authorizeUrl);
-  assert.equal(url.searchParams.get('login_hint'), 'alice.new@example.org', 'hinting the address that was typed');
-  assert.ok(url.searchParams.get('state'), 'with a signed state the Worker can verify on the way back');
-
-  // Nothing about the account changed just by pressing Save.
-  assert.equal(window.HTAccount.current().email, 'alice@example.org', 'the account is untouched until Google confirms');
-});
-
-await test('an email already in use is refused before leaving the page', async () => {
-  // Another account already holds this address.
-  await signInAs('sub-page-bob', 'bob@example.org', 'Bob');
+  window.HTAuth.idToken = async () => token;
+  await window.HTAccount.signOut();
   await window.HTAccount.refresh();
   await settle();
+
+  $('signin-email').value = 'form@example.org';
+  $('signin-password').value = 'correct horse battery';
+  $('signin-form').dispatchEvent(new window.Event('submit'));
+  await settle();
+
+  assert.deepEqual(asked, { email: 'form@example.org', password: 'correct horse battery' },
+    'the password goes to Firebase, not to our Worker');
+  // jsdom refuses to navigate, so the reload is recorded rather than performed.
+  const me = await window.HTAccount.refresh();
+  assert.ok(me, 'the session is live');
+  assert.equal(me.email, 'form@example.org');
+
   await signInAs('sub-page-alice', 'alice@example.org', 'Alice');
   await window.HTAccount.refresh();
   await settle();
+});
 
-  const calls = spyOnFetch(window);
+await test('auth.js exposes every method the page and account.js call', async () => {
+  // auth.js is loaded by a <script> tag, which jsdom does not fetch, so nothing
+  // else in the suite would notice if it stopped exporting something its
+  // callers use - the page would just throw at the moment a student clicked.
+  // Run it for real (its only import is inside load(), which is never reached
+  // here) and compare its surface against the source of both callers.
+  const w = new JSDOM('<!doctype html><html><body></body></html>', {
+    runScripts: 'dangerously',
+  }).window;
+  const s = w.document.createElement('script');
+  s.textContent = readFileSync(repoPath('auth.js'), 'utf8');
+  w.document.head.appendChild(s);
 
-  $('account-email').value = 'bob@example.org';
-  $('save-email').dispatchEvent(new window.Event('click'));
-  await settle(6);
-
-  assert.equal(calls.length, 1, 'the Worker is asked');
-  const refused = await calls[0].response.json();
-  assert.equal(refused.error, 'email_taken', 'and it says the address is in use');
-
-  assert.equal($('email-status').hidden, false, 'so the page shows why');
-  assert.equal(
-    $('email-status').textContent,
-    'There is already an account with this email',
-    'worded exactly as asked'
+  assert.ok(w.HTAuth, 'auth.js defines window.HTAuth');
+  const callers = html + readFileSync(repoPath('account.js'), 'utf8');
+  const used = new Set(
+    [...callers.matchAll(/window\.HTAuth\.([A-Za-z_$][\w$]*)/g)].map((m) => m[1])
   );
-  assert.equal($('account-email').value, 'bob@example.org', 'the field keeps what was typed, so it can be corrected');
-  assert.equal(window.HTAccount.current().email, 'alice@example.org', 'and the account did not move');
+  assert.ok(used.size >= 8, 'the callers use the module in several places');
+  for (const name of used) {
+    assert.equal(typeof w.HTAuth[name], 'function', `auth.js exports ${name}()`);
+  }
+
+  // Nothing else is exported. A method no caller reaches is a liability: it is
+  // untested, and one here would mean signing in with a path Hilltoppers does
+  // not own - Firebase's own account creation or default reset mail.
+  for (const name of Object.keys(w.HTAuth)) {
+    if (name === 'CONFIG' || name === 'MAIL') continue;
+    assert.ok(used.has(name), `auth.js exports ${name}(), which nothing calls`);
+  }
+
+  // The config must name the :web: appId. The project's iOS plist carries a
+  // different :ios: one, and signing in with that fails against the web SDK.
+  assert.equal(w.HTAuth.CONFIG.projectId, 'schedule-59d28');
+  assert.match(w.HTAuth.CONFIG.appId, /:web:/, 'the web appId, not the iOS one');
 });
 
 await test('the visibility toggle writes through to the account', async () => {
   $('visibility').value = 'public';
   $('visibility').dispatchEvent(new window.Event('change'));
   await settle();
-  assert.equal(db.prepare('SELECT is_public FROM accounts WHERE google_sub = ?').get('sub-page-alice').is_public, 1);
+  assert.equal(db.prepare('SELECT is_public FROM accounts WHERE firebase_uid = ?').get('sub-page-alice').is_public, 1);
 });
 
 await test('the auto-grant toggle writes through to the account', async () => {
   $('auto-grant').checked = false;
   $('auto-grant').dispatchEvent(new window.Event('change'));
   await settle();
-  assert.equal(db.prepare('SELECT auto_grant FROM accounts WHERE google_sub = ?').get('sub-page-alice').auto_grant, 0);
+  assert.equal(db.prepare('SELECT auto_grant FROM accounts WHERE firebase_uid = ?').get('sub-page-alice').auto_grant, 0);
 });
 
 await test('editing a course name saves locally and to the account', async () => {
@@ -261,7 +278,7 @@ await test('editing a course name saves locally and to the account', async () =>
   input.value = 'AP Biology';
   input.dispatchEvent(new window.Event('input'));
   await settle();
-  const stored = JSON.parse(db.prepare('SELECT block_prefs FROM accounts WHERE google_sub = ?').get('sub-page-alice').block_prefs);
+  const stored = JSON.parse(db.prepare('SELECT block_prefs FROM accounts WHERE firebase_uid = ?').get('sub-page-alice').block_prefs);
   const firstKey = Object.keys(stored)[0];
   assert.equal(stored[firstKey].name, 'AP Biology', 'the course reached D1');
   const local = JSON.parse(window.localStorage.getItem('blockPreferences') || '{}');
@@ -272,11 +289,11 @@ await test('course changes made in another browser load on sign-in', async () =>
   // The account's courses change underneath this browser, then the page is
   // loaded cold, as on a second device. It must adopt the account's version.
   const other = JSON.parse(JSON.stringify(JSON.parse(
-    db.prepare('SELECT block_prefs FROM accounts WHERE google_sub = ?').get('sub-page-alice').block_prefs
+    db.prepare('SELECT block_prefs FROM accounts WHERE firebase_uid = ?').get('sub-page-alice').block_prefs
   )));
   const key = Object.keys(other)[0];
   other[key].name = 'From Another Device';
-  db.prepare('UPDATE accounts SET block_prefs = ? WHERE google_sub = ?')
+  db.prepare('UPDATE accounts SET block_prefs = ? WHERE firebase_uid = ?')
     .run(JSON.stringify(other), 'sub-page-alice');
 
   const fresh = mountPage();
@@ -306,7 +323,7 @@ await test('the directory search renders public profiles', async () => {
   assert.ok(rows[0].querySelector('button'), 'and offers an action');
   // Keep Bob's cookie and profile id for the tests that follow.
   bob.cookie = bobCookie;
-  bob.profileId = db.prepare("SELECT profile_id FROM accounts WHERE google_sub = 'sub-page-bob'").get().profile_id;
+  bob.profileId = db.prepare("SELECT profile_id FROM accounts WHERE firebase_uid = 'sub-page-bob'").get().profile_id;
 });
 
 await test('asking for a schedule either grants access or records a request', async () => {
@@ -319,7 +336,7 @@ await test('asking for a schedule either grants access or records a request', as
   const status = $('directory-status').textContent;
   assert.match(status, /Request sent|Access granted/, 'the click produced a real result');
 
-  const aliceId = db.prepare("SELECT id FROM accounts WHERE google_sub = 'sub-page-alice'").get().id;
+  const aliceId = db.prepare("SELECT id FROM accounts WHERE firebase_uid = 'sub-page-alice'").get().id;
   const grant = db.prepare(
     'SELECT revoked_at FROM grants WHERE viewer_account_id = ? AND revoked_at IS NULL'
   ).get(aliceId);
@@ -338,7 +355,7 @@ await test('a request from someone else can be accepted in the UI', async () => 
   // Bob asks Alice. Alice has auto-grant off, so it lands as pending for her.
   const pageCookie = getCookieJar();
   const aliceProfileId = db.prepare(
-    "SELECT profile_id FROM accounts WHERE google_sub = 'sub-page-alice'"
+    "SELECT profile_id FROM accounts WHERE firebase_uid = 'sub-page-alice'"
   ).get().profile_id;
   await asOther(bob.cookie, () => window.HTAccount.askForSchedule(aliceProfileId));
   setCookieJar(pageCookie);
@@ -353,7 +370,7 @@ await test('a request from someone else can be accepted in the UI', async () => 
   await settle();
 
   const grant = db.prepare(
-    'SELECT revoked_at FROM grants WHERE owner_account_id = (SELECT id FROM accounts WHERE google_sub = ?)'
+    'SELECT revoked_at FROM grants WHERE owner_account_id = (SELECT id FROM accounts WHERE firebase_uid = ?)'
   ).get('sub-page-alice');
   assert.ok(grant, 'accepting created a grant');
   assert.equal(grant.revoked_at, null);
@@ -367,7 +384,7 @@ await test('the access panel lists viewers and can revoke', async () => {
   revoke.dispatchEvent(new window.Event('click'));
   await settle();
   const grant = db.prepare(
-    'SELECT revoked_at FROM grants WHERE owner_account_id = (SELECT id FROM accounts WHERE google_sub = ?)'
+    'SELECT revoked_at FROM grants WHERE owner_account_id = (SELECT id FROM accounts WHERE firebase_uid = ?)'
   ).get('sub-page-alice');
   assert.ok(grant.revoked_at, 'the grant is stamped revoked');
 });
@@ -416,7 +433,7 @@ await test('a request notice offers Accept, and accepting grants access', async 
   await signInAs('sub-page-owner-notice', 'owner.notice@example.org', 'Owner Notice');
   await window.HTAccount.updateProfile({ isPublic: false, autoGrant: false, displayName: 'Owner Notice' });
   await window.HTAccount.refresh();
-  const ownerId = db.prepare("SELECT profile_id FROM accounts WHERE google_sub = 'sub-page-owner-notice'").get();
+  const ownerId = db.prepare("SELECT profile_id FROM accounts WHERE firebase_uid = 'sub-page-owner-notice'").get();
 
   const daveCookie = await signInAs('sub-page-dave-notice', 'dave.notice@example.org', 'Dave Notice');
   await asOther(daveCookie, async () => {
@@ -444,7 +461,7 @@ await test('a request notice offers Accept, and accepting grants access', async 
 
   assert.ok(db.prepare(
     `SELECT 1 FROM grants WHERE viewer_account_id =
-       (SELECT id FROM accounts WHERE google_sub = 'sub-page-dave-notice') AND revoked_at IS NULL`
+       (SELECT id FROM accounts WHERE firebase_uid = 'sub-page-dave-notice') AND revoked_at IS NULL`
   ).get(), 'accepting from the notice created a live grant');
 });
 
@@ -483,7 +500,7 @@ await test('a stale cached account.js does not leave Clear a silent no-op', asyn
   await settle();
   await window.HTAccount.updateProfile({ isPublic: false, autoGrant: false, displayName: 'Stale Owner' });
   await window.HTAccount.refresh();
-  const ownerId = db.prepare("SELECT profile_id FROM accounts WHERE google_sub = 'sub-stale-owner-page'").get();
+  const ownerId = db.prepare("SELECT profile_id FROM accounts WHERE firebase_uid = 'sub-stale-owner-page'").get();
 
   const daveCookie = await signInAs('sub-stale-dave-page', 'stale.dave@example.org', 'Stale Dave');
   await asOther(daveCookie, async () => {
@@ -623,10 +640,10 @@ await test('accepting a request puts the granter on the asker\'s card', async ()
   // whose schedules you can see, so when Carol accepts, it is Dave's card that
   // should gain Carol -- without Dave having to add her by hand.
   const carolCookie = await signInAs('sub-page-carol', 'carol@example.org', 'Carol');
-  const carolId = db.prepare("SELECT id, profile_id FROM accounts WHERE google_sub = 'sub-page-carol'").get();
+  const carolId = db.prepare("SELECT id, profile_id FROM accounts WHERE firebase_uid = 'sub-page-carol'").get();
 
   const daveCookie = await signInAs('sub-page-dave', 'dave@example.org', 'Dave');
-  const daveId = db.prepare("SELECT id, profile_id FROM accounts WHERE google_sub = 'sub-page-dave'").get();
+  const daveId = db.prepare("SELECT id, profile_id FROM accounts WHERE firebase_uid = 'sub-page-dave'").get();
   await asOther(daveCookie, () => window.HTAccount.askForSchedule(carolId.profile_id));
 
   // Carol accepts, in her own session.
@@ -670,7 +687,7 @@ await test('a friend added from the directory carries real course data for the c
   // Frank gets must include the courses, or the card would render an empty
   // schedule even though the grant is valid.
   const erinCookie = await signInAs('sub-page-erin', 'erin@example.org', 'Erin');
-  const erinId = db.prepare("SELECT id, profile_id FROM accounts WHERE google_sub = 'sub-page-erin'").get();
+  const erinId = db.prepare("SELECT id, profile_id FROM accounts WHERE firebase_uid = 'sub-page-erin'").get();
   await window.HTAccount.updateProfile({
     isPublic: true,
     lunchWave: 1,
@@ -718,7 +735,7 @@ await test('the course and lunch still reach the card after a page-level update'
   await window.HTAccount.updateProfile({ displayName: 'Frank F.' });
   await settle();
   const stored = JSON.parse(db.prepare(
-    "SELECT block_prefs FROM accounts WHERE google_sub = 'sub-page-frank'"
+    "SELECT block_prefs FROM accounts WHERE firebase_uid = 'sub-page-frank'"
   ).get().block_prefs);
   const names = Object.values(stored).map((b) => b.name);
   assert.ok(names.some((n) => n.length), 'the account still holds courses: ' + JSON.stringify(names));

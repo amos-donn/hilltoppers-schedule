@@ -96,7 +96,7 @@ account.js          talks to the Worker; loaded by both pages
 popup.css           the extension's popup.css, copied unchanged
 classSettings.css   the extension's classSettings.css, copied unchanged
 dashboard.css       the settings page's Hilltoppers shell: sidebar tabs, the
-                    sage palette, custom dropdowns, and the Google button
+                    sage palette and custom dropdowns
 toppings-resize.js  the Topping spec's content-height helper, copied unchanged
 schedule/           the bell schedules, bundled (see below)
 icons/              the site's logo, favicons, and Apple touch icon
@@ -136,8 +136,8 @@ the card is running — this is the one place the two pages differ.
   with you — and renders each grant's schedule as that friend. The Worker
   returns exactly the courses, lunch, grade and time format the card draws.
 - **No account, or the cookie was withheld**: the empty card offers *Sign in to
-  view friends!* rather than looking broken. It opens the sign-in in a tab, since
-  Google will not render its consent screen inside an iframe.
+  view friends!* rather than looking broken. It opens the settings page in a tab,
+  because the sign-in form has no room in the frame.
 
 A share link still works in either mode, and a friend who arrives both ways (a
 link and a grant) is shown once, with the account's fresher data.
@@ -227,8 +227,7 @@ scrollbar.
 - `allow-scripts` — renders and ticks the countdown
 - `allow-same-origin` — reads the published JSON
 - `allow-popups` — opens the Daily Bulletin, the settings page, and sign-in in a
-  new tab (sign-in must be a tab: Google will not render its consent screen in
-  an iframe)
+  new tab (sign-in must be a tab, since the settings page is where it happens)
 
 For **Fit content** height mode, the host should send the context message the
 spec defines. `toppings-resize.js` reports the height only once it has seen a

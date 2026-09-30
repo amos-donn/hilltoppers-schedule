@@ -3,9 +3,9 @@
  *
  * Runs the Worker's real fetch handler against a real SQLite database (via
  * node:sqlite) and real WebCrypto, so the authorization rules are exercised as
- * written rather than mocked. Google's token and JWKS endpoints are stubbed
- * with a locally generated RSA key, so verifyGoogleIdToken runs its real
- * signature check against a key we control.
+ * written rather than mocked. Firebase's signing key is stubbed with a locally
+ * generated RSA key, so verifyFirebaseIdToken runs its real signature check
+ * against a key we control.
  *
  * Not shipped: this exists to prove the endpoints behave, especially the ones
  * that decide who may read whose schedule.
@@ -14,7 +14,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 
-const CLIENT_ID = 'test-client-id.apps.googleusercontent.com';
+const FIREBASE_PROJECT = 'schedule-59d28';
 const ORIGIN = 'https://hilltoppers-schedule-friends.amos-donn.workers.dev';
 
 // ---------------------------------------------------------------------------
@@ -49,15 +49,14 @@ function makeEnv() {
   db.exec('PRAGMA foreign_keys = ON');
   return {
     DB: { prepare: (sql) => new Stmt(db, sql) },
-    GOOGLE_CLIENT_ID: CLIENT_ID,
-    GOOGLE_CLIENT_SECRET: 'test-secret',
+    FIREBASE_PROJECT_ID: FIREBASE_PROJECT,
     SESSION_SECRET: 'test-session-secret',
     __db: db,
   };
 }
 
 // ---------------------------------------------------------------------------
-// Fake Google: one RSA key we sign with, served as the JWKS
+// Fake Firebase: one RSA key we sign with, published as the securetoken JWKS
 // ---------------------------------------------------------------------------
 const keyPair = await crypto.subtle.generateKey(
   { name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' },
@@ -83,19 +82,25 @@ async function makeIdToken({
   sub,
   email,
   name,
-  aud = CLIENT_ID,
-  iss = 'https://accounts.google.com',
+  aud = FIREBASE_PROJECT,
+  iss = `https://securetoken.google.com/${FIREBASE_PROJECT}`,
   expDelta = 3600,
+  emailVerified = true,
+  kid = 'test-kid',
 }) {
-  const header = { alg: 'RS256', typ: 'JWT', kid: 'test-kid' };
+  const now = Math.floor(Date.now() / 1000);
+  const header = { alg: 'RS256', typ: 'JWT', kid };
   const payload = {
     sub,
+    user_id: sub,
     email,
     name,
+    email_verified: emailVerified,
     aud,
     iss,
-    exp: Math.floor(Date.now() / 1000) + expDelta,
-    iat: Math.floor(Date.now() / 1000),
+    exp: now + expDelta,
+    iat: now,
+    auth_time: now,
   };
   const signingInput = `${b64urlJson(header)}.${b64urlJson(payload)}`;
   const sig = await crypto.subtle.sign(
@@ -107,13 +112,11 @@ async function makeIdToken({
 }
 
 const realFetch = globalThis.fetch;
-let tokenToReturn = null;
 globalThis.fetch = async (input, init) => {
   const url = typeof input === 'string' ? input : input.url;
-  if (url.startsWith('https://oauth2.googleapis.com/token')) {
-    return new Response(JSON.stringify({ id_token: tokenToReturn }), { status: 200 });
-  }
-  if (url.startsWith('https://www.googleapis.com/oauth2/v3/certs')) {
+  // "jwk", singular. The plural is a 404, which fails every token and looks
+  // exactly like a signed-out user.
+  if (url.startsWith('https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com')) {
     return new Response(JSON.stringify({ keys: [publicJwk] }), { status: 200 });
   }
   return realFetch(input, init);
@@ -155,25 +158,16 @@ function cookieFrom(res) {
   return session ? session.split(';')[0] : null;
 }
 
-/** Complete a full sign-in for a Google account and return its session cookie. */
-async function signIn(env, { sub, email, name }) {
-  const login = await call(env, '/api/auth/login');
-  assert.equal(login.status, 302, 'login should redirect to Google');
-  const state = new URL(login.headers.get('Location')).searchParams.get('state');
-  assert.ok(state, 'login should carry a state value');
-
-  tokenToReturn = await makeIdToken({ sub, email, name });
-  const cb = await call(env, `/api/auth/callback?code=test-code&state=${state}`, {
-    cookie: `ht_oauth_${state.slice(0, 8)}=1`,
+/** Complete a sign-in the way the settings page does, and return its cookie. */
+async function signIn(env, { sub, email, name, ...options }) {
+  const token = await makeIdToken({ sub, email, name, ...options });
+  const res = await call(env, '/api/auth/firebase', {
+    method: 'POST',
+    body: { idToken: token },
   });
-  assert.equal(cb.status, 302, 'callback should redirect back to settings');
-  assert.match(
-    cb.headers.get('Location'),
-    /^https:\/\/amos-donn\.github\.io\/hilltoppers-schedule\/settings\.html/,
-    'the redirect must go to the site, not to this Worker, which serves no pages'
-  );
-  const cookie = cookieFrom(cb);
-  assert.ok(cookie, 'callback should set a session cookie');
+  assert.equal(res.status, 200, 'sign-in should succeed');
+  const cookie = cookieFrom(res);
+  assert.ok(cookie, 'sign-in should set a session cookie');
   return cookie;
 }
 
@@ -211,8 +205,6 @@ await test('sign-in creates an account with a generated profile ID', async () =>
 });
 
 await test('a forged ID token is rejected', async () => {
-  const login = await call(env, '/api/auth/login');
-  const state = new URL(login.headers.get('Location')).searchParams.get('state');
   const other = await crypto.subtle.generateKey(
     { name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' },
     true,
@@ -221,9 +213,11 @@ await test('a forged ID token is rejected', async () => {
   const header = b64urlJson({ alg: 'RS256', typ: 'JWT', kid: 'test-kid' });
   const payload = b64urlJson({
     sub: 'attacker',
+    user_id: 'attacker',
     email: 'e@x.org',
-    aud: CLIENT_ID,
-    iss: 'https://accounts.google.com',
+    email_verified: true,
+    aud: FIREBASE_PROJECT,
+    iss: `https://securetoken.google.com/${FIREBASE_PROJECT}`,
     exp: Math.floor(Date.now() / 1000) + 600,
   });
   const input = `${header}.${payload}`;
@@ -232,50 +226,112 @@ await test('a forged ID token is rejected', async () => {
     other.privateKey,
     new TextEncoder().encode(input)
   );
-  tokenToReturn = `${input}.${b64url(badSig)}`;
 
-  const cb = await call(env, `/api/auth/callback?code=c&state=${state}`, {
-    cookie: `ht_oauth_${state.slice(0, 8)}=1`,
+  const res = await call(env, '/api/auth/firebase', {
+    method: 'POST',
+    body: { idToken: `${input}.${b64url(badSig)}` },
   });
-  assert.equal(cb.status, 302);
-  assert.ok(!cookieFrom(cb), 'no session cookie should be issued for a forged token');
-  const rows = env.__db.prepare("SELECT COUNT(*) AS n FROM accounts WHERE google_sub = 'attacker'").get();
+  assert.equal(res.status, 401);
+  assert.equal(res.body.error, 'invalid_token');
+  assert.ok(!cookieFrom(res), 'no session cookie should be issued for a forged token');
+  const rows = env.__db.prepare("SELECT COUNT(*) AS n FROM accounts WHERE firebase_uid = 'attacker'").get();
   assert.equal(rows.n, 0, 'no account should be created from a forged token');
 });
 
 await test('a token for the wrong audience is rejected', async () => {
-  const login = await call(env, '/api/auth/login');
-  const state = new URL(login.headers.get('Location')).searchParams.get('state');
-  tokenToReturn = await makeIdToken({ sub: 'wrong-aud', email: 'w@x.org', name: 'W', aud: 'someone-else' });
-  const cb = await call(env, `/api/auth/callback?code=c&state=${state}`, {
-    cookie: `ht_oauth_${state.slice(0, 8)}=1`,
-  });
-  assert.ok(!cookieFrom(cb), 'aud mismatch should not mint a session');
+  const token = await makeIdToken({ sub: 'wrong-aud', email: 'w@x.org', name: 'W', aud: 'someone-else' });
+  const res = await call(env, '/api/auth/firebase', { method: 'POST', body: { idToken: token } });
+  assert.equal(res.status, 401, 'aud mismatch should not mint a session');
+  assert.ok(!cookieFrom(res));
 });
 
-await test('a callback without a matching state cookie is rejected', async () => {
-  const login = await call(env, '/api/auth/login');
-  const state = new URL(login.headers.get('Location')).searchParams.get('state');
-  tokenToReturn = await makeIdToken({ sub: 'no-state', email: 'n@x.org', name: 'N' });
-  const cb = await call(env, `/api/auth/callback?code=c&state=${state}`);
-  assert.ok(!cookieFrom(cb), 'a forged callback should not mint a session');
+await test('a token for the wrong project is rejected', async () => {
+  const token = await makeIdToken({
+    sub: 'wrong-iss', email: 'w@x.org', name: 'W',
+    iss: 'https://securetoken.google.com/some-other-project',
+  });
+  const res = await call(env, '/api/auth/firebase', { method: 'POST', body: { idToken: token } });
+  assert.equal(res.status, 401, 'iss mismatch should not mint a session');
+});
+
+await test('an expired token is rejected', async () => {
+  const token = await makeIdToken({ sub: 'stale', email: 's@x.org', name: 'S', expDelta: -60 });
+  const res = await call(env, '/api/auth/firebase', { method: 'POST', body: { idToken: token } });
+  assert.equal(res.status, 401, 'an expired token should not mint a session');
+});
+
+await test('a token signed with an unknown key is rejected', async () => {
+  const token = await makeIdToken({ sub: 'other-kid', email: 'k@x.org', name: 'K', kid: 'no-such-kid' });
+  const res = await call(env, '/api/auth/firebase', { method: 'POST', body: { idToken: token } });
+  assert.equal(res.status, 401, 'an unlisted kid should not mint a session');
+});
+
+await test('an unverified email is refused', async () => {
+  // A Firebase account exists before its address is confirmed. Accepting it
+  // would let someone register with an address they do not own.
+  const token = await makeIdToken({
+    sub: 'unverified', email: 'unverified@x.org', name: 'U', emailVerified: false,
+  });
+  const res = await call(env, '/api/auth/firebase', { method: 'POST', body: { idToken: token } });
+  assert.equal(res.status, 401);
+  const rows = env.__db.prepare("SELECT COUNT(*) AS n FROM accounts WHERE firebase_uid = 'unverified'").get();
+  assert.equal(rows.n, 0, 'no account for an unconfirmed address');
+});
+
+await test('a verified non-school address is accepted', async () => {
+  // Hilltoppers' own sign-in is not restricted to the school domain: its
+  // /school/send endpoint refuses when the sign-in address IS a school address,
+  // which means the ordinary flow is a non-school address with a school one
+  // linked on top. Gating here on the domain would lock out those accounts, so
+  // the gate is email_verified and nothing more. See the PR for the reasoning.
+  //
+  // Its own database, because the shared one is asserted on by name elsewhere.
+  const fresh = makeEnv();
+  const token = await makeIdToken({
+    sub: 'personal', email: 'personal@example.org', name: 'P', emailVerified: true,
+  });
+  const res = await call(fresh, '/api/auth/firebase', { method: 'POST', body: { idToken: token } });
+  assert.equal(res.status, 200, 'a confirmed personal address signs in');
+  assert.ok(cookieFrom(res), 'and gets a session');
+});
+
+await test('garbage in place of a token is refused, not crashed on', async () => {
+  for (const idToken of [undefined, null, '', 'not.a.token', 'a.b', 'eyJhbGciOiJub25lIn0.e30.']) {
+    const res = await call(env, '/api/auth/firebase', { method: 'POST', body: { idToken } });
+    assert.equal(res.status, 401, `token ${JSON.stringify(idToken)} should be refused`);
+  }
+  const none = await call(env, '/api/auth/firebase', { method: 'POST' });
+  assert.equal(none.status, 401, 'a body-less request should be refused, not throw');
 });
 
 await test('a second sign-in reuses the same account', async () => {
   const first = await call(env, '/api/me', { cookie: env.alice.cookie });
   const cookie = await signIn(env, { sub: 'sub-alice', email: 'alice@x.org', name: 'Alice' });
   const second = await call(env, '/api/me', { cookie });
-  assert.equal(second.body.profileId, first.body.profileId, 'identity follows google_sub, not the email');
+  assert.equal(second.body.profileId, first.body.profileId, 'identity follows the Firebase uid, not the email');
   const n = env.__db.prepare('SELECT COUNT(*) AS n FROM accounts').get();
   assert.equal(n.n, 1, 're-signing in must not create a second account');
 });
 
+await test('a changed email updates the account without changing identity', async () => {
+  // The uid is the identity; the address is just a field on it. Someone who
+  // changes their address in Hilltoppers keeps their schedule and friends.
+  const before = await call(env, '/api/me', { cookie: env.alice.cookie });
+  const cookie = await signIn(env, { sub: 'sub-alice', email: 'alice.new@x.org', name: 'Alice' });
+  const after = await call(env, '/api/me', { cookie });
+  assert.equal(after.body.profileId, before.body.profileId, 'same account');
+  assert.equal(after.body.email, 'alice.new@x.org', 'the address follows Hilltoppers');
+  const n = env.__db.prepare('SELECT COUNT(*) AS n FROM accounts').get();
+  assert.equal(n.n, 1, 'no second account was created');
+
+  // Put it back, so the later tests still see the original address.
+  await signIn(env, { sub: 'sub-alice', email: 'alice@x.org', name: 'Alice' });
+});
+
 await test('a session cookie is HttpOnly, Secure and SameSite=None', async () => {
-  const login = await call(env, '/api/auth/login');
-  const state = new URL(login.headers.get('Location')).searchParams.get('state');
-  tokenToReturn = await makeIdToken({ sub: 'sub-bob', email: 'bob@x.org', name: 'Bob' });
+  const token = await makeIdToken({ sub: 'sub-bob', email: 'bob@x.org', name: 'Bob' });
   const res = await worker.fetch(
-    req(`/api/auth/callback?code=c&state=${state}`, { cookie: `ht_oauth_${state.slice(0, 8)}=1` }),
+    req('/api/auth/firebase', { method: 'POST', body: { idToken: token } }),
     env
   );
   const raw = res.headers.getSetCookie().find((c) => c.startsWith('ht_session='));
@@ -510,7 +566,7 @@ await test('deleting an account cascades and notifies viewers', async () => {
   assert.equal(gone.status, 401, 'the deleted session is no longer valid');
 
   const leftovers = {
-    accounts: env.__db.prepare("SELECT COUNT(*) AS n FROM accounts WHERE google_sub = 'sub-alice'").get().n,
+    accounts: env.__db.prepare("SELECT COUNT(*) AS n FROM accounts WHERE firebase_uid = 'sub-alice'").get().n,
   };
   assert.equal(leftovers.accounts, 0, 'account row removed');
   const erinNotices = await call(env, '/api/notices', { cookie: erin });
@@ -518,171 +574,6 @@ await test('deleting an account cascades and notifies viewers', async () => {
     erinNotices.body.notices.some((n) => n.kind === 'access.revoked'),
     'a viewer should be notified when the owner deletes their account'
   );
-});
-
-// ---------------------------------------------------------------------------
-// Changing the account's email
-//
-// The address is the account's sign-in identity, so the flow is: ask, prove
-// control of the new address through Google, then move the account onto it.
-// These tests cover the rule that matters most - an address already in use is
-// refused rather than merged.
-// ---------------------------------------------------------------------------
-
-/** Walk the email-change callback the way the browser would. */
-async function completeEmailChange(env, cookie, { sub, email, name }) {
-  const start = await call(env, '/api/me/email', {
-    method: 'POST', cookie, body: { email },
-  });
-  assert.equal(start.status, 200, 'starting the change should succeed');
-  const state = new URL(start.body.authorizeUrl).searchParams.get('state');
-  assert.ok(state, 'the authorize URL carries a signed state');
-
-  tokenToReturn = await makeIdToken({ sub, email, name });
-  const cb = await call(env, `/api/auth/callback?code=test-code&state=${encodeURIComponent(state)}`);
-  return { start, cb, state };
-}
-
-await test('changing the email moves the account onto the new address', async () => {
-  const env2 = makeEnv();
-  const cookie = await signIn(env2, { sub: 'sub-move', email: 'old@example.org', name: 'Mover' });
-  const before = await call(env2, '/api/me', { cookie });
-  const profileId = before.body.profileId;
-
-  const { cb } = await completeEmailChange(env2, cookie, {
-    sub: 'sub-move', email: 'new@example.org', name: 'Mover',
-  });
-  assert.equal(cb.status, 302);
-  assert.match(cb.headers.get('Location'), /email=ok/, 'the redirect reports success');
-
-  // A fresh session comes back, so the browser stays signed in as the same
-  // account, now under the new address.
-  const fresh = cookieFrom(cb);
-  assert.ok(fresh, 'the callback sets a new session cookie');
-  const after = await call(env2, '/api/me', { cookie: fresh });
-  assert.equal(after.status, 200, 'still signed in');
-  assert.equal(after.body.email, 'new@example.org', 'the email moved');
-  assert.equal(after.body.profileId, profileId, 'and the account is the same one');
-
-  const rows = env2.__db.prepare('SELECT COUNT(*) AS n FROM accounts').get().n;
-  assert.equal(rows, 1, 'no second account was created');
-});
-
-await test('an email already on another account is refused', async () => {
-  const env3 = makeEnv();
-  await signIn(env3, { sub: 'sub-owner', email: 'taken@example.org', name: 'Owner' });
-  const moverCookie = await signIn(env3, { sub: 'sub-mover', email: 'mover@example.org', name: 'Mover' });
-
-  // Caught before Google is even contacted, so the student is not sent on a
-  // round trip that cannot succeed.
-  const start = await call(env3, '/api/me/email', {
-    method: 'POST', cookie: moverCookie, body: { email: 'taken@example.org' },
-  });
-  assert.equal(start.status, 409);
-  assert.equal(start.body.error, 'email_taken');
-
-  // And again on the way back. The two checks can disagree if another account
-  // claims the address in between, so simulate exactly that: start the change
-  // while the address is free, then let someone else take it before the
-  // callback lands.
-  const start2 = await call(env3, '/api/me/email', {
-    method: 'POST', cookie: moverCookie, body: { email: 'fresh@example.org' },
-  });
-  assert.equal(start2.status, 200, 'the address was free when the change started');
-  const state = new URL(start2.body.authorizeUrl).searchParams.get('state');
-
-  await signIn(env3, { sub: 'sub-late', email: 'fresh@example.org', name: 'Late' });
-
-  tokenToReturn = await makeIdToken({ sub: 'sub-mover', email: 'fresh@example.org', name: 'Mover' });
-  const cb = await call(env3, `/api/auth/callback?code=c&state=${encodeURIComponent(state)}`);
-  assert.match(cb.headers.get('Location'), /email=taken/, 'the callback refuses it too');
-
-  const me = await call(env3, '/api/me', { cookie: moverCookie });
-  assert.equal(me.body.email, 'mover@example.org', 'the account did not move');
-  assert.equal(env3.__db.prepare('SELECT COUNT(*) AS n FROM accounts').get().n, 3, 'no rows were merged');
-});
-
-await test('an account cannot move onto a Google account another row owns', async () => {
-  const env4 = makeEnv();
-  const ownerCookie = await signIn(env4, { sub: 'sub-dupe', email: 'first@example.org', name: 'First' });
-  const otherCookie = await signIn(env4, { sub: 'sub-other', email: 'second@example.org', name: 'Second' });
-  assert.ok(ownerCookie && otherCookie);
-
-  // "Second" tries to claim an address backed by a google_sub that already has
-  // a row. Merging the two would hand over the first account's data.
-  const start = await call(env4, '/api/me/email', {
-    method: 'POST', cookie: otherCookie, body: { email: 'third@example.org' },
-  });
-  const state = new URL(start.body.authorizeUrl).searchParams.get('state');
-  tokenToReturn = await makeIdToken({ sub: 'sub-dupe', email: 'third@example.org', name: 'First' });
-  const cb = await call(env4, `/api/auth/callback?code=c&state=${encodeURIComponent(state)}`);
-  assert.match(cb.headers.get('Location'), /email=taken/, 'refused, not merged');
-
-  const second = await call(env4, '/api/me', { cookie: otherCookie });
-  assert.equal(second.body.email, 'second@example.org', 'the second account is untouched');
-  assert.equal(env4.__db.prepare('SELECT COUNT(*) AS n FROM accounts').get().n, 2, 'no row was stolen');
-});
-
-await test('a Google account with the wrong address cannot claim the change', async () => {
-  const env5 = makeEnv();
-  const cookie = await signIn(env5, { sub: 'sub-victim', email: 'victim@example.org', name: 'Victim' });
-
-  const start = await call(env5, '/api/me/email', {
-    method: 'POST', cookie, body: { email: 'wanted@example.org' },
-  });
-  const state = new URL(start.body.authorizeUrl).searchParams.get('state');
-
-  // Signing in as some other Google account must not move the account onto the
-  // address that was typed.
-  tokenToReturn = await makeIdToken({ sub: 'sub-attacker', email: 'attacker@example.org', name: 'Attacker' });
-  const cb = await call(env5, `/api/auth/callback?code=c&state=${encodeURIComponent(state)}`);
-  assert.match(cb.headers.get('Location'), /email=mismatch/, 'a different address is rejected');
-
-  const me = await call(env5, '/api/me', { cookie });
-  assert.equal(me.body.email, 'victim@example.org', 'the account did not move');
-});
-
-await test('a forged or tampered state cannot move an account', async () => {
-  const env6 = makeEnv();
-  const cookie = await signIn(env6, { sub: 'sub-forge', email: 'forge@example.org', name: 'Forge' });
-  const start = await call(env6, '/api/me/email', {
-    method: 'POST', cookie, body: { email: 'target@example.org' },
-  });
-  const state = new URL(start.body.authorizeUrl).searchParams.get('state');
-
-  // Swap the payload for one naming a different account, keeping the signature.
-  const [payload, sig] = state.split('.');
-  const decoded = JSON.parse(Buffer.from(payload.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString());
-  decoded.a = 99999;
-  const forged = Buffer.from(JSON.stringify(decoded)).toString('base64url') + '.' + sig;
-
-  tokenToReturn = await makeIdToken({ sub: 'sub-forge', email: 'target@example.org', name: 'Forge' });
-  const cb = await call(env6, `/api/auth/callback?code=c&state=${encodeURIComponent(forged)}`);
-  assert.match(cb.headers.get('Location'), /auth=error/, 'a tampered state is not accepted');
-
-  const me = await call(env6, '/api/me', { cookie });
-  assert.equal(me.body.email, 'forge@example.org', 'nothing moved');
-});
-
-await test('an email change needs a session and a real address', async () => {
-  const env7 = makeEnv();
-  const anon = await call(env7, '/api/me/email', {
-    method: 'POST', body: { email: 'x@example.org' },
-  });
-  assert.equal(anon.status, 401, 'signed out, the endpoint is closed');
-
-  const cookie = await signIn(env7, { sub: 'sub-val', email: 'val@example.org', name: 'Val' });
-  const nonsense = await call(env7, '/api/me/email', {
-    method: 'POST', cookie, body: { email: 'not-an-address' },
-  });
-  assert.equal(nonsense.status, 400);
-  assert.equal(nonsense.body.error, 'invalid_email');
-
-  const same = await call(env7, '/api/me/email', {
-    method: 'POST', cookie, body: { email: 'VAL@example.org' },
-  });
-  assert.equal(same.status, 400, 'the same address, ignoring case, is a no-op');
-  assert.equal(same.body.error, 'same_email');
 });
 
 console.log(results.join('\n'));

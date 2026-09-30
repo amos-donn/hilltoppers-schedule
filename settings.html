@@ -11,9 +11,9 @@
          page matches the extension's Class & Schedule Settings page. -->
     <link rel="stylesheet" href="classSettings.css?v=20260928h" />
     <!-- The Hilltoppers dashboard shell: sidebar tabs, the sage palette,
-         the custom dropdowns, and the Google button. Loaded after
-         classSettings.css, which it restyles. -->
-    <link rel="stylesheet" href="dashboard.css?v=20260930b" />
+         and the custom dropdowns. Loaded after classSettings.css, which it
+         restyles. -->
+    <link rel="stylesheet" href="dashboard.css?v=20260930d" />
   </head>
   <body>
     <div class="dashboard">
@@ -75,27 +75,56 @@
           <p class="class-settings__account-status class-settings__account-status--success" id="auth-status" hidden></p>
           <div id="account-signed-out" hidden>
             <p class="class-settings__hint class-settings__hint--intro">
-              Sign in to keep your schedule, friends, and settings on your
-              account instead of only in this browser. Your profile ID is how
-              other students reach your schedule &mdash; you choose whether it is
-              discoverable, and you can take access away at any time.
+              Sign in with your Hilltoppers account to keep your schedule,
+              friends, and settings on your account instead of only in this
+              browser. Your profile ID is how other students reach your schedule
+              &mdash; you choose whether it is discoverable, and you can take
+              access away at any time.
             </p>
-            <div class="class-settings__signin-grid">
+            <form class="class-settings__signin-grid" id="signin-form" novalidate>
+              <div class="class-settings__field-block">
+                <label for="signin-email">Email</label>
+                <input type="email" id="signin-email" autocomplete="username"
+                       spellcheck="false" placeholder="you@student.stjacademy.org" />
+              </div>
+              <div class="class-settings__field-block">
+                <label for="signin-password">Password</label>
+                <input type="password" id="signin-password" autocomplete="current-password" />
+              </div>
               <div class="class-settings__oauth-buttons">
-                <button type="button" class="google-button" id="signin-google">
-                  <svg class="google-button__icon" viewBox="0 0 48 48" aria-hidden="true">
-                    <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5Z"/>
-                    <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65Z"/>
-                    <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19Z"/>
-                    <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48Z"/>
-                  </svg>
-                  Sign in to view friends!
-                </button>
+                <button type="submit" class="primary" id="signin-submit">Sign in to view friends!</button>
+                <button type="button" class="secondary" id="signin-forgot">Forgot password?</button>
               </div>
               <p class="class-settings__hint">
-                Only a Google sign-in is needed. No password is stored, and the
-                app never sees one.
+                Hilltoppers handles the account, so the same email and password
+                you use there work here. Nothing extra to remember, and we never
+                see your password.
               </p>
+              <p class="class-settings__account-status" id="signin-status" hidden></p>
+            </form>
+
+            <!-- Six-digit code step, shared by "forgot password" and by the
+                 verification prompt. Hidden until one of them starts. -->
+            <form class="class-settings__signin-grid" id="code-form" hidden>
+              <p class="class-settings__hint" id="code-hint"></p>
+              <div class="class-settings__field-block">
+                <label for="code-input">Six-digit code</label>
+                <input type="text" id="code-input" inputmode="numeric" autocomplete="one-time-code"
+                       maxlength="6" spellcheck="false" />
+              </div>
+              <div class="class-settings__field-block" id="new-password-block" hidden>
+                <label for="new-password">New password</label>
+                <input type="password" id="new-password" autocomplete="new-password" />
+              </div>
+              <div class="class-settings__oauth-buttons">
+                <button type="submit" class="primary" id="code-submit">Continue</button>
+                <button type="button" class="secondary" id="code-cancel">Cancel</button>
+              </div>
+              <p class="class-settings__account-status" id="code-status" hidden></p>
+            </form>
+
+            <div class="class-settings__oauth-buttons" id="verify-actions" hidden>
+              <button type="button" class="primary" id="verify-send">Send verification email</button>
             </div>
           </div>
 
@@ -108,16 +137,14 @@
               <div class="class-settings__field-block">
                 <label for="account-email">Email</label>
                 <div class="class-settings__email-actions">
-                  <input type="email" id="account-email" autocomplete="email" spellcheck="false" />
-                  <button type="button" class="secondary" id="save-email">Save</button>
+                  <input type="email" id="account-email" readonly aria-describedby="email-hint" />
                 </div>
               </div>
               <p class="class-settings__hint" id="email-hint">
-                Changing this signs you in with Google as the new address, then
-                moves your account, schedule, and friends onto it. You stay
-                signed in.
+                This is the address on your Hilltoppers account, and it is what
+                signs you in. Change it in Hilltoppers, then sign in here with
+                the new address.
               </p>
-              <p class="class-settings__account-status" id="email-status" hidden></p>
               <div class="class-settings__fields class-settings__fields--stacked">
                 <div class="class-settings__field">
                   <label for="display-name">Display name</label>
@@ -287,7 +314,8 @@
     </div>
 
     <script src="schedule-core.js?v=20260928h"></script>
-    <script src="account.js?v=20260929b"></script>
+    <script src="auth.js?v=20260930a"></script>
+    <script src="account.js?v=20260930a"></script>
     <script>
       (function () {
         'use strict';
@@ -669,7 +697,7 @@
         var topbarText = document.getElementById('topbar-text');
         // The sidebar's one account control. It reads "Sign out" and only
         // appears with an account; signing in is offered inside the Account
-        // panel instead, where the Google button lives.
+        // panel instead, where the sign-in form lives.
         var topbarAuth = document.getElementById('topbar-auth');
         var noticesTabBadge = document.getElementById('notices-tab-badge');
         var displayName = document.getElementById('display-name');
@@ -677,8 +705,6 @@
         var visibility = document.getElementById('visibility');
         var autoGrant = document.getElementById('auto-grant');
         var accountEmail = document.getElementById('account-email');
-        var emailStatus = document.getElementById('email-status');
-        var saveEmail = document.getElementById('save-email');
         var accountStatus = document.getElementById('account-status');
         var requestsPanel = document.getElementById('requests-panel');
         var accessPanel = document.getElementById('access-panel');
@@ -714,12 +740,9 @@
           noticesPanel.hidden = false;
           dangerPanel.hidden = false;
 
-          // Only overwrite the field when it is not being typed into, so a
-          // refetch does not discard an address the student is midway through
-          // editing.
-          if (document.activeElement !== accountEmail) {
-            accountEmail.value = me.email;
-          }
+          // The address belongs to Hilltoppers, so it is shown but never edited
+          // here. It is the field's only writer.
+          accountEmail.value = me.email;
           profileIdInput.value = me.profileId;
           if (document.activeElement !== displayName) {
             displayName.value = me.displayName || '';
@@ -780,9 +803,226 @@
             + (kind ? ' class-settings__account-status--' + kind : '');
         }
 
-        document.getElementById('signin-google').addEventListener('click', function () {
-          A.signIn();
+        // --- sign in with Hilltoppers Auth --------------------------------
+        // The password never reaches our Worker. auth.js signs in against
+        // Hilltoppers (Firebase) directly, and only the resulting ID token is
+        // handed over, which the Worker verifies before issuing a session.
+        var signinForm = document.getElementById('signin-form');
+        var signinEmail = document.getElementById('signin-email');
+        var signinPassword = document.getElementById('signin-password');
+        var signinSubmit = document.getElementById('signin-submit');
+        var signinForgot = document.getElementById('signin-forgot');
+        var signinStatus = document.getElementById('signin-status');
+        var codeForm = document.getElementById('code-form');
+        var codeHint = document.getElementById('code-hint');
+        var codeInput = document.getElementById('code-input');
+        var codeSubmit = document.getElementById('code-submit');
+        var codeCancel = document.getElementById('code-cancel');
+        var codeStatus = document.getElementById('code-status');
+        var newPasswordBlock = document.getElementById('new-password-block');
+        var newPassword = document.getElementById('new-password');
+        var verifyActions = document.getElementById('verify-actions');
+        var verifySend = document.getElementById('verify-send');
+
+        // What the visible code form is currently for. One form serves both
+        // flows, so this is what decides how a redeemed code is applied.
+        var codeFlow = null;
+        var codeChallengeId = null;
+
+        function setStatus(node, message, kind) {
+          node.textContent = message;
+          node.className = 'class-settings__account-status'
+            + (kind ? ' class-settings__account-status--' + kind : '');
+          node.hidden = !message;
+        }
+
+        /** Turn a Firebase SDK error into something a student can act on. */
+        function authMessage(error) {
+          var code = (error && error.code) || '';
+          switch (code) {
+            case 'auth/invalid-email': return 'That does not look like an email address.';
+            case 'auth/wrong-password':
+            case 'auth/invalid-credential': return 'Incorrect email or password.';
+            case 'auth/user-not-found': return 'No Hilltoppers account uses that email.';
+            case 'auth/email-already-in-use': return 'There is already an account with this email.';
+            case 'auth/weak-password': return 'Your password must be at least 6 characters.';
+            case 'auth/too-many-requests': return 'Too many attempts. Wait a moment and try again.';
+            case 'auth/network-request-failed': return 'Network error. Check your connection and try again.';
+            case 'auth/user-disabled': return 'That account has been disabled.';
+            default: return (error && error.message) || 'Could not sign in right now.';
+          }
+        }
+
+        function showCodeForm(flow, challengeId, hint) {
+          codeFlow = flow;
+          codeChallengeId = challengeId;
+          codeHint.textContent = hint;
+          newPasswordBlock.hidden = flow !== 'reset';
+          newPassword.value = '';
+          codeInput.value = '';
+          setStatus(codeStatus, '', null);
+          signinForm.hidden = true;
+          verifyActions.hidden = true;
+          codeForm.hidden = false;
+          codeInput.focus();
+        }
+
+        function hideCodeForm() {
+          codeForm.hidden = true;
+          signinForm.hidden = false;
+          verifyActions.hidden = false;
+          codeFlow = null;
+          codeChallengeId = null;
+        }
+
+        // A CDN load can fail (offline, blocked, or a moved file), and the
+        // whole sign-in panel depends on it. Rather than let every handler throw
+        // a TypeError, the panel says so once and the buttons do nothing.
+        if (!window.HTAuth) {
+          signinSubmit.disabled = true;
+          signinForgot.disabled = true;
+          verifySend.disabled = true;
+          setStatus(signinStatus,
+            'Hilltoppers sign-in could not load. Check your connection and reload the page.', 'error');
+        } else {
+          // A Firebase session outlives ours, and an unconfirmed address is the
+          // one case where signing in is expected to fail. Offer the way to
+          // finish it up front rather than only after a rejected sign-in.
+          window.HTAuth.currentUser().then(function (user) {
+            if (user && !user.emailVerified) {
+              verifyActions.hidden = false;
+              setStatus(signinStatus,
+                'Confirm ' + user.email + ' to finish setting up your account.', null);
+            }
+          }).catch(function () {
+            /* signed out, or the SDK could not be reached; sign-in still works */
+          });
+        }
+
+        /** Hand a verified Firebase ID token to the Worker to start a session. */
+        function startSession() {
+          return window.HTAuth.idToken().then(function (token) {
+            if (!token) throw new Error('Sign-in did not produce a token.');
+            return A.signInWithIdToken(token);
+          }).then(function (result) {
+            if (result.ok) {
+              // A full reload is the simplest correct thing: the page renders
+              // signed-in state in many places, and refresh() alone would leave
+              // the sign-in panel's own state behind.
+              window.location.reload();
+              return;
+            }
+            if (result.status !== 401) throw new Error(friendlyError(result));
+            // Firebase accepted the sign-in but the Worker did not. The
+            // expected reason is an address that has not been confirmed yet,
+            // which the Worker refuses on purpose. Offer the way out instead of
+            // a dead end.
+            return window.HTAuth.currentUser().then(function (user) {
+              if (user && !user.emailVerified) {
+                verifyActions.hidden = false;
+                setStatus(signinStatus,
+                  'Confirm ' + user.email + ' before signing in.', 'error');
+                return;
+              }
+              throw new Error('Hilltoppers could not confirm that account.');
+            });
+          });
+        }
+
+        signinForm.addEventListener('submit', function (event) {
+          event.preventDefault();
+          var email = (signinEmail.value || '').trim();
+          var password = signinPassword.value || '';
+          if (!email || !password) {
+            setStatus(signinStatus, 'Enter your email and password.', 'error');
+            return;
+          }
+          signinSubmit.disabled = true;
+          setStatus(signinStatus, 'Signing in\u2026', null);
+          window.HTAuth.signIn(email, password)
+            .then(startSession)
+            .catch(function (error) {
+              signinSubmit.disabled = false;
+              setStatus(signinStatus, authMessage(error), 'error');
+            });
         });
+
+        signinForgot.addEventListener('click', function () {
+          var email = (signinEmail.value || '').trim();
+          if (!email) {
+            setStatus(signinStatus, 'Enter your email first, then choose Forgot password.', 'error');
+            return;
+          }
+          signinForgot.disabled = true;
+          setStatus(signinStatus, 'Sending\u2026', null);
+          window.HTAuth.requestCode('reset', email)
+            .then(function (challengeId) {
+              signinForgot.disabled = false;
+              setStatus(signinStatus, '', null);
+              showCodeForm('reset', challengeId,
+                'We emailed a six-digit code to ' + email + '. Enter it with your new password.');
+            })
+            .catch(function (error) {
+              signinForgot.disabled = false;
+              setStatus(signinStatus, authMessage(error), 'error');
+            });
+        });
+
+        verifySend.addEventListener('click', function () {
+          verifySend.disabled = true;
+          setStatus(signinStatus, 'Sending\u2026', null);
+          window.HTAuth.requestCode('verify')
+            .then(function (challengeId) {
+              verifySend.disabled = false;
+              setStatus(signinStatus, '', null);
+              showCodeForm('verify', challengeId,
+                'We emailed a six-digit code to your address. Enter it to finish verifying.');
+            })
+            .catch(function (error) {
+              verifySend.disabled = false;
+              setStatus(signinStatus, authMessage(error), 'error');
+            });
+        });
+
+        codeCancel.addEventListener('click', hideCodeForm);
+
+        codeForm.addEventListener('submit', function (event) {
+          event.preventDefault();
+          var code = (codeInput.value || '').trim();
+          if (!/^\d{6}$/.test(code)) {
+            setStatus(codeStatus, 'Enter the six-digit code.', 'error');
+            return;
+          }
+          if (codeFlow === 'reset' && (newPassword.value || '').length < 6) {
+            setStatus(codeStatus, 'Choose a password of at least 6 characters.', 'error');
+            return;
+          }
+          codeSubmit.disabled = true;
+          setStatus(codeStatus, 'Checking\u2026', null);
+          window.HTAuth.redeemCode(codeChallengeId, code)
+            .then(function (actionCode) {
+              if (codeFlow === 'reset') {
+                return window.HTAuth.completeReset(actionCode, newPassword.value)
+                  .then(function () {
+                    // The password is set, so sign in with it rather than
+                    // making the student type it again.
+                    return window.HTAuth.signIn((signinEmail.value || '').trim(), newPassword.value);
+                  })
+                  .then(startSession);
+              }
+              return window.HTAuth.completeVerification(actionCode)
+                .then(function () { return window.HTAuth.reload(); })
+                .then(function (user) {
+                  if (!user || !user.emailVerified) throw new Error('That address is still not verified.');
+                  return startSession();
+                });
+            })
+            .catch(function (error) {
+              codeSubmit.disabled = false;
+              setStatus(codeStatus, authMessage(error), 'error');
+            });
+        });
+
         topbarAuth.addEventListener('click', function () {
           A.signOut().then(function () { window.location.reload(); });
         });
@@ -801,51 +1041,9 @@
         });
 
         // --- change email -------------------------------------------------
-        // Saving does not write anything: it asks the Worker for the Google URL
-        // that proves the new address, and the change happens when Google sends
-        // the browser back to /api/auth/callback.
-        function setEmailStatus(message, kind) {
-          emailStatus.textContent = message;
-          emailStatus.className = 'class-settings__account-status' +
-            (kind ? ' class-settings__account-status--' + kind : '');
-          emailStatus.hidden = !message;
-        }
-
-        function saveEmailChange() {
-          var wanted = (accountEmail.value || '').trim();
-          if (!wanted) { setEmailStatus('Enter the email address to switch to.', 'error'); return; }
-
-          saveEmail.disabled = true;
-          setEmailStatus('Checking that address\u2026', null);
-          A.changeEmail(wanted).then(function (result) {
-            saveEmail.disabled = false;
-            if (result.ok && result.data && result.data.authorizeUrl) {
-              // Leave the page: the OAuth dance has to happen at the top level.
-              window.location.href = result.data.authorizeUrl;
-              return;
-            }
-            if (result.error === 'email_taken') {
-              setEmailStatus('There is already an account with this email', 'error');
-            } else if (result.error === 'same_email') {
-              setEmailStatus('That is already the email on this account.', 'error');
-            } else if (result.error === 'invalid_email') {
-              setEmailStatus('That does not look like an email address.', 'error');
-            } else {
-              setEmailStatus(friendlyError(result), 'error');
-            }
-          });
-        }
-
-        saveEmail.addEventListener('click', saveEmailChange);
-        accountEmail.addEventListener('keydown', function (event) {
-          if (event.key === 'Enter') { event.preventDefault(); saveEmailChange(); }
-        });
-
-        // The address is the account's sign-in identity, so it is not part of
-        // the autosaved profile: typing in it must not silently change anything.
-        accountEmail.addEventListener('input', function () {
-          if (!emailStatus.hidden) setEmailStatus('', null);
-        });
+        // There is nothing to change here. The address is Firebase's, and it is
+        // what signs the student in, so the field is read-only and this panel
+        // just says where to change it.
 
         displayName.addEventListener('input', function () {
           // Debounced so a burst of typing is one request, not one per key.
@@ -1305,38 +1503,13 @@
           });
         });
 
-        // --- auth result from the redirect ---------------------------------
-        // Reported inline on the Account card instead of a page-wide banner;
-        // the outcome belongs to the sign-in button that caused it.
-        var authStatus = document.getElementById('auth-status');
+        // --- leftover ?auth= / ?email= from the Google flow ------------------
+        // Sign-in no longer redirects, so nothing sets these any more. A browser
+        // arriving from a bookmarked or cached URL still might, and the old
+        // Google wording would be wrong, so drop it rather than render it.
         (function () {
           var params = new URLSearchParams(location.search);
-          var authResult = params.get('auth');
-          var result = params.get('email');
-          if (!authResult && !result) return;
-          var message;
-          var kind = 'success';
-          if (authResult === 'ok') {
-            message = 'Signed in.';
-          } else if (authResult) {
-            message = 'Sign-in did not finish. If you used a school Google account, your school may block third-party apps \u2014 a personal Google account will work.';
-            kind = 'error';
-          } else if (result === 'ok') {
-            message = 'Your account now uses the new email address. You are still signed in.';
-          } else if (result === 'taken') {
-            message = 'There is already an account with this email.';
-            kind = 'error';
-          } else if (result === 'mismatch') {
-            message = 'That Google account uses a different email. Sign in with the address you typed to move your account onto it.';
-            kind = 'error';
-          } else {
-            message = 'The email change did not finish. Nothing was changed.';
-            kind = 'error';
-          }
-          authStatus.textContent = message;
-          authStatus.className = 'class-settings__account-status class-settings__account-status--' + kind;
-          authStatus.hidden = false;
-          // Clean the query so a refresh does not replay the message.
+          if (!params.get('auth') && !params.get('email')) return;
           history.replaceState(null, '', location.pathname);
         })();
 
