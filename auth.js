@@ -40,11 +40,9 @@
     appId: '1:11216800424:web:6b56559c636eb27432509d',
   };
 
-  // Hilltoppers' own mail worker. It sends the reset and verification mail,
-  // because they deliberately do not use Firebase's default delivery. It sets
-  // Access-Control-Allow-Origin, so the browser can call it directly and no
-  // secret of ours is involved.
-  var MAIL = 'https://hilltoppers-account-email.danielzhang089.workers.dev/api/account-email';
+  // Reset and verification mail is Hilltoppers' to send, and it is sent from
+  // their extension rather than from here. Nothing in this file talks to their
+  // mail worker, so no secret and no extra origin is involved.
 
   var sdk = null;
 
@@ -101,72 +99,11 @@
     await loaded.auth.signOut(loaded.auth.getAuth(loaded.instance));
   }
 
-  /** Re-read the account, so a verification that happened in another tab shows. */
-  async function reload() {
-    var user = await currentUser();
-    if (!user) return null;
-    await user.reload();
-    return user;
-  }
-
-  /**
-   * Ask Hilltoppers' mail worker for a six-digit code that proves control of the
-   * address. Returns the challenge id the code is redeemed against.
-   *
-   * The token is sent because the worker verifies it; for a reset it is optional,
-   * and for a verification it is required.
-   */
-  async function requestCode(purpose, email) {
-    var headers = { 'Content-Type': 'application/json' };
-    var token = await idToken();
-    if (token) headers.Authorization = 'Bearer ' + token;
-    var response = await fetch(MAIL + '/send', {
-      method: 'POST',
-      headers: headers,
-      body: JSON.stringify(purpose === 'verify' ? { purpose: purpose } : { purpose: purpose, email: email }),
-    });
-    var data = await response.json().catch(function () { return {}; });
-    if (!response.ok) throw new Error(data.error || 'Could not send the email.');
-    return data.challengeId;
-  }
-
-  /** Trade a six-digit code for the Firebase action code it stands for. */
-  async function redeemCode(challengeId, code) {
-    var headers = { 'Content-Type': 'application/json' };
-    var token = await idToken();
-    if (token) headers.Authorization = 'Bearer ' + token;
-    var response = await fetch(MAIL + '/redeem', {
-      method: 'POST',
-      headers: headers,
-      body: JSON.stringify({ challengeId: challengeId, code: code }),
-    });
-    var data = await response.json().catch(function () { return {}; });
-    if (!response.ok) throw new Error(data.error || 'That code was not accepted.');
-    return data.actionCode;
-  }
-
-  /** Apply a reset action code and set the new password. */
-  async function completeReset(actionCode, newPassword) {
-    var loaded = await load();
-    await loaded.auth.confirmPasswordReset(loaded.auth.getAuth(loaded.instance), actionCode, newPassword);
-  }
-
-  /** Apply a verification action code. */
-  async function completeVerification(actionCode) {
-    var loaded = await load();
-    await loaded.auth.applyActionCode(loaded.auth.getAuth(loaded.instance), actionCode);
-  }
-
   window.HTAuth = {
     CONFIG: CONFIG,
     currentUser: currentUser,
     signIn: signIn,
     idToken: idToken,
     signOut: signOut,
-    reload: reload,
-    requestCode: requestCode,
-    redeemCode: redeemCode,
-    completeReset: completeReset,
-    completeVerification: completeVerification,
   };
 })();

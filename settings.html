@@ -81,7 +81,32 @@
               &mdash; you choose whether it is discoverable, and you can take
               access away at any time.
             </p>
-            <form class="class-settings__signin-grid" id="signin-form" novalidate>
+            <div class="class-settings__oauth-buttons">
+              <button type="button" class="primary class-settings__ht-button" id="signin-open">
+                <svg viewBox="0 0 256 256" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24ZM128,216a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm40-88a40,40,0,1,1-40-40A40,40,0,0,1,168,128Z"/></svg>
+                Sign in with Hilltoppers
+              </button>
+            </div>
+            <p class="class-settings__hint">
+              Hilltoppers handles the account, so the same email and password
+              you use there work here. Nothing extra to remember, and we never
+              see your password.
+            </p>
+            <p class="class-settings__account-status" id="signin-open-status" hidden></p>
+          </div>
+
+          <!-- The sign-in popup. A <dialog> so Escape, focus handling and the
+               backdrop come from the browser rather than from us. -->
+          <dialog class="class-settings__auth-dialog" id="signin-dialog" aria-labelledby="signin-dialog-title">
+            <form method="dialog" class="class-settings__auth-dialog-close">
+              <button type="submit" aria-label="Close">&times;</button>
+            </form>
+            <h2 id="signin-dialog-title">Sign in with Hilltoppers</h2>
+            <p class="class-settings__hint">
+              Use the same email and password as the Hilltoppers extension.
+            </p>
+
+            <form id="signin-form" class="class-settings__signin-grid" novalidate>
               <div class="class-settings__field-block">
                 <label for="signin-email">Email</label>
                 <input type="email" id="signin-email" autocomplete="username"
@@ -92,41 +117,31 @@
                 <input type="password" id="signin-password" autocomplete="current-password" />
               </div>
               <div class="class-settings__oauth-buttons">
-                <button type="submit" class="primary" id="signin-submit">Sign in to view friends!</button>
-                <button type="button" class="secondary" id="signin-forgot">Forgot password?</button>
+                <button type="submit" class="primary" id="signin-submit">Sign in</button>
               </div>
-              <p class="class-settings__hint">
-                Hilltoppers handles the account, so the same email and password
-                you use there work here. Nothing extra to remember, and we never
-                see your password.
-              </p>
               <p class="class-settings__account-status" id="signin-status" hidden></p>
             </form>
 
-            <!-- Six-digit code step, shared by "forgot password" and by the
-                 verification prompt. Hidden until one of them starts. -->
-            <form class="class-settings__signin-grid" id="code-form" hidden>
-              <p class="class-settings__hint" id="code-hint"></p>
-              <div class="class-settings__field-block">
-                <label for="code-input">Six-digit code</label>
-                <input type="text" id="code-input" inputmode="numeric" autocomplete="one-time-code"
-                       maxlength="6" spellcheck="false" />
-              </div>
-              <div class="class-settings__field-block" id="new-password-block" hidden>
-                <label for="new-password">New password</label>
-                <input type="password" id="new-password" autocomplete="new-password" />
-              </div>
-              <div class="class-settings__oauth-buttons">
-                <button type="submit" class="primary" id="code-submit">Continue</button>
-                <button type="button" class="secondary" id="code-cancel">Cancel</button>
-              </div>
-              <p class="class-settings__account-status" id="code-status" hidden></p>
-            </form>
+            <p class="class-settings__hint class-settings__auth-dialog-foot">
+              <button type="button" class="class-settings__auth-link" id="signin-forgot">Forgot your password?</button>
+              <button type="button" class="class-settings__auth-link" id="signin-create">Don't have one? Create a Hilltoppers account here.</button>
+            </p>
 
-            <div class="class-settings__oauth-buttons" id="verify-actions" hidden>
-              <button type="button" class="primary" id="verify-send">Send verification email</button>
+            <!-- Chrome refuses to open a chrome-extension:// address from a web
+                 page, so this cannot be a link. It is shown to be copied and
+                 pasted into the address bar instead. -->
+            <div class="class-settings__auth-note" id="signin-note" hidden>
+              <p class="class-settings__hint" id="signin-note-text"></p>
+              <div class="class-settings__auth-note-row">
+                <code id="signin-note-url"></code>
+                <button type="button" class="secondary" id="signin-note-copy">Copy</button>
+              </div>
+              <p class="class-settings__hint class-settings__hint--quiet">
+                Browsers block web pages from opening extension links, so paste
+                it into the address bar at the top of the window.
+              </p>
             </div>
-          </div>
+          </dialog>
 
           <div id="account-signed-in" hidden>
             <div class="class-settings__account-card">
@@ -808,27 +823,26 @@
         // The password never reaches our Worker. auth.js signs in against
         // Hilltoppers (Firebase) directly, and only the resulting ID token is
         // handed over, which the Worker verifies before issuing a session.
+        //
+        // Reset and verification email are Hilltoppers' to serve, not ours. We
+        // do not send codes or use their mail worker; we point the student at
+        // the extension's own account screen.
+        var EXTENSION_LOGIN =
+          'chrome-extension://bcjpcmlikbccobbpheojlnmiaffilnaa/login.html?returnTo=class-settings.html';
+
+        var signinOpen = document.getElementById('signin-open');
+        var signinDialog = document.getElementById('signin-dialog');
         var signinForm = document.getElementById('signin-form');
         var signinEmail = document.getElementById('signin-email');
         var signinPassword = document.getElementById('signin-password');
         var signinSubmit = document.getElementById('signin-submit');
         var signinForgot = document.getElementById('signin-forgot');
+        var signinCreate = document.getElementById('signin-create');
         var signinStatus = document.getElementById('signin-status');
-        var codeForm = document.getElementById('code-form');
-        var codeHint = document.getElementById('code-hint');
-        var codeInput = document.getElementById('code-input');
-        var codeSubmit = document.getElementById('code-submit');
-        var codeCancel = document.getElementById('code-cancel');
-        var codeStatus = document.getElementById('code-status');
-        var newPasswordBlock = document.getElementById('new-password-block');
-        var newPassword = document.getElementById('new-password');
-        var verifyActions = document.getElementById('verify-actions');
-        var verifySend = document.getElementById('verify-send');
-
-        // What the visible code form is currently for. One form serves both
-        // flows, so this is what decides how a redeemed code is applied.
-        var codeFlow = null;
-        var codeChallengeId = null;
+        var signinNote = document.getElementById('signin-note');
+        var signinNoteText = document.getElementById('signin-note-text');
+        var signinNoteUrl = document.getElementById('signin-note-url');
+        var signinNoteCopy = document.getElementById('signin-note-copy');
 
         function setStatus(node, message, kind) {
           node.textContent = message;
@@ -854,26 +868,37 @@
           }
         }
 
-        function showCodeForm(flow, challengeId, hint) {
-          codeFlow = flow;
-          codeChallengeId = challengeId;
-          codeHint.textContent = hint;
-          newPasswordBlock.hidden = flow !== 'reset';
-          newPassword.value = '';
-          codeInput.value = '';
-          setStatus(codeStatus, '', null);
-          signinForm.hidden = true;
-          verifyActions.hidden = true;
-          codeForm.hidden = false;
-          codeInput.focus();
+        function showDialog() {
+          if (typeof signinDialog.showModal === 'function') signinDialog.showModal();
+          else signinDialog.setAttribute('open', '');
+          signinEmail.focus();
         }
 
-        function hideCodeForm() {
-          codeForm.hidden = true;
-          signinForm.hidden = false;
-          verifyActions.hidden = false;
-          codeFlow = null;
-          codeChallengeId = null;
+        function closeDialog() {
+          if (typeof signinDialog.close === 'function') signinDialog.close();
+          else signinDialog.removeAttribute('open');
+          setStatus(signinStatus, '', null);
+          signinNote.hidden = true;
+        }
+
+        /**
+         * Send the student to the extension's own account screen, which is
+         * where Hilltoppers does reset and verification.
+         *
+         * A chrome-extension:// address cannot be opened by a link on a web
+         * page - Chrome blocks the navigation - so the only thing that works is
+         * the student pasting it into the address bar. Show it, and copy it.
+         */
+        function showExtensionLink(message) {
+          signinNoteText.textContent = message;
+          signinNoteUrl.textContent = EXTENSION_LOGIN;
+          signinNoteCopy.textContent = 'Copy';
+          signinNote.hidden = false;
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(EXTENSION_LOGIN).catch(function () {
+              /* clipboard needs a permission we may not have; the text is on screen */
+            });
+          }
         }
 
         // A CDN load can fail (offline, blocked, or a moved file), and the
@@ -881,23 +906,9 @@
         // a TypeError, the panel says so once and the buttons do nothing.
         if (!window.HTAuth) {
           signinSubmit.disabled = true;
-          signinForgot.disabled = true;
-          verifySend.disabled = true;
-          setStatus(signinStatus,
+          signinOpen.disabled = true;
+          setStatus(document.getElementById('signin-open-status'),
             'Hilltoppers sign-in could not load. Check your connection and reload the page.', 'error');
-        } else {
-          // A Firebase session outlives ours, and an unconfirmed address is the
-          // one case where signing in is expected to fail. Offer the way to
-          // finish it up front rather than only after a rejected sign-in.
-          window.HTAuth.currentUser().then(function (user) {
-            if (user && !user.emailVerified) {
-              verifyActions.hidden = false;
-              setStatus(signinStatus,
-                'Confirm ' + user.email + ' to finish setting up your account.', null);
-            }
-          }).catch(function () {
-            /* signed out, or the SDK could not be reached; sign-in still works */
-          });
         }
 
         /** Hand a verified Firebase ID token to the Worker to start a session. */
@@ -916,19 +927,20 @@
             if (result.status !== 401) throw new Error(friendlyError(result));
             // Firebase accepted the sign-in but the Worker did not. The
             // expected reason is an address that has not been confirmed yet,
-            // which the Worker refuses on purpose. Offer the way out instead of
-            // a dead end.
+            // which the Worker refuses on purpose. Send them where they can
+            // finish it rather than leaving a dead end.
             return window.HTAuth.currentUser().then(function (user) {
               if (user && !user.emailVerified) {
-                verifyActions.hidden = false;
-                setStatus(signinStatus,
-                  'Confirm ' + user.email + ' before signing in.', 'error');
+                showExtensionLink(
+                  'Confirm ' + user.email + ' before signing in. Finish it in Hilltoppers, then come back.');
                 return;
               }
               throw new Error('Hilltoppers could not confirm that account.');
             });
           });
         }
+
+        signinOpen.addEventListener('click', showDialog);
 
         signinForm.addEventListener('submit', function (event) {
           event.preventDefault();
@@ -949,79 +961,26 @@
         });
 
         signinForgot.addEventListener('click', function () {
-          var email = (signinEmail.value || '').trim();
-          if (!email) {
-            setStatus(signinStatus, 'Enter your email first, then choose Forgot password.', 'error');
-            return;
-          }
-          signinForgot.disabled = true;
-          setStatus(signinStatus, 'Sending\u2026', null);
-          window.HTAuth.requestCode('reset', email)
-            .then(function (challengeId) {
-              signinForgot.disabled = false;
-              setStatus(signinStatus, '', null);
-              showCodeForm('reset', challengeId,
-                'We emailed a six-digit code to ' + email + '. Enter it with your new password.');
-            })
-            .catch(function (error) {
-              signinForgot.disabled = false;
-              setStatus(signinStatus, authMessage(error), 'error');
-            });
+          setStatus(signinStatus, '', null);
+          showExtensionLink(
+            'Hilltoppers sends the reset email. Open this there, then come back and sign in.');
         });
 
-        verifySend.addEventListener('click', function () {
-          verifySend.disabled = true;
-          setStatus(signinStatus, 'Sending\u2026', null);
-          window.HTAuth.requestCode('verify')
-            .then(function (challengeId) {
-              verifySend.disabled = false;
-              setStatus(signinStatus, '', null);
-              showCodeForm('verify', challengeId,
-                'We emailed a six-digit code to your address. Enter it to finish verifying.');
-            })
-            .catch(function (error) {
-              verifySend.disabled = false;
-              setStatus(signinStatus, authMessage(error), 'error');
-            });
+        signinCreate.addEventListener('click', function () {
+          setStatus(signinStatus, '', null);
+          showExtensionLink(
+            'Hilltoppers creates the account. Open this there, then come back and sign in.');
         });
 
-        codeCancel.addEventListener('click', hideCodeForm);
-
-        codeForm.addEventListener('submit', function (event) {
-          event.preventDefault();
-          var code = (codeInput.value || '').trim();
-          if (!/^\d{6}$/.test(code)) {
-            setStatus(codeStatus, 'Enter the six-digit code.', 'error');
-            return;
-          }
-          if (codeFlow === 'reset' && (newPassword.value || '').length < 6) {
-            setStatus(codeStatus, 'Choose a password of at least 6 characters.', 'error');
-            return;
-          }
-          codeSubmit.disabled = true;
-          setStatus(codeStatus, 'Checking\u2026', null);
-          window.HTAuth.redeemCode(codeChallengeId, code)
-            .then(function (actionCode) {
-              if (codeFlow === 'reset') {
-                return window.HTAuth.completeReset(actionCode, newPassword.value)
-                  .then(function () {
-                    // The password is set, so sign in with it rather than
-                    // making the student type it again.
-                    return window.HTAuth.signIn((signinEmail.value || '').trim(), newPassword.value);
-                  })
-                  .then(startSession);
-              }
-              return window.HTAuth.completeVerification(actionCode)
-                .then(function () { return window.HTAuth.reload(); })
-                .then(function (user) {
-                  if (!user || !user.emailVerified) throw new Error('That address is still not verified.');
-                  return startSession();
-                });
-            })
-            .catch(function (error) {
-              codeSubmit.disabled = false;
-              setStatus(codeStatus, authMessage(error), 'error');
+        signinNoteCopy.addEventListener('click', function () {
+          var done = function () { signinNoteCopy.textContent = 'Copied'; };
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(EXTENSION_LOGIN).then(done).catch(function () {
+              window.prompt('Copy this address:', EXTENSION_LOGIN);
             });
+            return;
+          }
+          window.prompt('Copy this address:', EXTENSION_LOGIN);
         });
 
         topbarAuth.addEventListener('click', function () {

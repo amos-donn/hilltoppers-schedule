@@ -487,3 +487,119 @@ body, html {
   .dashboard__tab,
   .dashboard select { transition: none; }
 }
+
+/* --- Hilltoppers sign-in button and popup ---------------------------- */
+
+.class-settings__ht-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* The dialog sits inside .class-settings, so it inherits the same custom
+   properties the buttons already use, in both light and dark themes. */
+.class-settings__auth-dialog {
+  width: min(420px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  padding: 22px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--text);
+  box-sizing: border-box;
+}
+
+/* .dashboard__panel .class-settings__panel > * sets margin: 0 on every child,
+   which would pin the dialog to the top-left instead of centring it. Same
+   shape but one class heavier, so it wins. */
+.dashboard__panel .class-settings__panel > .class-settings__auth-dialog {
+  margin: auto;
+}
+
+.class-settings__auth-dialog::backdrop {
+  background: rgba(17, 17, 17, 0.45);
+}
+
+.class-settings__auth-dialog h2 {
+  margin: 0 0 4px;
+  font-size: 18px;
+}
+
+.class-settings__auth-dialog-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  margin: 0;
+}
+
+.class-settings__auth-dialog-close button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 22px;
+  line-height: 1;
+  padding: 4px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.class-settings__auth-dialog-close button:hover {
+  color: var(--text);
+  background: var(--surface-muted);
+}
+
+.class-settings__auth-dialog .class-settings__signin-grid {
+  margin-top: 14px;
+}
+
+.class-settings__auth-dialog-foot {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 14px 0 0;
+}
+
+.class-settings__auth-link {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: var(--accent);
+  font: inherit;
+  text-align: left;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.class-settings__auth-link:hover {
+  text-decoration: none;
+}
+
+.class-settings__auth-note {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.class-settings__auth-note-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.class-settings__auth-note-row code {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.class-settings__hint--quiet {
+  color: var(--muted);
+}
