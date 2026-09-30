@@ -8,7 +8,9 @@
  * Bindings this Worker expects (set in the dashboard, not in this file):
  *   DB                  D1 database binding
  *   FIREBASE_PROJECT_ID plain text variable; defaults to schedule-59d28
- *   SESSION_SECRET      secret
+ *
+ * It reads no other binding. Leftovers from the Google sign-in
+ * (GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, SESSION_SECRET) are ignored.
  *
  * Endpoints
  *   POST /api/auth/firebase    sign in with a Hilltoppers (Firebase) ID token
