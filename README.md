@@ -179,13 +179,17 @@ different rules, and that is where discrepancies come from.
 
 - In the extension the popup is a `min-width: 320px; padding: 16px` window, so
   the card is a 320px content box inside a 352px window.
-- Here the host picks the iframe width. `popup.css` is copied unchanged, so its
-  16px gutter would make a 320px frame render a 304px card. `index.html` shrinks
-  it below 480px (`@media (max-width: 480px) { .popup { padding: 0 12px } }`) --
-  a small inset, not the full 16px, so the card keeps a comfortable gap from the
-  frame's border without the "Friends' Schedules" heading and the name rows
-  pressing against it, and still lines up with the extension's card at the same
-  width.
+- Here the host picks the iframe width, and the frame is the edge, so the card
+  runs to it. `index.html` overrides the copied `popup.css` gutter with
+  `.popup { padding: 0 0 12px }` and squares the card's outer corners, so the
+  card reaches the frame's top and both sides with only the page's own padding
+  below it. The 12px inset the old gutter used to supply now sits on the card
+  (`.primary-card > .status`), which keeps the text off the frame edge while the
+  card's surface covers the full width.
+
+That inset is 12px against the extension's 16px, so the two do not line up
+pixel-for-pixel at the same width; the card's own content is what matches, not
+its distance from the frame.
 
 Measure, don't eyeball: render both at the same width and compare
 `getBoundingClientRect()` on `.popup` / `.status` / `.schedule-list ul`.
