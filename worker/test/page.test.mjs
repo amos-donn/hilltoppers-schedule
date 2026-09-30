@@ -52,15 +52,8 @@ function mountPage(options = {}) {
         load: async () => { throw new Error('the Firebase SDK is not available in jsdom'); },
         currentUser: async () => null,
         signIn: async () => { throw new Error('signIn is not stubbed'); },
-        register: async () => { throw new Error('register is not stubbed'); },
         idToken: async () => null,
         signOut: async () => {},
-        resetPassword: async () => {},
-        reload: async () => null,
-        requestCode: async () => { throw new Error('requestCode is not stubbed'); },
-        redeemCode: async () => { throw new Error('redeemCode is not stubbed'); },
-        completeReset: async () => {},
-        completeVerification: async () => {},
       };
       // Seed storage before the page scripts run, the way a returning browser
       // would already have it on a cold load.
@@ -151,15 +144,38 @@ await test('signed out, the page offers sign-in and hides account panels', async
   assert.equal($('account-signed-out').hidden, false);
   assert.equal($('account-signed-in').hidden, true);
   assert.equal($('topbar-auth').hidden, true, 'the sidebar only offers sign-out when there is an account');
-  assert.ok($('signin-form'), 'the page offers a sign-in form');
-  assert.match($('signin-submit').textContent, /Sign in to view friends!/, 'the button says what it is for');
+  assert.match($('signin-open').textContent, /Sign in with Hilltoppers/,
+    'the green button names who handles the account');
+  // The form lives in the popup, which is closed until the button is pressed.
+  assert.ok($('signin-form'), 'the popup holds a sign-in form');
+  assert.equal($('signin-dialog').hasAttribute('open'), false, 'the popup starts closed');
   assert.ok($('signin-email'), 'with an email field');
   assert.ok($('signin-password'), 'and a password field');
-  assert.equal($('code-form').hidden, true, 'the code step stays out of the way until it is needed');
   assert.equal($('requests-panel').hidden, true);
   assert.equal($('access-panel').hidden, true);
   assert.equal($('notices-panel').hidden, true);
   assert.equal($('danger-panel').hidden, true);
+});
+
+await test('the sign-in popup opens, and points at the extension for reset and sign-up', async () => {
+  assert.equal($('signin-note').hidden, true, 'the extension note starts out of the way');
+
+  $('signin-open').click();
+  assert.equal($('signin-dialog').hasAttribute('open'), true, 'the button opens the popup');
+
+  // Reset and account creation are Hilltoppers'. We do not send codes or mail.
+  $('signin-forgot').click();
+  assert.equal($('signin-note').hidden, false, 'forgot-password reveals the extension address');
+  assert.match($('signin-note-url').textContent, /^chrome-extension:\/\/[a-z]+\/login\.html\?returnTo=class-settings\.html$/,
+    'and it is the extension account screen, returning here');
+  assert.match($('signin-note-text').textContent, /reset/i);
+
+  $('signin-create').click();
+  assert.match($('signin-note-text').textContent, /creates the account/i);
+
+  // There is no code step left: we do not run verification or reset ourselves.
+  assert.equal($('code-form'), null, 'the six-digit code step is gone');
+  assert.equal($('verify-actions'), null, 'and so is the send-verification button');
 });
 
 await test('the class table renders all five blocks with working controls', async () => {
@@ -240,17 +256,20 @@ await test('auth.js exposes every method the page and account.js call', async ()
   const used = new Set(
     [...callers.matchAll(/window\.HTAuth\.([A-Za-z_$][\w$]*)/g)].map((m) => m[1])
   );
-  assert.ok(used.size >= 8, 'the callers use the module in several places');
+  assert.ok(used.size >= 3, 'the callers use the module in several places');
   for (const name of used) {
     assert.equal(typeof w.HTAuth[name], 'function', `auth.js exports ${name}()`);
   }
 
   // Nothing else is exported. A method no caller reaches is a liability: it is
-  // untested, and one here would mean signing in with a path Hilltoppers does
-  // not own - Firebase's own account creation or default reset mail.
+  // untested, and one here would mean we were serving a reset or a verification
+  // code ourselves, which is Hilltoppers' job. Their extension does both.
   for (const name of Object.keys(w.HTAuth)) {
-    if (name === 'CONFIG' || name === 'MAIL') continue;
+    if (name === 'CONFIG') continue;
     assert.ok(used.has(name), `auth.js exports ${name}(), which nothing calls`);
+  }
+  for (const gone of ['requestCode', 'redeemCode', 'completeReset', 'completeVerification']) {
+    assert.equal(w.HTAuth[gone], undefined, `auth.js no longer offers ${gone}(): we do not send mail`);
   }
 
   // The config must name the :web: appId. The project's iOS plist carries a
