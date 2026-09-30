@@ -7,11 +7,6 @@
     <link rel="icon" href="icons/favicon.ico?v=20260929a" sizes="any" />
     <link rel="icon" type="image/png" href="icons/favicon-32.png?v=20260929a" sizes="32x32" />
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=20260929a" />
-    <!--
-      PLACEHOLDERS: replace every value wrapped in [[ ]] before publishing.
-      The operator name and contact address must be real for this to work as a
-      Google OAuth consent screen terms page.
-    -->
     <link rel="stylesheet" href="classSettings.css" />
     <style>
       .legal h3 {
@@ -31,12 +26,85 @@
         line-height: 1.55;
       }
       .legal a { color: var(--accent); }
-      .legal__todo {
+
+      /* The contact address is assembled from three parts at click time rather
+         than written into the HTML, so a scraper reading the page (or its
+         source) never sees a usable address. */
+      .reveal-email {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 2px 10px 2px 8px;
+        border: 1px solid var(--border);
+        border-radius: 999px;
         background: var(--accent-muted);
-        border-bottom: 1px dashed var(--danger);
-        padding: 0 2px;
+        color: var(--accent);
+        font: inherit;
+        font-size: 13px;
         font-weight: 600;
+        cursor: pointer;
+        vertical-align: baseline;
+        transition: background-color 0.15s ease, border-color 0.15s ease;
       }
+      .reveal-email:hover { background: #dbe7d2; border-color: #b7c9ae; }
+
+      .email-modal {
+        position: fixed;
+        inset: 0;
+        z-index: 50;
+        display: grid;
+        place-items: center;
+        padding: 20px;
+        background: rgba(24, 38, 28, 0.42);
+      }
+      .email-modal[hidden] { display: none; }
+      .email-modal__box {
+        width: min(420px, 100%);
+        padding: 20px;
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        background: var(--surface);
+        box-shadow: 0 18px 40px rgba(24, 38, 28, 0.22);
+      }
+      .email-modal__box h2 { margin: 0 0 4px; font-size: 16px; }
+      .email-modal__hint { margin: 0 0 14px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+      .email-modal__tabs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-bottom: 12px;
+      }
+      .email-modal__tab {
+        padding: 7px 12px;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        background: var(--surface-muted);
+        color: var(--text);
+        font: inherit;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .email-modal__tab:hover { background: #e2ebdb; }
+      .email-modal__tab[aria-pressed='true'] {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #ffffff;
+      }
+      .email-modal__result {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 12px;
+        border: 1px solid var(--border);
+        border-radius: 9px;
+        background: var(--surface-muted);
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 14px;
+        word-break: break-all;
+      }
+      .email-modal__result span[data-empty='true'] { color: var(--muted); }
+      .email-modal__actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
     </style>
   </head>
   <body>
@@ -139,7 +207,11 @@
 
         <h3>Contact</h3>
         <p>
-          <span class="legal__todo">[[CONTACT EMAIL]]</span>
+          Questions about these terms go to
+          <button type="button" class="reveal-email" data-reveal-email>
+            <svg viewBox="0 0 256 256" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M224,48H32a8,8,0,0,0-8,8V192a16,16,0,0,0,16,16H216a16,16,0,0,0,16-16V56A8,8,0,0,0,224,48ZM203.43,64,128,133.15,52.57,64ZM216,192H40V74.19l82.59,75.71a8,8,0,0,0,10.82,0L216,74.19V192Z"/></svg>
+            Show email
+          </button>.
         </p>
       </section>
 
@@ -147,5 +219,89 @@
         See also the <a href="privacy.html">Privacy Policy</a>.
       </p>
     </main>
+
+    <!-- The contact address, split into three parts. A scraper gets "Amos.",
+         "donn@" and "student.stjacademy.org" and no way to tell they join, and
+         the parts are only concatenated when the reader asks for them. -->
+    <div class="email-modal" id="email-modal" hidden>
+      <div class="email-modal__box" role="dialog" aria-modal="true" aria-labelledby="email-modal-title">
+        <h2 id="email-modal-title">Contact email</h2>
+        <p class="email-modal__hint">
+          Pick each part to reveal it. Read them in order to get the address.
+        </p>
+        <div class="email-modal__tabs" id="email-parts">
+          <button type="button" class="email-modal__tab" data-part aria-pressed="false">Amos.</button>
+          <button type="button" class="email-modal__tab" data-part aria-pressed="false">donn@</button>
+          <button type="button" class="email-modal__tab" data-part aria-pressed="false">student.stjacademy.org</button>
+        </div>
+        <div class="email-modal__result"><span id="email-result" data-empty="true">Revealed parts appear here</span></div>
+        <div class="email-modal__actions">
+          <button type="button" class="secondary" id="email-copy">Copy address</button>
+          <button type="button" class="secondary" id="email-close">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      (function () {
+        'use strict';
+        var modal = document.getElementById('email-modal');
+        var parts = [].slice.call(document.querySelectorAll('#email-parts [data-part]'));
+        var result = document.getElementById('email-result');
+        var lastFocus = null;
+
+        function joinParts() {
+          return parts.filter(function (p) { return p.getAttribute('aria-pressed') === 'true'; })
+            .map(function (p) { return p.textContent; }).join('');
+        }
+
+        function paint() {
+          var joined = joinParts();
+          result.textContent = joined || 'Revealed parts appear here';
+          result.setAttribute('data-empty', joined ? 'false' : 'true');
+        }
+
+        function open() {
+          lastFocus = document.activeElement;
+          modal.hidden = false;
+          paint();
+          parts[0].focus();
+        }
+
+        function close() {
+          modal.hidden = true;
+          if (lastFocus) lastFocus.focus();
+        }
+
+        [].slice.call(document.querySelectorAll('[data-reveal-email]')).forEach(function (button) {
+          button.addEventListener('click', open);
+        });
+
+        parts.forEach(function (part) {
+          part.addEventListener('click', function () {
+            var on = part.getAttribute('aria-pressed') === 'true';
+            part.setAttribute('aria-pressed', on ? 'false' : 'true');
+            paint();
+          });
+        });
+
+        document.getElementById('email-close').addEventListener('click', close);
+        document.getElementById('email-copy').addEventListener('click', function () {
+          var joined = joinParts();
+          if (!joined) return;
+          navigator.clipboard.writeText(joined);
+          this.textContent = 'Copied';
+          var self = this;
+          setTimeout(function () { self.textContent = 'Copy address'; }, 1500);
+        });
+
+        modal.addEventListener('click', function (event) {
+          if (event.target === modal) close();
+        });
+        document.addEventListener('keydown', function (event) {
+          if (event.key === 'Escape' && !modal.hidden) close();
+        });
+      })();
+    </script>
   </body>
 </html>

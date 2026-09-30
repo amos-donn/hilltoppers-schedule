@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS accounts (
   profile_id     TEXT    NOT NULL UNIQUE,
   display_name   TEXT,
   is_public      INTEGER NOT NULL DEFAULT 0,
-  auto_grant     INTEGER NOT NULL DEFAULT 1,
+  auto_grant     INTEGER NOT NULL DEFAULT 0,
   time_format    TEXT    NOT NULL DEFAULT '12h',
   grade          INTEGER,
   lunch_wave     INTEGER,

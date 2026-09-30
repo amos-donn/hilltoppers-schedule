@@ -165,7 +165,7 @@ await test('signing in reveals every account section', async () => {
   assert.equal($('account-email').value, 'alice@example.org', 'the email is shown in an editable field');
   assert.equal($('account-email').readOnly, false, 'and can be edited');
   assert.equal($('visibility').value, 'private', 'new accounts default to private');
-  assert.equal($('auto-grant').checked, true, 'auto-grant defaults on');
+  assert.equal($('auto-grant').checked, false, 'auto-grant defaults off');
 });
 
 /**
@@ -310,9 +310,9 @@ await test('the directory search renders public profiles', async () => {
 });
 
 await test('asking for a schedule either grants access or records a request', async () => {
-  // Bob is public with auto-grant on at this point, so this resolves straight to
-  // a grant. Both outcomes are valid product behaviour; what matters is that the
-  // click reaches the server and one of them actually happens.
+  // Bob is public, but a new account asks first, so this lands as a pending
+  // request rather than a grant. Both outcomes are valid product behaviour;
+  // what matters is that the click reaches the server and one of them happens.
   const row = $('directory-results').querySelector('.class-settings__friend-row');
   row.querySelector('button').dispatchEvent(new window.Event('click'));
   await settle();
@@ -673,6 +673,7 @@ await test('a friend added from the directory carries real course data for the c
   const erinId = db.prepare("SELECT id, profile_id FROM accounts WHERE google_sub = 'sub-page-erin'").get();
   await window.HTAccount.updateProfile({
     isPublic: true,
+    autoGrant: true,
     lunchWave: 1,
     grade: 11,
     blockPrefs: { A: { name: 'Chemistry', alternating: false }, B: { name: 'English', alternating: false } },

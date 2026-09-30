@@ -143,9 +143,10 @@
                 <span>Approve requests automatically</span>
               </label>
               <p class="class-settings__hint">
-                On by default. Turn it off and you decide each request by hand.
-                Either way, you can revoke anyone's access afterwards, and a
-                revoked code never works again.
+                Off by default, so each request waits for you to decide. Turn it
+                on and a request from anyone who can find your profile is granted
+                straight away. Either way, you can revoke anyone's access
+                afterwards.
               </p>
               <p class="class-settings__hint" id="account-save-status" hidden></p>
             </div>
@@ -257,9 +258,9 @@
         <section class="class-settings__panel" id="access-panel" hidden>
           <h2>Who can see your schedule</h2>
           <p class="class-settings__hint class-settings__hint--intro">
-            Everyone with access holds a code for your profile. Revoking one
+            Everyone who can see your schedule is listed here. Revoking one
             takes away only that person's access, immediately, and they are
-            told &mdash; a revoked code never works again.
+            told.
           </p>
           <div id="grant-viewers" class="class-settings__friend-list"></div>
 
@@ -725,7 +726,7 @@
             displayName.value = me.displayName || '';
           }
           visibility.value = me.isPublic ? 'public' : 'private';
-          autoGrant.checked = me.autoGrant !== false;
+          autoGrant.checked = me.autoGrant === true;
 
           if (appliedProfileId !== me.profileId) {
             appliedProfileId = me.profileId;
