@@ -200,7 +200,7 @@ await test('sign-in creates an account with a generated profile ID', async () =>
   assert.equal(me.status, 200);
   assert.match(me.body.profileId, /^[a-z]+-[a-z]+-\d{4}$/, 'profile ID should be word-word-digits');
   assert.equal(me.body.isPublic, false, 'new profiles default to private');
-  assert.equal(me.body.autoGrant, true, 'new profiles default to auto-grant');
+  assert.equal(me.body.autoGrant, false, 'new profiles default to asking first');
   env.alice = { cookie, ...me.body };
 });
 

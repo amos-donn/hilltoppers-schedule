@@ -7,11 +7,6 @@
     <link rel="icon" href="icons/favicon.ico?v=20260929a" sizes="any" />
     <link rel="icon" type="image/png" href="icons/favicon-32.png?v=20260929a" sizes="32x32" />
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=20260929a" />
-    <!--
-      PLACEHOLDERS: replace every value wrapped in [[ ]] before publishing.
-      The operator name and contact address must be real for this to serve as a
-      usable privacy policy.
-    -->
     <link rel="stylesheet" href="classSettings.css" />
     <style>
       .legal h3 {
@@ -217,8 +212,10 @@
           Account, profile, course, and sharing data live in a Cloudflare D1
           database. The app runs on Cloudflare Workers, and sign-in is handled by
           your Hilltoppers account, which runs on Firebase Authentication
-          (Google). Those providers process data on our behalf in order to run
-          the service.
+          (Google). When you ask for a password reset or a verification email,
+          your address goes to Hilltoppers' account email service, which passes
+          it to Resend to deliver the message. Those providers process data on
+          our behalf in order to run the service.
         </p>
 
         <h3>How long we keep it</h3>

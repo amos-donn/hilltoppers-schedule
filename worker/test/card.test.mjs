@@ -637,19 +637,50 @@ await test('a stale cached schedule-friends.js does not blank the page', async (
   assert.match(page.text(), /Settings/, 'the card still shows its settings affordance');
 });
 
-await test('the narrow-frame inset is the same on all four sides', async () => {
-  // A frame narrower than the extension window swaps the card's 16px gutter
-  // for a small inset. That inset was once horizontal-only, so the card sat
-  // flush against the frame's top edge while being gapped on the sides -- a
-  // visibly lopsided frame. The padding is a single shorthand value, so the
-  // sides cannot drift from the top and bottom again.
-  const match = rawHtml.match(/@media \(max-width: 480px\)\s*\{[\s\S]*?\.popup\s*\{([^}]*)\}/);
-  assert.ok(match, 'the narrow-frame rule for .popup is present');
-  const padding = match[1].match(/padding:\s*([^;]+);/);
-  assert.ok(padding, '.popup sets a padding');
-  const parts = padding[1].trim().split(/\s+/);
-  assert.equal(parts.length, 1, 'padding is one value, so every side matches: ' + padding[1]);
-  assert.equal(parts[0], '12px', 'and it is the intended inset');
+await test('only the day card bleeds to the frame; the rest of the page keeps its inset', async () => {
+  // The frame is the edge inside a Topping, and the day card should run to it.
+  // Everything else -- the heading, the friends list, the title -- keeps the
+  // page's inset. The card pulls itself out with negative margins rather than
+  // the page dropping its padding, so the change cannot spread to the rest of
+  // the page.
+  const popup = rawHtml.match(/\.popup\s*\{\s*padding:\s*([^;]+);/);
+  assert.ok(popup, '.popup sets a padding');
+  assert.equal(popup[1].trim(), '12px', 'the page keeps a uniform inset for everything else');
+
+  const card = rawHtml.match(/\.primary-card\s*\{\s*margin:\s*([^;]+);/);
+  assert.ok(card, 'the day card sets a margin');
+  const m = card[1].trim().split(/\s+/);
+  assert.equal(m[0], '-12px', 'pulled up out of the page inset to reach the frame top');
+  assert.equal(m[1], '-12px', 'and out to both sides');
+  assert.equal(m[2], '12px', 'with the 12px it already carried put back below, so nothing under it moves');
+
+  const status = rawHtml.match(/\.primary-card\s*>\s*\.status\s*\{([^}]*)\}/);
+  assert.ok(status, 'the card body is styled for this page');
+
+  // The text must not move. It keeps the 24px it had -- the old 12px gutter
+  // plus the card's 12px padding -- so the content box stays the same width
+  // and no line wraps differently. The bottom stays 12px because the progress
+  // bar hangs off it with a -12px margin and a larger inset would pull the bar
+  // away from the card.
+  const pad = status[1].match(/padding:\s*([^;]+);/);
+  assert.ok(pad, 'the card body sets a padding');
+  assert.equal(pad[1].trim(), '24px 24px 12px', 'contents keep their place: ' + pad[1]);
+
+  // The top corners are against the frame now, so they square off; the bottom
+  // ones are not, and stay rounded.
+  assert.match(status[1], /border-radius:\s*0 0 8px 8px/, 'top corners square, bottom rounded');
+
+  // The time bar runs the card's full width. popup.css cancels the extension's
+  // 12px padding with a negative margin, but this card's sides are 24px, so
+  // without its own override the bar would stop 12px short of each edge and
+  // read as inset while the card above it is not.
+  const bar = rawHtml.match(/\.primary-card\s*>\s*\.status\s+\.progress-bar-container\s*\{([^}]*)\}/);
+  assert.ok(bar, 'the bar is told about the wider card');
+  assert.match(bar[1], /margin-left:\s*-24px/, 'bar reaches the left edge');
+  assert.match(bar[1], /margin-right:\s*-24px/, 'bar reaches the right edge');
+  // Only the sides: the 14px above and -12px below are the extension's and the
+  // bottom edge did not move.
+  assert.doesNotMatch(bar[1], /margin-(top|bottom)|margin:\s/, 'vertical margins stay as popup.css set them');
 });
 
 console.log(results.join('\n'));

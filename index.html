@@ -15,12 +15,11 @@
     <link rel="stylesheet" href="popup.css?v=20260928h" />
     <!--
       In the extension the popup is a 352px window with a 320px card inside it.
-      Embedded as a Topping the host picks the width, so the 16px gutter would
-      make the card narrower than the frame (a 320px frame modelled on the
-      extension card, not the 352px window). Dropping the gutter at narrow
-      widths lets the card reach the container edges, which is what makes it
-      match the extension's card at the same width. The card keeps its own
-      internal padding, so nothing crowds the border.
+      Embedded as a Topping the host picks the width. Only the day card runs to
+      the frame's top and sides; the rest of the page -- the heading, the
+      friends list, the title -- keeps its inset. The extension's popup keeps
+      its 16px gutter untouched -- everything here is scoped to this standalone
+      page, which is the one that gets embedded.
     -->
     <style>
       /* Embedded as a Topping the frame decides the width. The card's min-width
@@ -34,17 +33,45 @@
       #root { width: 100%; min-width: 0; display: flow-root; }
       img, video, input, textarea, select { max-width: 100%; }
 
-      @media (max-width: 480px) {
-        /* The card's own gutter would be too much inside a narrow frame, but
-           zero would press the text against the frame's border -- the
-           "Friends' Schedules" heading and the name rows read as cramped. A
-           small inset keeps a comfortable gap without the full 16px.
-           The inset is on every side, not just left and right: with top and
-           bottom at zero the card touched the frame's top edge and the last
-           card its bottom edge, so the frame was gapped on two sides and
-           flush on the other two. */
-        .popup { padding: 12px; min-width: 0; }
-      }
+      /*
+       * Only the day card bleeds to the frame. Everything else keeps the 12px
+       * inset, which is the page's own padding.
+       *
+       * The card pulls itself out of that padding with negative margins rather
+       * than the page dropping it, so the change stays confined to the one
+       * card. The bottom margin puts back the 12px the card already carried
+       * below it, so the day list and the friends section below do not move.
+       *
+       * Its contents are left exactly where they were. The card's box reaches
+       * the frame, but the text keeps the 24px inset it had -- the old 12px
+       * gutter plus the card's 12px padding -- now supplied by the card alone.
+       * That keeps the content box the same width it always was, so no line
+       * wraps differently and the card's height does not change.
+       *
+       * The bottom padding stays 12px because that edge is not against the
+       * frame and must not move: the progress bar hangs off it with a -12px
+       * margin, and a larger inset would pull the bar away from the card.
+       *
+       * Reaching the frame exposes the card's top corners, which read as
+       * notches against the frame once the card takes its hover tint, so those
+       * two square off. The bottom corners are not against the frame and stay
+       * rounded.
+       */
+      .popup { padding: 12px; min-width: 0; }
+      .primary-card { margin: -12px -12px 12px; }
+      .primary-card > .status { border-radius: 0 0 8px 8px; padding: 24px 24px 12px; }
+
+      /*
+       * The progress bar runs the full width of the card, as it does in the
+       * extension, by cancelling the card's side padding with a negative
+       * margin. That cancel in popup.css is written against the extension's
+       * 12px padding; this card's sides are 24px, so it has to be told again
+       * here or the bar stops 12px short of each edge.
+       *
+       * Only the sides are overridden -- the 14px above and -12px below still
+       * come from popup.css.
+       */
+      .primary-card > .status .progress-bar-container { margin-left: -24px; margin-right: -24px; }
 
       /* Narrow frames: keep the friend's live status on one line by letting the
          course shrink, and drop the email before it crowds the row. */

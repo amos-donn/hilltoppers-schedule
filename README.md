@@ -179,13 +179,25 @@ different rules, and that is where discrepancies come from.
 
 - In the extension the popup is a `min-width: 320px; padding: 16px` window, so
   the card is a 320px content box inside a 352px window.
-- Here the host picks the iframe width. `popup.css` is copied unchanged, so its
-  16px gutter would make a 320px frame render a 304px card. `index.html` shrinks
-  it below 480px (`@media (max-width: 480px) { .popup { padding: 0 12px } }`) --
-  a small inset, not the full 16px, so the card keeps a comfortable gap from the
-  frame's border without the "Friends' Schedules" heading and the name rows
-  pressing against it, and still lines up with the extension's card at the same
-  width.
+- Here the host picks the iframe width, and the frame is the edge. Only the day
+  card runs to it: `index.html` gives the page a 12px inset for everything else
+  (`.popup`), then pulls the card out of it with negative margins
+  (`.primary-card { margin: -12px -12px 12px }`) so the card's surface reaches
+  the frame's top and both sides while the heading, the friends list and the
+  title keep their inset.
+
+The card's own contents do not move. Its padding absorbs the gutter it was
+pulled out of (`padding: 24px 24px 12px`), so the text keeps the 24px inset it
+had and the content box stays the same width. The top corners square off because
+they are against the frame and would otherwise read as notches once the card
+takes its hover tint; the bottom corners are not against the frame and stay
+rounded. The bottom padding stays 12px because the progress bar hangs off that
+edge with a `-12px` margin.
+
+The time bar runs the card's full width, as it does in the extension, so it
+cancels that 24px side padding with its own `margin-left/right: -24px`.
+`popup.css` cancels 12px, which matched the extension's padding but not this
+card's; left alone the bar would stop 12px short of each edge.
 
 Measure, don't eyeball: render both at the same width and compare
 `getBoundingClientRect()` on `.popup` / `.status` / `.schedule-list ul`.
