@@ -7,10 +7,18 @@
 -- WHY THIS DROPS DATA
 -- Identity used to be the Google account id (`google_sub`). It is now the
 -- Firebase uid. There is no way to derive one from the other, so accounts that
--- existed under Google cannot be carried across. The owner chose to delete them
--- rather than leave unreachable rows behind. Anything referencing them -
--- sessions, grants, requests, notices - goes with them, which is the same
--- effect as deleting the account from the settings page.
+-- existed under Google cannot be carried across by a transformation.
+--
+-- This takes the "start fresh" option. The alternative was to match on email
+-- the first time someone signed in with Firebase and adopt the old row, which
+-- would preserve their schedule, friends and profile id, at the cost of
+-- trusting the email on a freshly created Firebase account to be the same
+-- person. If that is wanted instead, do not run this file - the old rows are
+-- still there and a linking statement can be written against them.
+--
+-- Anything referencing a deleted account - sessions, grants, requests, notices
+-- - goes with it, which is the same effect as deleting the account from the
+-- settings page.
 --
 -- HOW TO RUN THIS
 -- The D1 console executes one statement per call. Paste each statement on its
