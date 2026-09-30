@@ -6,10 +6,13 @@
 -- file at once the console rejects it with "Requests without any query are not
 -- supported." The statements are pure CREATEs, so re-running any of them is
 -- safe and nothing is ever dropped.
+--
+-- Upgrading a database created for the old Google sign-in? Run
+-- migration-firebase.sql first, then this file.
 
 CREATE TABLE IF NOT EXISTS accounts (
   id             INTEGER PRIMARY KEY AUTOINCREMENT,
-  google_sub     TEXT    NOT NULL UNIQUE,
+  firebase_uid   TEXT    NOT NULL UNIQUE,
   email          TEXT    NOT NULL,
   name           TEXT,
   profile_id     TEXT    NOT NULL UNIQUE,

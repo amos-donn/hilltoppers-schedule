@@ -6,20 +6,18 @@
  * the Worker decides what the caller is allowed to do.
  *
  * Bindings this Worker expects (set in the dashboard, not in this file):
- *   DB                 D1 database binding
- *   GOOGLE_CLIENT_ID   plain text variable
- *   GOOGLE_CLIENT_SECRET  secret
- *   SESSION_SECRET     secret
+ *   DB                  D1 database binding
+ *   FIREBASE_PROJECT_ID plain text variable; defaults to schedule-59d28
+ *
+ * It reads no other binding. Leftovers from the Google sign-in
+ * (GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, SESSION_SECRET) are ignored.
  *
  * Endpoints
- *   GET  /api/auth/login       redirect to Google
- *   GET  /api/auth/callback    Google returns here; sets the session cookie
+ *   POST /api/auth/firebase    sign in with a Hilltoppers (Firebase) ID token
  *   POST /api/auth/logout      clears the session
  *   GET  /api/me               the signed-in account
  *   PATCH /api/me              update display name, visibility, auto-grant,
  *                              courses, and schedule settings
- *   POST /api/me/email         start changing the account's email; returns the
- *                              Google URL that proves the new address
  *   DELETE /api/me             delete the account and everything it touched
  *   GET  /api/directory        search public profiles
  *   POST /api/requests         ask for a schedule by profile ID
@@ -46,24 +44,23 @@
  * - Privilege-sensitive values (which account you are, what you may read) come
  *   from the session row, never from the request body.
  *
- * - This Worker only serves /api/*. The visible pages are GitHub Pages, so
- *   after sign-in the browser is redirected to APP_URL, not back here, and the
- *   session cookie is SameSite=None because the page and the API are different
- *   origins.
+ * - Sign-in is Hilltoppers' own Firebase project (email/password). This Worker
+ *   only verifies the ID tokens it issues and mints its own session; it holds
+ *   no Firebase secret and never calls Firebase itself. See the "Hilltoppers
+ *   Auth" section below.
+ *
+ * - This Worker only serves /api/*. The visible pages are GitHub Pages and the
+ *   sign-in happens there, directly against Firebase, so this Worker never
+ *   redirects a browser anywhere. The session cookie is SameSite=None because
+ *   the page and the API are different origins.
  */
 
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
 
-// How long an in-progress email change stays valid. Short, because the whole
-// thing is one round trip through Google: ask, then come back.
-const EMAIL_CHANGE_TTL_SECONDS = 60 * 15;
-
-// Where the visible site lives. The pages are GitHub Pages, not this Worker,
-// so a redirect back to this origin after sign-in would land on nothing. The
-// cookie has to be SameSite=None because the pages and this API are different
-// origins: with Lax or Strict the browser would not send it on the fetch calls
-// the page makes, and the session would silently look signed out.
-const APP_URL = 'https://amos-donn.github.io/hilltoppers-schedule';
+// Where the visible site lives. The pages are GitHub Pages, not this Worker.
+// The cookie has to be SameSite=None because the pages and this API are
+// different origins: with Lax or Strict the browser would not send it on the
+// fetch calls the page makes, and the session would silently look signed out.
 const APP_ORIGIN = 'https://amos-donn.github.io';
 
 
@@ -90,12 +87,13 @@ function b64url(bytes) {
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
-function utf8B64url(text) {
-  return b64url(new TextEncoder().encode(text));
-}
-
 function randomToken(bytes = 32) {
   return b64url(crypto.getRandomValues(new Uint8Array(bytes)));
+}
+
+/** Lower-cased and trimmed, since an address is not case sensitive. */
+function normalizeEmail(value) {
+  return String(value || '').trim().toLowerCase();
 }
 
 async function sha256Hex(text) {
@@ -111,10 +109,10 @@ function nowSeconds() {
 // Session cookies
 //
 // The cookie carries a random token. Only its hash is stored, so the database
-// cannot be replayed as a login. It is HttpOnly (no script access), SameSite=Lax
-// (survives the redirect back from Google while still blocking cross-site POSTs)
-// and Secure when served over HTTPS. The cookie's Domain is deliberately not set,
-// so it applies to the Worker's own origin only.
+// cannot be replayed as a login. It is HttpOnly (no script access), SameSite=None
+// so it is sent on the cross-origin calls the page makes to this API, and Secure
+// when served over HTTPS. The cookie's Domain is deliberately not set, so it
+// applies to the Worker's own origin only.
 // ---------------------------------------------------------------------------
 
 function parseCookies(request) {
@@ -230,7 +228,7 @@ async function hasLiveGrant(env, ownerAccountId, viewerAccountId) {
 // ---------------------------------------------------------------------------
 // Public shaping
 //
-// Nothing here ever includes google_sub, the email address, a code, or a code
+// Nothing here ever includes firebase_uid, the email address, a code, or a code
 // hash. Keeping this in one place means an endpoint cannot accidentally leak a
 // field by selecting a whole row.
 // ---------------------------------------------------------------------------
@@ -267,283 +265,53 @@ function safeJson(text) {
 }
 
 // ---------------------------------------------------------------------------
-// Google OAuth
+// Hilltoppers Auth (Firebase ID tokens)
+//
+// Sign-in is not ours. Students sign in on the settings page with the account
+// they already have for Hilltoppers, which is a Firebase Auth project using the
+// email/password provider. The browser signs in against Firebase directly and
+// hands us the resulting ID token, which is a JWT signed by Google.
+//
+// That makes this Worker a verifier and nothing else: it checks the signature
+// against Google's published keys for Firebase and reads the uid and email out
+// of the verified payload. No Firebase secret is involved, and the Worker never
+// calls Firebase.
+//
+// Only Google can mint tokens for this project, so a valid signature is a sound
+// trust boundary - an outsider cannot create an account here by forging a token.
 // ---------------------------------------------------------------------------
 
-function googleCookieName(state) {
-  return `ht_oauth_${state.slice(0, 8)}`;
-}
+// The project the tokens must belong to. Overridable by a plain-text variable
+// so the tests and any future project move do not need a code change.
+const FIREBASE_PROJECT_ID = 'schedule-59d28';
 
-/** Compare two strings without leaking where they first differ. */
-function timingSafeEqual(a, b) {
-  const left = String(a);
-  const right = String(b);
-  if (left.length !== right.length) return false;
-  let diff = 0;
-  for (let i = 0; i < left.length; i++) diff |= left.charCodeAt(i) ^ right.charCodeAt(i);
-  return diff === 0;
-}
+// `jwk`, singular. The plural `jwks` is a 404, and fetching an error page
+// instead of the key set fails every verification in a way that looks exactly
+// like "not signed in".
+const FIREBASE_JWKS_URL =
+  'https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com';
 
-/**
- * An email change is a two-step flow: the page asks for a Google sign-in
- * against the address the student typed, then Google sends the browser back
- * here. Nothing about the change may be trusted from the callback's query
- * string, so the account it belongs to and the address being claimed are
- * signed into a state token that only this Worker can mint.
- */
-async function issueEmailChangeState(env, accountId, newEmail) {
-  const payload = utf8B64url(JSON.stringify({
-    a: accountId,
-    e: newEmail,
-    exp: nowSeconds() + EMAIL_CHANGE_TTL_SECONDS,
-    n: randomToken(8),
-  }));
-  const key = await crypto.subtle.importKey(
-    'raw', new TextEncoder().encode(env.SESSION_SECRET),
-    { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
-  );
-  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payload));
-  return `${payload}.${b64url(sig)}`;
-}
-
-/** Verify the signature and expiry; returns {a, e} or null. */
-async function readEmailChangeState(env, state) {
-  const parts = String(state || '').split('.');
-  if (parts.length !== 2) return null;
-  const [payload, sig] = parts;
-
-  let expected;
-  try {
-    const key = await crypto.subtle.importKey(
-      'raw', new TextEncoder().encode(env.SESSION_SECRET),
-      { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
-    );
-    expected = b64url(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payload)));
-  } catch {
-    return null;
-  }
-  if (!timingSafeEqual(expected, sig)) return null;
-
-  let data;
-  try {
-    data = JSON.parse(new TextDecoder().decode(fromB64url(payload)));
-  } catch {
-    return null;
-  }
-  if (!data || typeof data.a !== 'number' || typeof data.e !== 'string') return null;
-  if (Number(data.exp) <= nowSeconds()) return null;
-  return data;
-}
-
-/** Lower-cased and trimmed, since an address is not case sensitive. */
-function normalizeEmail(value) {
-  return String(value || '').trim().toLowerCase();
+function firebaseProjectId(env) {
+  return env.FIREBASE_PROJECT_ID || FIREBASE_PROJECT_ID;
 }
 
 /**
- * A deliberately loose shape check. Google is the authority on whether an
- * address exists; this only rejects obvious nonsense before a redirect.
- */
-function isPlausibleEmail(value) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) && value.length <= 254;
-}
-
-function authLogin(request, env) {
-  const url = new URL(request.url);
-  const state = randomToken(16);
-  const redirectUri = `${url.origin}/api/auth/callback`;
-
-  const authorize = new URL('https://accounts.google.com/o/oauth2/v2/auth');
-  authorize.searchParams.set('client_id', env.GOOGLE_CLIENT_ID);
-  authorize.searchParams.set('redirect_uri', redirectUri);
-  authorize.searchParams.set('response_type', 'code');
-  authorize.searchParams.set('scope', 'openid email profile');
-  authorize.searchParams.set('state', state);
-  authorize.searchParams.set('prompt', 'select_account');
-
-  // The state is compared on return to reject a forged callback.
-  return new Response(null, {
-    status: 302,
-    headers: {
-      Location: authorize.toString(),
-      'Set-Cookie': `${googleCookieName(state)}=1; Path=/; HttpOnly; SameSite=Lax; Secure; Max-Age=600`,
-    },
-  });
-}
-
-async function authCallback(request, env) {
-  const url = new URL(request.url);
-  const code = url.searchParams.get('code');
-  const state = url.searchParams.get('state');
-  const error = url.searchParams.get('error');
-
-  const failRedirect = new Response(null, {
-    status: 302,
-    headers: { Location: `${APP_URL}/settings.html?auth=error` },
-  });
-
-  if (error || !code || !state) return failRedirect;
-
-  // An email change rides the same callback. Its state is signed rather than a
-  // random cookie value, so it is recognised by verifying the signature. A
-  // plain sign-in state is a bare random token and will not verify, so the two
-  // cannot be confused for one another.
-  const emailChange = await readEmailChangeState(env, state);
-  if (emailChange) return completeEmailChange(request, env, url, code, emailChange);
-
-  const cookies = parseCookies(request);
-  if (!cookies[googleCookieName(state)]) return failRedirect;
-
-  // Exchange the code for tokens. The client secret stays on the server.
-  const claims = await googleClaimsFromCode(url, env, code);
-  if (!claims) return failRedirect;
-
-  const googleSub = String(claims.sub);
-  const email = String(claims.email || '').toLowerCase();
-  const name = String(claims.name || '').trim();
-  const ts = nowSeconds();
-
-  let account = await env.DB.prepare('SELECT * FROM accounts WHERE google_sub = ?')
-    .bind(googleSub)
-    .first();
-
-  if (!account) {
-    const profileId = await generateProfileId(env);
-    await env.DB.prepare(
-      `INSERT INTO accounts (google_sub, email, name, profile_id, display_name, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
-    )
-      .bind(googleSub, email, name, profileId, name, ts, ts)
-      .run();
-    account = await env.DB.prepare('SELECT * FROM accounts WHERE google_sub = ?')
-      .bind(googleSub)
-      .first();
-  } else if (account.email !== email || account.name !== name) {
-    // A changed name or email must not change identity, which is why the
-    // account is keyed on google_sub and only these display fields are updated.
-    await env.DB.prepare('UPDATE accounts SET email = ?, name = ?, updated_at = ? WHERE id = ?')
-      .bind(email, name, ts, account.id)
-      .run();
-    account = { ...account, email, name };
-  }
-
-  const token = randomToken(32);
-  const tokenHash = await sha256Hex(token);
-  await env.DB.prepare(
-    'INSERT INTO sessions (token_hash, account_id, created_at, expires_at) VALUES (?, ?, ?, ?)'
-  )
-    .bind(tokenHash, account.id, ts, ts + SESSION_TTL_SECONDS)
-    .run();
-
-  const headers = new Headers({
-    Location: `${APP_URL}/settings.html?auth=ok`,
-  });
-  headers.append('Set-Cookie', sessionCookie(token, SESSION_TTL_SECONDS));
-  headers.append('Set-Cookie', `${googleCookieName(state)}=; Path=/; Max-Age=0`);
-  return new Response(null, { status: 302, headers });
-}
-
-/**
- * Trade the authorization code for an ID token and verify it. Shared by the
- * sign-in callback and the email-change callback, which differ only in what
- * they do with the verified claims.
- */
-async function googleClaimsFromCode(url, env, code) {
-  const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      code,
-      client_id: env.GOOGLE_CLIENT_ID,
-      client_secret: env.GOOGLE_CLIENT_SECRET,
-      redirect_uri: `${url.origin}/api/auth/callback`,
-      grant_type: 'authorization_code',
-    }),
-  });
-  if (!tokenResponse.ok) return null;
-  const tokens = await tokenResponse.json();
-  if (!tokens.id_token) return null;
-
-  // The ID token is a JWT signed by Google. Verify the signature against
-  // Google's published keys and check the claims that matter, rather than
-  // trusting the payload, so a forged token cannot mint a session.
-  return verifyGoogleIdToken(tokens.id_token, env.GOOGLE_CLIENT_ID);
-}
-
-/**
- * Finish an email change: the student signed in with Google and the address
- * Google reports must be the one they typed, or someone could point an
- * account at an address they do not control.
+ * Verify a Firebase ID token's signature and claims. Returns the verified
+ * claims, or null when the token is not acceptable for any reason.
  *
- * The account is identified by the signed state, never by the email, so
- * proving control of the address is what moves the account, and a Google
- * account that already owns a row here is refused rather than merged.
+ * Everything here is a rejection test, so there is one place to read what a
+ * token has to satisfy:
+ *   - three JWT segments, RS256, and a `kid` we hold a key for
+ *   - a signature that verifies against that key
+ *   - the issuer and audience of this Firebase project, so a token from some
+ *     other project cannot be replayed here
+ *   - unexpired, with a `sub` to key the account on
+ *   - a verified email address, because a Firebase account exists before its
+ *     email is confirmed and accepting one early would let someone claim an
+ *     address they do not own
  */
-async function completeEmailChange(request, env, url, code, change) {
-  const fail = (reason) => new Response(null, {
-    status: 302,
-    headers: { Location: `${APP_URL}/settings.html?email=${reason}` },
-  });
-
-  const claims = await googleClaimsFromCode(url, env, code);
-  if (!claims) return fail('error');
-
-  const googleEmail = normalizeEmail(claims.email);
-  const googleSub = String(claims.sub || '');
-
-  // Google must confirm the exact address that was asked for.
-  if (!googleEmail || googleEmail !== change.e) return fail('mismatch');
-
-  const account = await env.DB.prepare('SELECT * FROM accounts WHERE id = ?')
-    .bind(change.a)
-    .first();
-  if (!account) return fail('error');
-
-  // Someone else already signed in with this Google account. Their row owns
-  // this google_sub, so the address is not free to take.
-  const subTaken = await env.DB.prepare('SELECT id FROM accounts WHERE google_sub = ? AND id != ?')
-    .bind(googleSub, account.id)
-    .first();
-  if (subTaken) return fail('taken');
-
-  // The same address may already be attached to another row (for example the
-  // other account was created before this one), and accounts.email is not
-  // UNIQUE, so this check is what enforces the rule.
-  const emailTaken = await env.DB.prepare(
-    'SELECT id FROM accounts WHERE LOWER(email) = ? AND id != ?'
-  )
-    .bind(googleEmail, account.id)
-    .first();
-  if (emailTaken) return fail('taken');
-
-  const name = String(claims.name || '').trim() || account.name;
-  await env.DB.prepare(
-    'UPDATE accounts SET google_sub = ?, email = ?, name = ?, updated_at = ? WHERE id = ?'
-  )
-    .bind(googleSub, googleEmail, name, nowSeconds(), account.id)
-    .run();
-
-  // The student proved control of the new address, so the browser that comes
-  // back from Google is theirs. Handing it a fresh session keeps them signed
-  // in as the same account, now under the new address.
-  const token = randomToken(32);
-  const ts = nowSeconds();
-  await env.DB.prepare(
-    'INSERT INTO sessions (token_hash, account_id, created_at, expires_at) VALUES (?, ?, ?, ?)'
-  )
-    .bind(await sha256Hex(token), account.id, ts, ts + SESSION_TTL_SECONDS)
-    .run();
-
-  const headers = new Headers({
-    Location: `${APP_URL}/settings.html?email=ok#account`,
-  });
-  headers.append('Set-Cookie', sessionCookie(token, SESSION_TTL_SECONDS));
-  return new Response(null, { status: 302, headers });
-}
-
-/** Verify a Google ID token's signature and claims. Returns claims or null. */
-async function verifyGoogleIdToken(idToken, clientId) {
-  const parts = idToken.split('.');
+async function verifyFirebaseIdToken(idToken, projectId) {
+  const parts = String(idToken || '').split('.');
   if (parts.length !== 3) return null;
 
   const [headerB64, payloadB64, signatureB64] = parts;
@@ -556,35 +324,98 @@ async function verifyGoogleIdToken(idToken, clientId) {
   } catch {
     return null;
   }
+  if (header.alg !== 'RS256' || !header.kid) return null;
 
-  const keysResponse = await fetch('https://www.googleapis.com/oauth2/v3/certs');
+  let keysResponse;
+  try {
+    keysResponse = await fetch(FIREBASE_JWKS_URL);
+  } catch {
+    return null;
+  }
   if (!keysResponse.ok) return null;
   const { keys } = await keysResponse.json();
   const jwk = (keys || []).find((k) => k.kid === header.kid);
   if (!jwk) return null;
 
-  const key = await crypto.subtle.importKey(
-    'jwk',
-    jwk,
-    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
-    false,
-    ['verify']
-  );
-  const valid = await crypto.subtle.verify(
-    'RSASSA-PKCS1-v1_5',
-    key,
-    fromB64url(signatureB64),
-    new TextEncoder().encode(`${headerB64}.${payloadB64}`)
-  );
+  let valid;
+  try {
+    const key = await crypto.subtle.importKey(
+      'jwk',
+      jwk,
+      { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+      false,
+      ['verify']
+    );
+    valid = await crypto.subtle.verify(
+      'RSASSA-PKCS1-v1_5',
+      key,
+      fromB64url(signatureB64),
+      new TextEncoder().encode(`${headerB64}.${payloadB64}`)
+    );
+  } catch {
+    return null;
+  }
   if (!valid) return null;
 
   const now = nowSeconds();
-  if (Number(claims.exp) <= now) return null;
-  if (claims.aud !== clientId) return null;
-  if (claims.iss !== 'accounts.google.com' && claims.iss !== 'https://accounts.google.com') return null;
+  if (!(Number(claims.exp) > now)) return null;
+  if (claims.aud !== projectId) return null;
+  if (claims.iss !== `https://securetoken.google.com/${projectId}`) return null;
   if (!claims.sub) return null;
+  if (claims.email_verified !== true) return null;
 
-  return claims;
+  const email = normalizeEmail(claims.email);
+  if (!email) return null;
+
+  return { uid: String(claims.sub), email, name: String(claims.name || '').trim() };
+}
+
+/**
+ * Sign in: the browser has already authenticated against Firebase and posts the
+ * ID token it received. Once the token verifies, the account is looked up by
+ * Firebase uid and created on first sight. Everything after this point - the
+ * session cookie, currentAccount, and every handler downstream - is unchanged,
+ * because this issues the same session as any other sign-in would.
+ */
+async function handleFirebaseSignIn(request, env) {
+  const body = await request.json().catch(() => ({}));
+  const claims = await verifyFirebaseIdToken(body.idToken, firebaseProjectId(env));
+  if (!claims) return json({ error: 'invalid_token' }, 401);
+
+  const ts = nowSeconds();
+  let account = await env.DB.prepare('SELECT * FROM accounts WHERE firebase_uid = ?')
+    .bind(claims.uid)
+    .first();
+
+  if (!account) {
+    const profileId = await generateProfileId(env);
+    const name = claims.name || claims.email.split('@')[0];
+    await env.DB.prepare(
+      `INSERT INTO accounts (firebase_uid, email, name, profile_id, display_name, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
+    )
+      .bind(claims.uid, claims.email, name, profileId, name, ts, ts)
+      .run();
+    account = await env.DB.prepare('SELECT * FROM accounts WHERE firebase_uid = ?')
+      .bind(claims.uid)
+      .first();
+  } else if (account.email !== claims.email) {
+    // A changed address must not change identity, which is why the account is
+    // keyed on the Firebase uid and only the display fields are updated.
+    await env.DB.prepare('UPDATE accounts SET email = ?, updated_at = ? WHERE id = ?')
+      .bind(claims.email, ts, account.id)
+      .run();
+    account = { ...account, email: claims.email };
+  }
+
+  const token = randomToken(32);
+  await env.DB.prepare(
+    'INSERT INTO sessions (token_hash, account_id, created_at, expires_at) VALUES (?, ?, ?, ?)'
+  )
+    .bind(await sha256Hex(token), account.id, ts, ts + SESSION_TTL_SECONDS)
+    .run();
+
+  return json(publicSelf(account), 200, { 'Set-Cookie': sessionCookie(token, SESSION_TTL_SECONDS) });
 }
 
 function fromB64url(text) {
@@ -655,48 +486,6 @@ async function handleMe(request, env, account) {
   }
 
   return json({ error: 'method_not_allowed' }, 405);
-}
-
-/**
- * Start an email change. The address is checked here so the student finds out
- * about a collision before being sent through Google, and again on the way
- * back, because the two checks can disagree if someone else moves first.
- *
- * Nothing is written yet: the change only happens once Google has confirmed
- * the address, which is what completeEmailChange is for.
- */
-async function handleStartEmailChange(request, env, account) {
-  const body = await request.json().catch(() => ({}));
-  const newEmail = normalizeEmail(body.email);
-
-  if (!isPlausibleEmail(newEmail)) {
-    return json({ error: 'invalid_email' }, 400);
-  }
-
-  if (newEmail === normalizeEmail(account.email)) {
-    return json({ error: 'same_email' }, 400);
-  }
-
-  const taken = await env.DB.prepare('SELECT id FROM accounts WHERE LOWER(email) = ? AND id != ?')
-    .bind(newEmail, account.id)
-    .first();
-  if (taken) return json({ error: 'email_taken' }, 409);
-
-  const state = await issueEmailChangeState(env, account.id, newEmail);
-  const url = new URL(request.url);
-  const authorize = new URL('https://accounts.google.com/o/oauth2/v2/auth');
-  authorize.searchParams.set('client_id', env.GOOGLE_CLIENT_ID);
-  authorize.searchParams.set('redirect_uri', `${url.origin}/api/auth/callback`);
-  authorize.searchParams.set('response_type', 'code');
-  authorize.searchParams.set('scope', 'openid email profile');
-  authorize.searchParams.set('state', state);
-  // select_account is not enough here: a browser already signed into one Google
-  // account would otherwise silently reuse it, and the address it reports would
-  // not be the one being claimed.
-  authorize.searchParams.set('prompt', 'select_account');
-  authorize.searchParams.set('login_hint', newEmail);
-
-  return json({ authorizeUrl: authorize.toString() });
 }
 
 async function handleDeleteMe(env, account) {
@@ -1000,8 +789,9 @@ export default {
 };
 
 async function route(request, env, url, path, method) {
-  if (path === '/api/auth/login' && method === 'GET') return authLogin(request, env);
-  if (path === '/api/auth/callback' && method === 'GET') return authCallback(request, env);
+  if (path === '/api/auth/firebase' && method === 'POST') {
+    return handleFirebaseSignIn(request, env);
+  }
 
   if (path === '/api/auth/logout' && method === 'POST') {
     const account = await currentAccount(request, env);
@@ -1017,10 +807,6 @@ async function route(request, env, url, path, method) {
   // Everything past this point needs a session.
   const account = await currentAccount(request, env);
   if (!account) return json({ error: 'unauthorized' }, 401);
-
-  if (path === '/api/me/email' && method === 'POST') {
-    return handleStartEmailChange(request, env, account);
-  }
 
   if (path === '/api/me') {
     if (method === 'GET' || method === 'PATCH') return handleMe(request, env, account);

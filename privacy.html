@@ -147,9 +147,11 @@
         <h3>What we collect</h3>
         <ul>
           <li>
-            <strong>Account.</strong> When you sign in with Google we receive your
-            Google account identifier, your name, and your email address. We store
-            those to create and identify your account.
+            <strong>Account.</strong> When you sign in with your Hilltoppers
+            account we receive your account identifier, your name, and your email
+            address. We store those to create and identify your account. Your
+            password is never sent to us and is never stored by us &mdash;
+            Hilltoppers checks it.
           </li>
           <li>
             <strong>Profile.</strong> The display name you choose, your schedule
@@ -168,10 +170,10 @@
 
         <h3>What we do not collect</h3>
         <p>
-          We do not read your Gmail, Google Drive, Calendar, contacts, or any other
-          Google data. Sign-in only asks Google for your basic profile. We do not
-          run advertising or third-party analytics, and we do not sell data to
-          anyone.
+          We do not collect your password, and we cannot read your Hilltoppers
+          account beyond the name, email address, and account identifier that
+          signing in hands over. We do not run advertising or third-party
+          analytics, and we do not sell data to anyone.
         </p>
 
         <h3>Who can see what</h3>
@@ -199,9 +201,9 @@
           </li>
           <li>
             <strong>Your email address.</strong> Not shown to other students and
-            not used to find you. Only the profile ID is used for that. You can
-            change it from settings, which asks you to sign in with Google again
-            as the new address before the change takes effect.
+            not used to find you. Only the profile ID is used for that. It is the
+            address on your Hilltoppers account, so change it there; the next time
+            you sign in, this app follows the new one.
           </li>
         </ul>
 
@@ -209,8 +211,11 @@
         <p>
           Account, profile, course, and sharing data live in a Cloudflare D1
           database. The app runs on Cloudflare Workers, and sign-in is handled by
-          Google. Those providers process data on our behalf in order to run the
-          service.
+          your Hilltoppers account, which runs on Firebase Authentication
+          (Google). When you ask for a password reset or a verification email,
+          your address goes to Hilltoppers' account email service, which passes
+          it to Resend to deliver the message. Those providers process data on
+          our behalf in order to run the service.
         </p>
 
         <h3>How long we keep it</h3>

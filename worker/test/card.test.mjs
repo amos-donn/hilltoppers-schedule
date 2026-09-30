@@ -20,8 +20,8 @@
  * jsdom cannot express a frame: window.top is non-configurable and always self.
  * The page asks schedule-friends.js whether it is embedded, so that decision is
  * injected for the embedded case and left alone otherwise. The Worker, the fake
- * Google endpoints and the cookie jar come from ./harness.mjs, so this suite and
- * page.test.mjs share one backend.
+ * Firebase endpoints and the cookie jar come from ./harness.mjs, so this suite
+ * and page.test.mjs share one backend.
  */
 import { JSDOM } from 'jsdom';
 import { readFileSync } from 'node:fs';
@@ -204,16 +204,16 @@ await test('embedded with no session, the card offers sign-in', async () => {
   await page.settle();
   assert.equal(page.errors.length, 0, page.errors.join(' | '));
   assert.match(page.text(), /Sign in to view friends!/, 'the empty card explains how to get friends');
-  assert.ok(page.window.document.querySelector('.empty-action .google-button__icon'),
-    'and carries the Google mark');
+  assert.ok(page.window.document.querySelector('.empty-action .empty-action__logo'),
+    'and carries the Hilltoppers mark');
 
-  // Clicking it must open a tab. Navigating the frame would blank it, because
-  // Google refuses to render its consent screen inside an iframe.
+  // Clicking it must open a tab. The frame has no room for a sign-in form, and
+  // the session belongs to the settings page, so the click hands off to it.
   const button = page.window.document.querySelector('.empty-action button');
   assert.ok(button, 'the sign-in button rendered');
   button.dispatchEvent(new page.window.Event('click', { bubbles: true }));
   assert.equal(page.opens.length, 1, 'sign-in opened exactly one tab');
-  assert.match(page.opens[0], /\/api\/auth\/login$/, 'pointing at the Worker login');
+  assert.match(page.opens[0], /settings\.html$/, 'pointing at the settings page, where signing in happens');
 });
 
 await test('embedded, the card shows the friends the account was granted', async () => {
