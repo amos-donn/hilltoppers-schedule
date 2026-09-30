@@ -669,6 +669,18 @@ await test('only the day card bleeds to the frame; the rest of the page keeps it
   // The top corners are against the frame now, so they square off; the bottom
   // ones are not, and stay rounded.
   assert.match(status[1], /border-radius:\s*0 0 8px 8px/, 'top corners square, bottom rounded');
+
+  // The time bar runs the card's full width. popup.css cancels the extension's
+  // 12px padding with a negative margin, but this card's sides are 24px, so
+  // without its own override the bar would stop 12px short of each edge and
+  // read as inset while the card above it is not.
+  const bar = rawHtml.match(/\.primary-card\s*>\s*\.status\s+\.progress-bar-container\s*\{([^}]*)\}/);
+  assert.ok(bar, 'the bar is told about the wider card');
+  assert.match(bar[1], /margin-left:\s*-24px/, 'bar reaches the left edge');
+  assert.match(bar[1], /margin-right:\s*-24px/, 'bar reaches the right edge');
+  // Only the sides: the 14px above and -12px below are the extension's and the
+  // bottom edge did not move.
+  assert.doesNotMatch(bar[1], /margin-(top|bottom)|margin:\s/, 'vertical margins stay as popup.css set them');
 });
 
 console.log(results.join('\n'));

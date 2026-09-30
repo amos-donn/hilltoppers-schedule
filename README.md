@@ -194,6 +194,11 @@ takes its hover tint; the bottom corners are not against the frame and stay
 rounded. The bottom padding stays 12px because the progress bar hangs off that
 edge with a `-12px` margin.
 
+The time bar runs the card's full width, as it does in the extension, so it
+cancels that 24px side padding with its own `margin-left/right: -24px`.
+`popup.css` cancels 12px, which matched the extension's padding but not this
+card's; left alone the bar would stop 12px short of each edge.
+
 Measure, don't eyeball: render both at the same width and compare
 `getBoundingClientRect()` on `.popup` / `.status` / `.schedule-list ul`.
 
