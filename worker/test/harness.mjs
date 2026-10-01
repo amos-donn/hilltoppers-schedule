@@ -44,10 +44,18 @@ class Stmt {
 export const db = new DatabaseSync(':memory:');
 db.exec(readFileSync(repoPath('worker/schema.sql'), 'utf8'));
 db.exec('PRAGMA foreign_keys = ON');
+
+// A real 32-byte key so the Worker's encryption runs for real in the tests
+// rather than being stubbed. Fixed so runs are reproducible; production uses a
+// generated one. Rotations are covered by TEST_DATA_KEY_PREV below.
+export const TEST_DATA_KEY = 'aGlsbHRvcHBlcnMtdGVzdC1rZXktdjEAAAAAAAAAAAA';
+export const TEST_DATA_KEY_PREV = 'cHJldmlvdXMta2V5LXJvdGF0aW9uLW9sZCEhAAAAAAA';
+
 export const env = {
   DB: { prepare: (sql) => new Stmt(db, sql) },
   FIREBASE_PROJECT_ID: FIREBASE_PROJECT,
   SESSION_SECRET: 'test-session-secret',
+  DATA_KEY: TEST_DATA_KEY,
 };
 
 const keyPair = await crypto.subtle.generateKey(
@@ -127,7 +135,56 @@ export async function routerFetch(input, init = {}) {
   return realFetch(input, init);
 }
 
-const worker = (await import(repoPath('worker/api.js'))).default;
+const workerModule = await import(repoPath('worker/api.js'));
+const worker = workerModule.default;
+/** The raw fetch handler, for tests that need to run it against a different env. */
+export { worker };
+// Re-exported so a test can compute a blind index under a rotated keyring.
+export { blindIndexFor };
+const { accountAad, blindIndexFor, decryptAccount, encryptField } = workerModule;
+
+// ---------------------------------------------------------------------------
+// Reading storage from tests
+//
+// The page tests used to query the plaintext profile columns directly. Those
+// columns are encrypted now, so these helpers go through the same blind index
+// and decryption the Worker uses. That keeps an assertion like "this student is
+// public" a real assertion instead of a check against ciphertext.
+// ---------------------------------------------------------------------------
+
+/** The decrypted account row for a Firebase uid. */
+export async function accountOf(uid) {
+  const index = await blindIndexFor(env, 'firebase_uid', uid);
+  const row = db.prepare('SELECT * FROM accounts WHERE firebase_uid_bidx = ?').get(index);
+  assert.ok(row, `expected an account for uid ${uid}`);
+  return decryptAccount(env, row);
+}
+
+export async function accountIdOf(uid) {
+  return (await accountOf(uid)).id;
+}
+
+/** The raw, still-encrypted accounts row, for assertions about what is stored. */
+export async function rawRowOfUid(uid) {
+  const index = await blindIndexFor(env, 'firebase_uid', uid);
+  const row = db.prepare('SELECT * FROM accounts WHERE firebase_uid_bidx = ?').get(index);
+  assert.ok(row, `expected an account for uid ${uid}`);
+  return row;
+}
+
+/** A column that deliberately stays plaintext, such as is_public. */
+export async function plainFieldOf(uid, column) {
+  const account = await accountOf(uid);
+  const row = db.prepare(`SELECT ${column} AS value FROM accounts WHERE id = ?`).get(account.id);
+  return row ? row.value : undefined;
+}
+
+/** Write an encrypted field directly, for arranging a test. */
+export async function setEncryptedFieldOf(uid, field, value) {
+  const account = await accountOf(uid);
+  await db.prepare(`UPDATE accounts SET ${field}_enc = ? WHERE id = ?`)
+    .run(await encryptField(env, value, accountAad(account.profile_id, field)), account.id);
+}
 
 export function sessionFrom(res) {
   const all = res.headers.getSetCookie ? res.headers.getSetCookie() : [];
