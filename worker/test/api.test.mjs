@@ -502,6 +502,53 @@ await test('a private profile is reachable by ID when already known', async () =
   assert.equal(r.body.status, 'pending', 'a private profile can still be asked directly');
 });
 
+await test('Social web exposes only opted-in profiles and live sharer-to-recipient edges', async () => {
+  const socialEnv = makeEnv();
+  const owner = await signIn(socialEnv, { sub: 'web-owner', email: 'owner@x.org', name: 'Owner' });
+  const viewer = await signIn(socialEnv, { sub: 'web-viewer', email: 'viewer@x.org', name: 'Viewer' });
+  const hidden = await signIn(socialEnv, { sub: 'web-hidden', email: 'hidden@x.org', name: 'Hidden' });
+  const self = await call(socialEnv, '/api/me', { cookie: owner });
+  assert.equal(self.body.socialWebOptIn, false, 'default-off consent');
+  assert.equal((await call(socialEnv, '/api/social-web')).status, 401, 'signed-in only');
+  assert.deepEqual((await call(socialEnv, '/api/social-web', { cookie: viewer })).body, { nodes: [], edges: [] });
+  await call(socialEnv, '/api/me', { cookie: owner, method: 'PATCH', body: { socialWebOptIn: true, isPublic: true, autoGrant: true } });
+  const viewerMe = await call(socialEnv, '/api/me', { cookie: viewer });
+  await call(socialEnv, '/api/requests', { cookie: viewer, method: 'POST', body: { profileId: self.body.profileId } });
+  await call(socialEnv, '/api/requests', { cookie: hidden, method: 'POST', body: { profileId: self.body.profileId } });
+  let graph = await call(socialEnv, '/api/social-web', { cookie: viewer });
+  assert.equal(graph.body.nodes.length, 1);
+  assert.deepEqual(graph.body.edges, [], 'both endpoints must consent');
+  await call(socialEnv, '/api/me', { cookie: viewer, method: 'PATCH', body: { socialWebOptIn: true } });
+  graph = await call(socialEnv, '/api/social-web', { cookie: hidden });
+  assert.equal(graph.body.nodes.length, 2, 'nonparticipants may explore');
+  assert.deepEqual(graph.body.edges, [{ source: self.body.profileId, target: viewerMe.body.profileId }]);
+  for (const node of graph.body.nodes) assert.deepEqual(Object.keys(node).sort(), ['displayName', 'profileId']);
+  assert.ok(!/email|blockPrefs|code_hash|firebase_uid|Hidden|@x.org/.test(graph.text), 'no private metadata');
+  assert.equal(viewerMe.body.isPublic, false, 'private directory visibility is independent of consent');
+  await call(socialEnv, '/api/me', { cookie: owner, method: 'PATCH', body: { socialWebOptIn: false } });
+  graph = await call(socialEnv, '/api/social-web', { cookie: viewer });
+  assert.equal(graph.body.nodes.length, 1);
+  assert.deepEqual(graph.body.edges, [], 'opt-out removes incident edges');
+  assert.equal((await call(socialEnv, `/api/schedule/${self.body.profileId}`, { cookie: viewer })).status, 200, 'opt-out does not revoke schedule access');
+  await call(socialEnv, '/api/me', { cookie: owner, method: 'PATCH', body: { socialWebOptIn: true } });
+  const grants = await call(socialEnv, '/api/grants', { cookie: owner });
+  const grant = grants.body.viewers.find((row) => row.profileId === viewerMe.body.profileId);
+  await call(socialEnv, `/api/grants/${grant.id}`, { cookie: owner, method: 'DELETE' });
+  assert.deepEqual((await call(socialEnv, '/api/social-web', { cookie: viewer })).body.edges, [], 'revoked grants disappear');
+  await call(socialEnv, '/api/me', { cookie: owner, method: 'DELETE' });
+  assert.equal((await call(socialEnv, '/api/social-web', { cookie: viewer })).body.nodes.length, 1, 'deleted accounts disappear');
+});
+
+await test('Social web migration preserves existing accounts and defaults them out', async () => {
+  const db = new DatabaseSync(':memory:');
+  const schema = readFileSync(new URL('../schema.sql', import.meta.url), 'utf8');
+  db.exec(schema.replace(/  social_web_opt_in[^\n]*\n/, ''));
+  db.exec("INSERT INTO accounts (firebase_uid, email, profile_id, created_at, updated_at) VALUES ('existing', 'student@x.org', 'existing-student-0001', 1, 1)");
+  db.exec(readFileSync(new URL('../migration-social-web.sql', import.meta.url), 'utf8'));
+  assert.equal(db.prepare('SELECT social_web_opt_in FROM accounts').get().social_web_opt_in, 0);
+  db.close();
+});
+
 await test('no endpoint ever returns an access code', async () => {
   const bodies = [];
   for (const path of ['/api/me', '/api/grants', '/api/requests', '/api/notices']) {

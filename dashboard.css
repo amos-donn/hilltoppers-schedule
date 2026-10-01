@@ -1,3 +1,32 @@
+/* Social web: a quiet, sage connection atlas. */
+.social-web__heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.social-web__eyebrow { color: var(--accent); font-size: 10px; font-weight: 700; letter-spacing: .18em; }
+.social-web__heading h2 { margin-top: 8px; }
+.social-web__count { background: #e9efe4; color: #456344; border: 1px solid #d5dfce; border-radius: 999px; padding: 8px 12px; font-size: 12px; }
+.social-web a { color: var(--accent); font-size: 13px; }
+.social-web__toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 24px 0 12px; }
+.social-web__toolbar output { min-width: 45px; text-align: center; color: var(--muted); font-size: 12px; }
+.social-web__find { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-left: auto; color: var(--muted); font-size: 12px; }
+.social-web__find select { max-width: 220px; padding: 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); }
+.social-web__canvas { position: relative; height: clamp(340px, 60vh, 640px); overflow: hidden; border: 1px solid #d8e0d0; border-radius: 16px; background-color: #f3f6ed; background-image: radial-gradient(#d4ddc9 1px, transparent 1px); background-size: 22px 22px; cursor: grab; touch-action: none; user-select: none; }
+.social-web__canvas:active { cursor: grabbing; }
+.social-web__canvas:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+#social-web-svg { display: block; width: 100%; height: 100%; color: #78936c; }
+.social-web__edge { fill: none; stroke: currentColor; stroke-width: 1.6; opacity: .55; }
+.social-web__edge.is-active { stroke-width: 2.8; color: #325e3a; opacity: 1; }
+.social-web__node { cursor: pointer; outline: none; }
+.social-web__node circle { fill: #fbfcf8; stroke: #92a881; stroke-width: 2; }
+.social-web__node.is-you circle { fill: #e2ead8; stroke: #385f3c; stroke-width: 3; }
+.social-web__node.is-selected circle, .social-web__node:focus-visible circle { fill: #345b39; stroke: #223f27; stroke-width: 3; }
+.social-web__initials { fill: #345b39; font-size: 14px; font-weight: 700; text-anchor: middle; pointer-events: none; }
+.social-web__node.is-selected .social-web__initials, .social-web__node:focus-visible .social-web__initials { fill: white; }
+.social-web__label { fill: #344a34; font-size: 12px; text-anchor: middle; paint-order: stroke; stroke: #f3f6ed; stroke-width: 5px; stroke-linejoin: round; }
+.social-web__node.is-muted, .social-web__edge.is-muted { opacity: .16; }
+.social-web__legend { position: absolute; bottom: 16px; left: 16px; background: #ffffffd9; border: 1px solid #d8e0d0; border-radius: 8px; padding: 8px 12px; font-size: 12px; color: #456344; pointer-events: none; }
+.social-web__details { margin-top: 16px; padding: 16px; border-radius: 12px; background: #f3f6ed; border: 1px solid #d8e0d0; color: #456344; font-size: 13px; overflow-wrap: anywhere; }
+.social-web__details p { margin: 8px 0 0; line-height: 1.6; }
+@media (max-width: 600px) { .social-web__find { width: 100%; margin: 8px 0 0; } .social-web__find select { flex: 1; min-width: 0; } }
+
 /*
  * The settings page shell, matching daniezl/Hilltoppers.
  *

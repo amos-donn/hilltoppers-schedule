@@ -13,7 +13,7 @@
     <!-- The Hilltoppers dashboard shell: sidebar tabs, the sage palette,
          and the custom dropdowns. Loaded after classSettings.css, which it
          restyles. -->
-    <link rel="stylesheet" href="dashboard.css?v=20260930d" />
+    <link rel="stylesheet" href="dashboard.css?v=20261001a" />
   </head>
   <body>
     <div class="dashboard">
@@ -40,6 +40,10 @@
             <svg viewBox="0 0 256 256" fill="currentColor" aria-hidden="true"><path d="M221.8,175.94C216.25,166.38,208,139.33,208,104a80,80,0,1,0-160,0c0,35.34-8.26,62.38-13.81,71.94A16,16,0,0,0,48,200H88.81a40,40,0,0,0,78.38,0H208a16,16,0,0,0,13.8-24.06ZM128,216a24,24,0,0,1-22.62-16h45.24A24,24,0,0,1,128,216ZM48,184c7.7-13.24,16-43.92,16-80a64,64,0,1,1,128,0c0,36.05,8.28,66.73,16,80Z"/></svg>
             Notices
             <span class="class-settings__badge" id="notices-tab-badge" hidden>New</span>
+          </button>
+          <button type="button" class="dashboard__tab" role="tab" data-tab="social-web" aria-selected="false" aria-controls="panel-social-web" id="tab-social-web-btn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M6 7l12 2M6 7l4 12M18 9l-8 10"/><circle cx="6" cy="7" r="3"/><circle cx="18" cy="9" r="3"/><circle cx="10" cy="19" r="3"/></svg>
+            Social web
           </button>
         </nav>
 
@@ -190,6 +194,16 @@
                 straight away. Either way, you can revoke anyone's access
                 afterwards.
               </p>
+              <label class="class-settings__free-checkbox">
+                <input type="checkbox" id="social-web-opt-in" aria-describedby="social-web-consent-hint" />
+                <span>Show me in the Social web</span>
+              </label>
+              <p class="class-settings__hint" id="social-web-consent-hint">
+                Off by default. Opting in shows your display name, profile ID, and schedule-sharing
+                connections with other opted-in people to signed-in students, even if your profile
+                is private. It never shows your classes or email and does not grant schedule access.
+                Uncheck to leave the web.
+              </p>
               <p class="class-settings__hint" id="account-save-status" hidden></p>
             </div>
           </div>
@@ -326,12 +340,43 @@
           </div>
         </section>
         </section>
+        <section class="dashboard__panel" id="panel-social-web" role="tabpanel" aria-labelledby="tab-social-web-btn" tabindex="-1" hidden>
+          <section class="class-settings__panel social-web">
+            <div class="social-web__heading">
+              <div><span class="social-web__eyebrow">THE CONNECTION MAP</span><h2>Your school, connected.</h2></div>
+              <span class="social-web__count" id="social-web-count">Opt-in only</span>
+            </div>
+            <p class="class-settings__hint">An arrow runs from the person sharing their schedule to the person who can see it. Connected circles naturally gather together &mdash; these are sharing patterns, not confirmed friend groups.</p>
+            <p id="social-web-status" class="class-settings__hint" role="status" aria-live="polite">Sign in to explore the Social web.</p>
+            <a href="#account" id="social-web-account-link">Manage your participation in Account &rarr;</a>
+            <div id="social-web-workspace" hidden>
+              <div class="social-web__toolbar" role="group" aria-label="Graph controls">
+                <button type="button" class="secondary" id="social-web-zoom-out" aria-label="Zoom out">&minus;</button>
+                <output id="social-web-zoom" aria-label="Zoom level">100%</output>
+                <button type="button" class="secondary" id="social-web-zoom-in" aria-label="Zoom in">+</button>
+                <button type="button" class="secondary" id="social-web-fit">Fit web</button>
+                <button type="button" class="secondary" id="social-web-refresh">Refresh</button>
+                <label class="social-web__find">Find a person <select id="social-web-person"><option value="">Everyone</option></select></label>
+              </div>
+              <div class="social-web__canvas" id="social-web-canvas" tabindex="0" role="region" aria-label="Social web graph. Drag to pan, scroll or pinch to zoom. Use arrow keys to pan, plus and minus to zoom, and zero to fit." aria-describedby="social-web-help">
+                <svg id="social-web-svg" viewBox="0 0 1000 640" aria-label="Schedule-sharing connections">
+                  <defs><marker id="social-web-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor" /></marker></defs>
+                  <g id="social-web-scene"></g>
+                </svg>
+                <span class="social-web__legend" aria-hidden="true">Sharer &rarr; recipient</span>
+              </div>
+              <p class="class-settings__hint" id="social-web-help">Drag to explore &middot; scroll or pinch to zoom &middot; select a person to trace their connections. Keyboard: arrows to pan, +/&minus; to zoom, 0 to fit.</p>
+              <div class="social-web__details" id="social-web-details" role="status" aria-live="polite">Select a person to explore their connections.</div>
+            </div>
+          </section>
+        </section>
       </main>
     </div>
 
     <script src="schedule-core.js?v=20260928h"></script>
     <script src="auth.js?v=20260930a"></script>
-    <script src="account.js?v=20260930a"></script>
+    <script src="account.js?v=20261001a"></script>
+    <script src="social-web.js?v=20261001a"></script>
     <script>
       (function () {
         'use strict';
@@ -721,6 +766,7 @@
         var profileIdInput = document.getElementById('profile-id');
         var visibility = document.getElementById('visibility');
         var autoGrant = document.getElementById('auto-grant');
+        var socialWebOptIn = document.getElementById('social-web-opt-in');
         var accountEmail = document.getElementById('account-email');
         var accountStatus = document.getElementById('account-status');
         var requestsPanel = document.getElementById('requests-panel');
@@ -735,6 +781,7 @@
         var appliedProfileId = null;
 
         function renderAccount(me) {
+          if (window.HTSocialWeb) window.HTSocialWeb.setAccount(me);
           accountLoading.hidden = true;
           if (!me) {
             signedOutBox.hidden = false;
@@ -766,6 +813,7 @@
           }
           visibility.value = me.isPublic ? 'public' : 'private';
           autoGrant.checked = me.autoGrant === true;
+          socialWebOptIn.checked = me.socialWebOptIn === true;
 
           if (appliedProfileId !== me.profileId) {
             appliedProfileId = me.profileId;
@@ -1037,6 +1085,20 @@
                 : 'Requests now wait for your approval.',
               'success'
             );
+          });
+        });
+
+        socialWebOptIn.addEventListener('change', function () {
+          var optedIn = socialWebOptIn.checked;
+          socialWebOptIn.disabled = true;
+          A.updateProfile({ socialWebOptIn: optedIn }).then(function (result) {
+            socialWebOptIn.disabled = false;
+            if (!result.ok) {
+              socialWebOptIn.checked = !!(A.current() && A.current().socialWebOptIn);
+              setAccountStatus(friendlyError(result), 'error');
+              return;
+            }
+            setAccountStatus(optedIn ? 'You are now in the Social web.' : 'You are no longer in the Social web.', 'success');
           });
         });
 
@@ -1493,9 +1555,9 @@
         // two are independent. Identity and schedule settings are one section
         // because they are one job -- set up your account and your classes --
         // and deleting the account sits at the bottom of it.
-        var TABS = ['account', 'friends', 'notices'];
+        var TABS = ['account', 'friends', 'notices', 'social-web'];
         var TAB_TITLES = {
-          account: 'Account', friends: 'Friends', notices: 'Notices'
+          account: 'Account', friends: 'Friends', notices: 'Notices', 'social-web': 'Social web'
         };
         // Sections that used to be their own tab, so an old bookmark or a back
         // button still lands somewhere sensible.
@@ -1532,6 +1594,7 @@
           // Reset only restores the class and schedule settings, so it belongs
           // to the section that holds them rather than to every section.
           resetButton.hidden = name !== 'account';
+          if (name === 'social-web' && window.HTSocialWeb) window.HTSocialWeb.refresh();
           if (focus) document.getElementById('panel-' + name).focus();
           moveIndicator();
         }
@@ -1558,6 +1621,10 @@
             showTab(next, false);
             document.getElementById('tab-' + next + '-btn').focus();
           });
+        });
+
+        window.addEventListener('hashchange', function () {
+          showTab(resolveTab(location.hash.replace('#', '')), false);
         });
 
         window.addEventListener('popstate', function () {

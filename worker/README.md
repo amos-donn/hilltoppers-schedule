@@ -39,6 +39,25 @@ own, in order, clicking **Execute** after each.
 Safe to re-run. Every statement is `CREATE ... IF NOT EXISTS`, so nothing is
 ever dropped.
 
+## Social web upgrade (existing databases)
+
+Before deploying the updated `worker/api.js`, run the single statement in
+`worker/migration-social-web.sql` once in the D1 console. It adds default-off
+consent without changing accounts, grants, or permissions. Fresh databases
+created with the updated `schema.sql` already have this column: do not run the
+migration there. Deploy the Worker before publishing the updated settings page.
+
+`GET /api/social-web` requires a session and returns only opted-in profile IDs,
+display names, and active sharing edges whose two endpoints opted in. Arrows
+run from schedule owner to recipient. Directory visibility is independent:
+the Account checkbox explicitly explains that even private profiles appear
+when they opt in. No emails, classes, grant IDs, or access codes are returned.
+Opting out removes graph participation, not schedule access. Graph responses
+are not cached; the UI refreshes on tab entry, consent changes, and Refresh.
+
+The graph is rendered locally with SVG and a deterministic spring layout;
+no external service receives social graph data.
+
 ## 2. Bind the database to the Worker
 
 1. Cloudflare dashboard → **Workers & Pages** → `hilltoppers-schedule-friends`.

@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS accounts (
   display_name   TEXT,
   is_public      INTEGER NOT NULL DEFAULT 0,
   auto_grant     INTEGER NOT NULL DEFAULT 0,
+  social_web_opt_in INTEGER NOT NULL DEFAULT 0 CHECK (social_web_opt_in IN (0, 1)),
   time_format    TEXT    NOT NULL DEFAULT '12h',
   grade          INTEGER,
   lunch_wave     INTEGER,
