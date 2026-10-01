@@ -942,6 +942,8 @@ async function handleFirebaseSignIn(request, env) {
       ...encryptedColumns,
       ...indexColumns,
       ...ACCOUNT_FIELD_NAMES.map((f) => f),
+      'is_public',
+      'social_web_opt_in',
       'created_at',
       'updated_at',
     ];
@@ -953,6 +955,8 @@ async function handleFirebaseSignIn(request, env) {
         ...encryptedColumns.map((c) => encrypted[c]),
         ...indexColumns.map((c) => encrypted[c]),
         ...ACCOUNT_FIELD_NAMES.map((f) => legacyPlaceholderFor(f)),
+        1, // Public by default, including on databases with the old defaults.
+        1, // Social web on by default; existing choices are never overwritten.
         ts,
         ts,
       )
@@ -1031,7 +1035,10 @@ async function handleSocialWeb(env) {
   edges.sort((a, b) => a.source.localeCompare(b.source) || a.target.localeCompare(b.target));
 
   return json({
-    nodes: accounts.map(publicDirectoryEntry),
+    nodes: accounts.map((account) => ({
+      profileId: account.profile_id,
+      displayName: account.is_public ? (account.display_name || account.name || '') : 'Anonymous',
+    })),
     edges,
   }, 200, { 'Cache-Control': 'no-store' });
 }

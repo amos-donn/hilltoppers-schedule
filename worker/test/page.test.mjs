@@ -204,7 +204,7 @@ await test('signing in reveals every account section', async () => {
   assert.match($('profile-id').value, /^[a-z]+-[a-z]+-\d{4}$/, 'a profile ID is shown');
   assert.equal($('account-email').value, 'alice@example.org', 'the email is shown');
   assert.equal($('account-email').readOnly, true, 'but is not editable here: it belongs to Hilltoppers');
-  assert.equal($('visibility').value, 'private', 'new accounts default to private');
+  assert.equal($('visibility').value, 'public', 'new accounts default to public');
   assert.equal($('auto-grant').checked, false, 'auto-grant defaults off');
 });
 
@@ -783,7 +783,10 @@ await test('schedule access buttons stay in sync with friends after removal, re-
 });
 
 await test('Social web opt-in persists and the graph supports selection, pan and zoom', async () => {
-  assert.equal($('social-web-opt-in').checked, false, 'participation defaults off');
+  assert.equal($('social-web-opt-in').checked, true, 'participation defaults on');
+  db.prepare('UPDATE accounts SET social_web_opt_in = 0 WHERE id NOT IN (?, ?)').run(
+    await accountIdOf('sub-page-frank'), await accountIdOf('sub-page-erin')
+  );
   $('social-web-opt-in').checked = true;
   $('social-web-opt-in').dispatchEvent(new window.Event('change'));
   await settle();
