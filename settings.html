@@ -194,15 +194,11 @@
                 straight away. Either way, you can revoke anyone's access
                 afterwards.
               </p>
-              <label class="class-settings__free-checkbox">
-                <input type="checkbox" id="social-web-opt-in" checked aria-describedby="social-web-consent-hint" />
-                <span>Show me in the Social web</span>
-              </label>
-              <p class="class-settings__hint" id="social-web-consent-hint">
-                On by default for new accounts. Public profiles show their display name;
-                private profiles show Anonymous. The web shows your profile ID and schedule-sharing
-                connections to signed-in students, never your classes or email, and does not grant schedule access.
-                Uncheck to leave the web.
+              <p class="class-settings__hint">
+                You are automatically part of the Social web. Public profiles show their
+                display name; private profiles show Anonymous. The web shows your
+                profile ID and schedule-sharing connections to signed-in students,
+                never your classes or email, and does not grant schedule access.
               </p>
               <p class="class-settings__hint" id="account-save-status" hidden></p>
             </div>
@@ -339,11 +335,11 @@
           <section class="class-settings__panel social-web">
             <div class="social-web__heading">
               <div><span class="social-web__eyebrow">THE CONNECTION MAP</span><h2>Your school, connected.</h2></div>
-              <span class="social-web__count" id="social-web-count">Opt-in only</span>
+              <span class="social-web__count" id="social-web-count">Everyone</span>
             </div>
             <p class="class-settings__hint">An arrow runs from the person sharing their schedule to the person who can see it. Connected circles naturally gather together &mdash; these are sharing patterns, not confirmed friend groups.</p>
             <p id="social-web-status" class="class-settings__hint" role="status" aria-live="polite">Sign in to explore the Social web.</p>
-            <a href="#account" id="social-web-account-link">Manage your participation in Account &rarr;</a>
+            <a href="#account" id="social-web-account-link">Your profile controls who you show in Account</a>
             <div id="social-web-workspace" hidden>
               <div class="social-web__toolbar" role="group" aria-label="Graph controls">
                 <button type="button" class="secondary" id="social-web-zoom-out" aria-label="Zoom out">&minus;</button>
@@ -761,7 +757,6 @@
         var profileIdInput = document.getElementById('profile-id');
         var visibility = document.getElementById('visibility');
         var autoGrant = document.getElementById('auto-grant');
-        var socialWebOptIn = document.getElementById('social-web-opt-in');
         var accountEmail = document.getElementById('account-email');
         var accountStatus = document.getElementById('account-status');
         var requestsPanel = document.getElementById('requests-panel');
@@ -808,7 +803,6 @@
           }
           visibility.value = me.isPublic ? 'public' : 'private';
           autoGrant.checked = me.autoGrant === true;
-          socialWebOptIn.checked = me.socialWebOptIn === true;
 
           if (appliedProfileId !== me.profileId) {
             appliedProfileId = me.profileId;
@@ -1080,20 +1074,6 @@
                 : 'Requests now wait for your approval.',
               'success'
             );
-          });
-        });
-
-        socialWebOptIn.addEventListener('change', function () {
-          var optedIn = socialWebOptIn.checked;
-          socialWebOptIn.disabled = true;
-          A.updateProfile({ socialWebOptIn: optedIn }).then(function (result) {
-            socialWebOptIn.disabled = false;
-            if (!result.ok) {
-              socialWebOptIn.checked = !!(A.current() && A.current().socialWebOptIn);
-              setAccountStatus(friendlyError(result), 'error');
-              return;
-            }
-            setAccountStatus(optedIn ? 'You are now in the Social web.' : 'You are no longer in the Social web.', 'success');
           });
         });
 

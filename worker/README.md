@@ -46,13 +46,18 @@ Run `worker/migration-social-web.sql` once in the D1 console, and
 databases created with the updated `schema.sql` already have both: do not run
 the migrations there. Deploy the Worker before publishing the updated pages.
 
-`GET /api/social-web` requires a session and returns only opted-in profile IDs,
-display names, and active sharing edges whose two endpoints opted in. Arrows
-run from schedule owner to recipient. Directory visibility is independent:
-the Account checkbox explicitly explains that even private profiles appear
-when they opt in. No emails, classes, grant IDs, or access codes are returned.
-Opting out removes graph participation, not schedule access. Graph responses
-are not cached; the UI refreshes on tab entry, consent changes, and Refresh.
+`GET /api/social-web` requires a session and returns every account's profile
+ID, the display name for public profiles (or `Anonymous` for private profiles),
+and active sharing edges. **Everyone is in the Social web — there is no opt-in
+and no opt-out.** Arrows run from schedule owner to recipient. Public profile
+visibility is on by default for new accounts; directory visibility is
+independent: private profiles appear as Anonymous without exposing their names.
+No emails, classes, grant IDs, or access codes are returned, and being in the
+graph never grants schedule access. `GET /api/social-web/diagnostic` (also
+signed-in only) reports counts: how many accounts exist, how many live sharing
+relationships the caller owns, how many accounts they are adjacent to, and how
+many have no relationship with them. Graph responses are not cached; the UI
+refreshes on tab entry and Refresh.
 
 The graph is rendered locally with SVG and a deterministic spring layout;
 no external service receives social graph data.
@@ -132,17 +137,34 @@ migration adds, so deploying it first makes every request fail.
 
    0 means run the migration; 13 means skip it and go to step 2.
 
-2. **Set the key.** Cloudflare dashboard → the Worker → **Settings → Variables
-   and Secrets** → **Add** → type **Secret**, name `DATA_KEY`, value = the
-   output of the command below. Encrypt = on.
+2. **Set the key.** The Worker requires **32 random bytes encoded as base64**,
+   not a 32-character password. A 32-character alphanumeric password decodes
+   to only 24 bytes and causes the `DATA_KEY is missing or is not 32 bytes of
+   base64` error even when the secret is present.
 
-   ```bash
-   node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
+   Before replacing an existing value, back it up securely. If the Worker has
+   ever successfully encrypted profiles, keep the original valid encryption
+   key; generating a replacement alone will not recover those profiles.
+
+   To generate a new key without a terminal, open your site's browser developer
+   tools → **Console**, and run this locally:
+
+   ```js
+   btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))))
    ```
 
-   **Back this value up somewhere safe.** Losing it makes every profile field
-   already written unrecoverable, and there is no reset path short of signing
-   every student up again.
+   This generates a 44-character base64 string ending in `=`. Copy the value
+   without the console's surrounding quotes, and save it in your password
+   manager. Never share it or use an online key generator.
+
+   Cloudflare dashboard → **Workers & Pages** →
+   `hilltoppers-schedule-friends` → **Settings → Variables and Secrets** →
+   add or edit the **Secret** named `DATA_KEY`. Paste the complete generated
+   value, including the final `=`, then save and deploy the change. There is no
+   separate Encrypt toggle needed for a Secret.
+
+   **Back this value up somewhere safe.** Losing it makes profile fields
+   encrypted with it unreadable.
 
 3. **Deploy the Worker** as in step 3 below.
 
@@ -207,8 +229,11 @@ Open this in a browser:
 https://hilltoppers-schedule-friends.amos-donn.workers.dev/api/me
 ```
 
-- Signed out, this should say `{"error":"unauthorized"}`. That is correct — it
-  means the Worker is running and refusing anonymous access.
+- Signed out, this should say `{"error":"unauthorized"}`. That means the
+  Worker is running and refusing anonymous access. **It does not validate
+  `DATA_KEY`, the database migration, or sign-in.** Anonymous requests return
+  before the encryption key is checked. An editor preview without your session
+  can therefore return 401 while authenticated requests still fail with 500.
 
 The sign-in itself cannot be checked from a URL, because it is a POST of an ID
 token rather than a redirect. Sign in at

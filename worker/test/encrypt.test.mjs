@@ -293,27 +293,34 @@ await test('a schedule still reads back through an encrypted owner row', async (
 });
 
 await test('the social web graph survives encrypted endpoints', async () => {
-  db.prepare('UPDATE accounts SET social_web_opt_in = 0').run();
   const owner = await signInAs('enc-web-owner', 'web.owner@example.org', 'Web Owner');
   const viewer = await signInAs('enc-web-viewer', 'web.viewer@example.org', 'Web Viewer');
   // Public with auto-grant, so the request becomes a grant immediately: the
   // graph shows sharing edges, not pending requests.
   await callWith(env, '/api/me', {
-    cookie: owner, method: 'PATCH', body: { socialWebOptIn: true, isPublic: true, autoGrant: true },
+    cookie: owner, method: 'PATCH', body: { isPublic: true, autoGrant: true },
   });
-  await callWith(env, '/api/me', { cookie: viewer, method: 'PATCH', body: { socialWebOptIn: true } });
   const ownerMe = await callWith(env, '/api/me', { cookie: owner });
+  const viewerMe = await callWith(env, '/api/me', { cookie: viewer });
   await callWith(env, '/api/requests', {
     cookie: viewer, method: 'POST', body: { profileId: ownerMe.body.profileId },
   });
 
   const graph = await callWith(env, '/api/social-web', { cookie: viewer });
   assert.equal(graph.status, 200);
-  assert.equal(graph.body.nodes.length, 2, 'both opted-in profiles appear');
-  assert.equal(graph.body.edges.length, 1, 'and the edge between them');
+  assert.ok(graph.body.nodes.some((n) => n.profileId === ownerMe.body.profileId),
+    'every account appears, opt-in or not');
+  assert.ok(graph.body.nodes.some((n) => n.profileId === viewerMe.body.profileId));
+  assert.ok(graph.body.edges.some((e) =>
+    e.source === ownerMe.body.profileId && e.target === viewerMe.body.profileId),
+  'the live grant draws its edge');
   assert.ok(graph.body.nodes.every((n) => !/^v1\./.test(n.profileId)),
     'nodes carry real profile IDs, not ciphertext');
-  assert.ok(graph.body.nodes.every((n) => n.displayName !== ''), 'names decrypt');
+  assert.equal(
+    graph.body.nodes.find((n) => n.profileId === ownerMe.body.profileId).displayName,
+    'Web Owner',
+    'public names decrypt'
+  );
 });
 
 // ---------------------------------------------------------------------------

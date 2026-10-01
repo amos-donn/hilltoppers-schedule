@@ -28,6 +28,11 @@
  *                              courses, and schedule settings
  *   DELETE /api/me             delete the account and everything it touched
  *   GET  /api/directory        search public profiles
+ *   GET  /api/social-web       the sharing graph; everyone is in it, private
+ *                              profiles show as "Anonymous"
+ *   GET  /api/social-web/diagnostic
+ *                              read-only counts: participants, relationships
+ *                              from the caller, neighbours, strangers
  *   POST /api/requests         ask for a schedule by profile ID
  *   GET  /api/requests         incoming and outgoing requests
  *   POST /api/requests/:id     accept or decline an incoming request
@@ -757,7 +762,7 @@ function publicSelf(row) {
     email: row.email,
     isPublic: Boolean(row.is_public),
     autoGrant: Boolean(row.auto_grant),
-    socialWebOptIn: Boolean(row.social_web_opt_in),
+    socialWebOptIn: true, // Everyone participates; kept for older clients.
     timeFormat: row.time_format,
     grade: row.grade,
     lunchWave: row.lunch_wave,
@@ -956,7 +961,7 @@ async function handleFirebaseSignIn(request, env) {
         ...indexColumns.map((c) => encrypted[c]),
         ...ACCOUNT_FIELD_NAMES.map((f) => legacyPlaceholderFor(f)),
         1, // Public by default, including on databases with the old defaults.
-        1, // Social web on by default; existing choices are never overwritten.
+        1, // Everyone is in the Social web now; opt-in is removed.
         ts,
         ts,
       )
@@ -1004,31 +1009,28 @@ function fromB64url(text) {
 // Handlers
 // ---------------------------------------------------------------------------
 
-/** Only consensual public graph metadata; never courses, email, or grant codes. */
+/** Public graph metadata for every account; never courses, email, or codes. */
 async function handleSocialWeb(env) {
-  // social_web_opt_in stays plaintext precisely so this filter can stay a SQL
-  // WHERE clause. The profile IDs behind it cannot, so rows are decrypted here
-  // and the edges are resolved through account ids instead of a join on the
-  // profile ID column.
+  // Everyone participates now; opt-in was simplified away. The profile IDs
+  // still cannot be joined on, so this decrypts every account and then
+  // resolves edges through account ids.
   const { results: rows } = await env.DB.prepare(
-    'SELECT * FROM accounts WHERE social_web_opt_in = 1'
+    'SELECT * FROM accounts'
   ).all();
 
   const accounts = [];
   for (const row of rows || []) accounts.push(await decryptAccount(env, row));
 
-  const optedIn = new Map(accounts.map((account) => [account.id, account.profile_id]));
+  const participating = new Map(accounts.map((account) => [account.id, account.profile_id]));
   const { results: grants } = await env.DB.prepare(
     'SELECT owner_account_id, viewer_account_id FROM grants WHERE revoked_at IS NULL'
   ).all();
 
   const edges = [];
   for (const grant of grants || []) {
-    const source = optedIn.get(grant.owner_account_id);
-    const target = optedIn.get(grant.viewer_account_id);
-    // Either endpoint not being opted in hides the whole edge, which is what
-    // the SQL join on both opt-ins used to do.
-    if (source && target) edges.push({ source, target });
+    const source = participating.get(grant.owner_account_id);
+    const target = participating.get(grant.viewer_account_id);
+    if (source && target && source !== target) edges.push({ source, target });
   }
 
   accounts.sort((a, b) => a.profile_id.localeCompare(b.profile_id));
@@ -1040,6 +1042,52 @@ async function handleSocialWeb(env) {
       displayName: account.is_public ? (account.display_name || account.name || '') : 'Anonymous',
     })),
     edges,
+  }, 200, { 'Cache-Control': 'no-store' });
+}
+
+/**
+ * Read-only, signed-in diagnostic for the Social web. It is deliberately not
+ * on /api/social-web itself, because the graph response should stay stable for
+ * UI caching and debugging: this is a separate path used only to answer
+ * "why do I see only N people here?" questions.
+ *
+ * It does not expose emails, courses, code hashes, or firebase UIDs. It only
+ * returns plaintext counts and the kind of relationship relevant to the caller's
+ * own perspective.
+ */
+async function handleSocialWebDiagnostic(request, env, account) {
+  // Every account is in the Social web now, so "total" is simply the table.
+  const { results: rows } = await env.DB.prepare('SELECT id FROM accounts').all();
+  const total = (rows || []).length;
+
+  const { results: edges } = await env.DB.prepare(
+    `SELECT owner_account_id, viewer_account_id FROM grants WHERE revoked_at IS NULL`
+  ).all();
+
+  // Relationships are directional (owner -> viewer); from this account's point
+  // of view only adjacency matters, so count distinct neighbours either way.
+  const outgoing = Number((await env.DB.prepare(
+    'SELECT count(*) AS c FROM grants WHERE owner_account_id = ? AND revoked_at IS NULL'
+  ).bind(account.id).first())?.c ?? 0);
+
+  const neighbours = new Set();
+  for (const edge of edges || []) {
+    if (edge.owner_account_id === account.id) neighbours.add(edge.viewer_account_id);
+    if (edge.viewer_account_id === account.id) neighbours.add(edge.owner_account_id);
+  }
+  const relatedSeenByMe = neighbours.size;
+
+  return json({
+    totals: {
+      totalParticipants: total,
+      relationshipsFromMe: outgoing,
+      relatedSeenByMe,
+      notRelatedToMe: Math.max(0, total - 1 - relatedSeenByMe),
+    },
+    me: {
+      profileId: account.profile_id,
+      isPublic: Boolean(account.is_public),
+    },
   }, 200, { 'Cache-Control': 'no-store' });
 }
 
@@ -1062,10 +1110,7 @@ async function handleMe(request, env, account) {
       fields.push('auto_grant = ?');
       values.push(body.autoGrant ? 1 : 0);
     }
-    if (typeof body.socialWebOptIn === 'boolean') {
-      fields.push('social_web_opt_in = ?');
-      values.push(body.socialWebOptIn ? 1 : 0);
-    }
+    // Everyone is in the Social web now; this switch no longer exists.
 
     // Encrypted fields are gathered first so each can be written with the row's
     // profile_id as its additional authenticated data. The original columns are
@@ -1510,6 +1555,7 @@ async function route(request, env, url, path, method) {
 
   if (path === '/api/directory' && method === 'GET') return handleDirectory(request, env);
   if (path === '/api/social-web' && method === 'GET') return handleSocialWeb(env);
+  if (path === '/api/social-web/diagnostic' && method === 'GET') return handleSocialWebDiagnostic(request, env, account);
 
   if (path === '/api/requests') {
     if (method === 'GET') return handleListRequests(env, account);
@@ -1556,3 +1602,7 @@ export {
   isEncrypted,
   isRedacted,
 };
+
+// Diagnostic helper for the new read-only Social web status page. It is
+// deliberately not part of the public response; it exists so the page can
+// show "why do I only see N people here?" without leaking anything else.
