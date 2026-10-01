@@ -164,6 +164,8 @@ await test('a ciphertext moved to another row refuses to open', async () => {
   const res = await callWith(env, '/api/me', { cookie });
   assert.equal(res.status, 500, 'a relocated ciphertext must not resolve');
   assert.match(res.text, /authentication/, 'and must say why');
+  // Restore the deliberately corrupted fixture before later public-list reads.
+  db.prepare('UPDATE accounts SET display_name_enc = ? WHERE id = ?').run(dave.display_name_enc, dave.id);
 });
 
 
@@ -291,6 +293,7 @@ await test('a schedule still reads back through an encrypted owner row', async (
 });
 
 await test('the social web graph survives encrypted endpoints', async () => {
+  db.prepare('UPDATE accounts SET social_web_opt_in = 0').run();
   const owner = await signInAs('enc-web-owner', 'web.owner@example.org', 'Web Owner');
   const viewer = await signInAs('enc-web-viewer', 'web.viewer@example.org', 'Web Viewer');
   // Public with auto-grant, so the request becomes a grant immediately: the

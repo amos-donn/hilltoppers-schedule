@@ -202,7 +202,8 @@ await test('sign-in creates an account with a generated profile ID', async () =>
   const me = await call(env, '/api/me', { cookie });
   assert.equal(me.status, 200);
   assert.match(me.body.profileId, /^[a-z]+-[a-z]+-\d{4}$/, 'profile ID should be word-word-digits');
-  assert.equal(me.body.isPublic, false, 'new profiles default to private');
+  assert.equal(me.body.isPublic, true, 'new profiles default to public');
+  assert.equal(me.body.socialWebOptIn, true, 'new profiles default to Social web on');
   assert.equal(me.body.autoGrant, false, 'new profiles default to asking first');
   env.alice = { cookie, ...me.body };
 });
@@ -344,6 +345,8 @@ await test('a session cookie is HttpOnly, Secure and SameSite=None', async () =>
   assert.match(raw, /Secure/);
   assert.match(raw, /SameSite=None/);
   env.bob = { cookie: cookieFrom(res) };
+  const bob = await call(env, '/api/me', { cookie: env.bob.cookie, method: 'PATCH', body: { isPublic: false } });
+  env.bob.profileId = bob.body.profileId;
 });
 
 await test('PATCH /api/me updates profile fields only', async () => {
@@ -513,7 +516,10 @@ await test('Social web exposes only opted-in profiles and live sharer-to-recipie
   const viewer = await signIn(socialEnv, { sub: 'web-viewer', email: 'viewer@x.org', name: 'Viewer' });
   const hidden = await signIn(socialEnv, { sub: 'web-hidden', email: 'hidden@x.org', name: 'Hidden' });
   const self = await call(socialEnv, '/api/me', { cookie: owner });
-  assert.equal(self.body.socialWebOptIn, false, 'default-off consent');
+  assert.equal(self.body.socialWebOptIn, true, 'default-on participation');
+  await call(socialEnv, '/api/me', { cookie: owner, method: 'PATCH', body: { socialWebOptIn: false } });
+  await call(socialEnv, '/api/me', { cookie: viewer, method: 'PATCH', body: { socialWebOptIn: false, isPublic: false } });
+  await call(socialEnv, '/api/me', { cookie: hidden, method: 'PATCH', body: { socialWebOptIn: false } });
   assert.equal((await call(socialEnv, '/api/social-web')).status, 401, 'signed-in only');
   assert.deepEqual((await call(socialEnv, '/api/social-web', { cookie: viewer })).body, { nodes: [], edges: [] });
   await call(socialEnv, '/api/me', { cookie: owner, method: 'PATCH', body: { socialWebOptIn: true, isPublic: true, autoGrant: true } });
@@ -526,6 +532,9 @@ await test('Social web exposes only opted-in profiles and live sharer-to-recipie
   await call(socialEnv, '/api/me', { cookie: viewer, method: 'PATCH', body: { socialWebOptIn: true } });
   graph = await call(socialEnv, '/api/social-web', { cookie: hidden });
   assert.equal(graph.body.nodes.length, 2, 'nonparticipants may explore');
+  assert.equal(graph.body.nodes.find((node) => node.profileId === viewerMe.body.profileId).displayName, 'Anonymous');
+  assert.equal(graph.body.nodes.find((node) => node.profileId === self.body.profileId).displayName, 'Owner');
+  assert.ok(!graph.text.includes('Viewer'), 'private names never leave the API');
   assert.deepEqual(graph.body.edges, [{ source: self.body.profileId, target: viewerMe.body.profileId }]);
   for (const node of graph.body.nodes) assert.deepEqual(Object.keys(node).sort(), ['displayName', 'profileId']);
   assert.ok(!/email|blockPrefs|code_hash|firebase_uid|Hidden|@x.org/.test(graph.text), 'no private metadata');

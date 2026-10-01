@@ -180,7 +180,7 @@
                   <label for="visibility">Who can find you</label>
                   <select id="visibility">
                     <option value="private">Private &mdash; only people I give my ID to</option>
-                    <option value="public">Public &mdash; discoverable by search</option>
+                    <option value="public" selected>Public &mdash; discoverable by search (default)</option>
                   </select>
                 </div>
               </div>
@@ -195,13 +195,13 @@
                 afterwards.
               </p>
               <label class="class-settings__free-checkbox">
-                <input type="checkbox" id="social-web-opt-in" aria-describedby="social-web-consent-hint" />
+                <input type="checkbox" id="social-web-opt-in" checked aria-describedby="social-web-consent-hint" />
                 <span>Show me in the Social web</span>
               </label>
               <p class="class-settings__hint" id="social-web-consent-hint">
-                Off by default. Opting in shows your display name, profile ID, and schedule-sharing
-                connections with other opted-in people to signed-in students, even if your profile
-                is private. It never shows your classes or email and does not grant schedule access.
+                On by default for new accounts. Public profiles show their display name;
+                private profiles show Anonymous. The web shows your profile ID and schedule-sharing
+                connections to signed-in students, never your classes or email, and does not grant schedule access.
                 Uncheck to leave the web.
               </p>
               <p class="class-settings__hint" id="account-save-status" hidden></p>
