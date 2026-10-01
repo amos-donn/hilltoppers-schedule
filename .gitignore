@@ -1,3 +1,7 @@
 node_modules/
 .DS_Store
 /.nojekyll
+
+# Wrangler's local state: a throwaway D1 database and build cache created by
+# `wrangler d1 execute --local` and `wrangler dev`. Never push it.
+.wrangler/
