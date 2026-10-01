@@ -243,7 +243,7 @@
       workspace.hidden = true;
       scene.replaceChildren(); positions.clear(); graph = { nodes: [], edges: [] };
       picker.replaceChildren(new Option('Everyone', '')); details.textContent = ''; selected = '';
-      count.textContent = 'Opt-in only';
+      count.textContent = 'Everyone';
       status.textContent = result.status === 404 ? 'Social web is not available on the server yet.' : 'Could not load the Social web. Try refreshing.';
       // Keep the Refresh control reachable without showing stale connections.
       workspace.hidden = false;
@@ -251,17 +251,16 @@
     }
     render(result.data);
     workspace.hidden = !result.data.nodes.length;
-    status.textContent = !result.data.nodes.length ? 'The web is waiting for its first people. Opt in from Account to join.'
-      : account.socialWebOptIn ? 'You are part of the web. Only connections between opted-in people are shown.'
-        : 'You are exploring without appearing in the web. Opt in from Account to join.';
+    status.textContent = !result.data.nodes.length ? 'The web is waiting for its first people.'
+      : 'Everyone with an account is in the web. Only live sharing connections are shown.';
   }
   function setAccount(me) {
-    var changed = !account || !me || account.profileId !== me.profileId || account.socialWebOptIn !== me.socialWebOptIn || account.displayName !== me.displayName;
+    var changed = !account || !me || account.profileId !== me.profileId || account.displayName !== me.displayName;
     account = me;
     if (!me) {
       generation++; workspace.hidden = true; graph = { nodes: [], edges: [] }; positions.clear();
       scene.replaceChildren(); picker.replaceChildren(new Option('Everyone', ''));
-      count.textContent = 'Opt-in only'; details.textContent = ''; selected = '';
+      count.textContent = 'Everyone'; details.textContent = ''; selected = '';
       status.textContent = 'Sign in from Account to explore the Social web.';
     } else if (changed) refresh();
   }

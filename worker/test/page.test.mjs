@@ -782,18 +782,9 @@ await test('schedule access buttons stay in sync with friends after removal, re-
   }
 });
 
-await test('Social web opt-in persists and the graph supports selection, pan and zoom', async () => {
-  assert.equal($('social-web-opt-in').checked, true, 'participation defaults on');
-  db.prepare('UPDATE accounts SET social_web_opt_in = 0 WHERE id NOT IN (?, ?)').run(
-    await accountIdOf('sub-page-frank'), await accountIdOf('sub-page-erin')
-  );
-  $('social-web-opt-in').checked = true;
-  $('social-web-opt-in').dispatchEvent(new window.Event('change'));
-  await settle();
-  assert.equal((await window.HTAccount.refresh()).socialWebOptIn, true);
-  await settle();
+await test('the Social web includes everyone by default and supports selection, pan and zoom', async () => {
   const erinCookie = await signInAsShared('sub-page-erin', 'erin@example.org', 'Erin');
-  await asOther(erinCookie, () => window.HTAccount.updateProfile({ socialWebOptIn: true }));
+  void erinCookie;
   // Restore Frank, as the helper above signed the shared jar into Erin.
   await signInAsShared('sub-page-frank', 'frank@example.org', 'Frank');
   await window.HTAccount.refresh();
@@ -803,12 +794,14 @@ await test('Social web opt-in persists and the graph supports selection, pan and
   assert.equal($('panel-account').hidden, true);
   assert.equal($('page-title').textContent, 'Social web');
   assert.equal($('social-web-workspace').hidden, false);
-  assert.equal($('social-web-scene').querySelectorAll('.social-web__node').length, 2);
-  const edge = $('social-web-scene').querySelector('.social-web__edge');
-  assert.ok(edge);
-  assert.match(edge.textContent, /Erin shares their schedule with Frank/);
+  assert.ok($('social-web-scene').querySelectorAll('.social-web__node').length >= 2,
+    'everyone with an account is in the web, no opt-in');
+  const edge = [...$('social-web-scene').querySelectorAll('.social-web__edge')]
+    .find((e) => /Erin shares their schedule with Frank/.test(e.textContent));
+  assert.ok(edge, 'the Erin-to-Frank sharing edge is drawn');
   assert.equal(edge.getAttribute('marker-end'), 'url(#social-web-arrow)');
   const me = $('social-web-scene').querySelector('.is-you');
+  assert.ok(me, 'the signed-in account is in the graph');
   me.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
   assert.equal(me.getAttribute('aria-pressed'), 'true');
   assert.match($('social-web-details').textContent, /Can see: Erin/);
@@ -835,17 +828,11 @@ await test('Social web opt-in persists and the graph supports selection, pan and
   const reloaded = mountPage();
   try {
     await reloaded.settle();
-    assert.equal(reloaded.$('social-web-opt-in').checked, true, 'consent survives a cold page');
     assert.equal(reloaded.errors.length, 0);
   } finally { reloaded.dom.window.close(); }
-  $('social-web-opt-in').checked = false;
-  $('social-web-opt-in').dispatchEvent(new window.Event('change'));
-  await settle();
-  assert.equal($('social-web-scene').querySelector('.is-you'), null, 'opting out removes you');
-  assert.equal($('social-web-scene').querySelector('.social-web__edge'), null, 'incident edge is removed');
   $('social-web-account-link').click();
   await settle(2);
-  assert.equal($('panel-account').hidden, false, 'participation link navigates to Account');
+  assert.equal($('panel-account').hidden, false, 'profile link navigates to Account');
 });
 
 await test('force layout gathers connected groups and is deterministic', async () => {

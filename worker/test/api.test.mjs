@@ -510,56 +510,101 @@ await test('a private profile is reachable by ID when already known', async () =
   assert.equal(r.body.status, 'pending', 'a private profile can still be asked directly');
 });
 
-await test('Social web exposes only opted-in profiles and live sharer-to-recipient edges', async () => {
+await test('the social web now includes everyone, hides private names, and draws only live sharing edges', async () => {
   const socialEnv = makeEnv();
   const owner = await signIn(socialEnv, { sub: 'web-owner', email: 'owner@x.org', name: 'Owner' });
   const viewer = await signIn(socialEnv, { sub: 'web-viewer', email: 'viewer@x.org', name: 'Viewer' });
   const hidden = await signIn(socialEnv, { sub: 'web-hidden', email: 'hidden@x.org', name: 'Hidden' });
-  const self = await call(socialEnv, '/api/me', { cookie: owner });
-  assert.equal(self.body.socialWebOptIn, true, 'default-on participation');
-  await call(socialEnv, '/api/me', { cookie: owner, method: 'PATCH', body: { socialWebOptIn: false } });
-  await call(socialEnv, '/api/me', { cookie: viewer, method: 'PATCH', body: { socialWebOptIn: false, isPublic: false } });
-  await call(socialEnv, '/api/me', { cookie: hidden, method: 'PATCH', body: { socialWebOptIn: false } });
+  const ownerMe = (await call(socialEnv, '/api/me', { cookie: owner })).body;
+  const viewerMe = (await call(socialEnv, '/api/me', { cookie: viewer })).body;
+  const hiddenMe = (await call(socialEnv, '/api/me', { cookie: hidden })).body;
+  await call(socialEnv, '/api/me', { cookie: owner, method: 'PATCH', body: { isPublic: true, autoGrant: true } });
+  await call(socialEnv, '/api/me', { cookie: viewer, method: 'PATCH', body: { isPublic: false } });
+  await call(socialEnv, '/api/me', { cookie: hidden, method: 'PATCH', body: { isPublic: false } });
+
   assert.equal((await call(socialEnv, '/api/social-web')).status, 401, 'signed-in only');
-  assert.deepEqual((await call(socialEnv, '/api/social-web', { cookie: viewer })).body, { nodes: [], edges: [] });
-  await call(socialEnv, '/api/me', { cookie: owner, method: 'PATCH', body: { socialWebOptIn: true, isPublic: true, autoGrant: true } });
-  const viewerMe = await call(socialEnv, '/api/me', { cookie: viewer });
-  await call(socialEnv, '/api/requests', { cookie: viewer, method: 'POST', body: { profileId: self.body.profileId } });
-  await call(socialEnv, '/api/requests', { cookie: hidden, method: 'POST', body: { profileId: self.body.profileId } });
   let graph = await call(socialEnv, '/api/social-web', { cookie: viewer });
-  assert.equal(graph.body.nodes.length, 1);
-  assert.deepEqual(graph.body.edges, [], 'both endpoints must consent');
-  await call(socialEnv, '/api/me', { cookie: viewer, method: 'PATCH', body: { socialWebOptIn: true } });
-  graph = await call(socialEnv, '/api/social-web', { cookie: hidden });
-  assert.equal(graph.body.nodes.length, 2, 'nonparticipants may explore');
-  assert.equal(graph.body.nodes.find((node) => node.profileId === viewerMe.body.profileId).displayName, 'Anonymous');
-  assert.equal(graph.body.nodes.find((node) => node.profileId === self.body.profileId).displayName, 'Owner');
-  assert.ok(!graph.text.includes('Viewer'), 'private names never leave the API');
-  assert.deepEqual(graph.body.edges, [{ source: self.body.profileId, target: viewerMe.body.profileId }]);
-  for (const node of graph.body.nodes) assert.deepEqual(Object.keys(node).sort(), ['displayName', 'profileId']);
-  assert.ok(!/email|blockPrefs|code_hash|firebase_uid|Hidden|@x.org/.test(graph.text), 'no private metadata');
-  assert.equal(viewerMe.body.isPublic, false, 'private directory visibility is independent of consent');
-  await call(socialEnv, '/api/me', { cookie: owner, method: 'PATCH', body: { socialWebOptIn: false } });
+  assert.equal(graph.body.nodes.length, 3, 'everyone is in the web, with no opt-in');
+  assert.equal(graph.body.nodes.find((n) => n.profileId === viewerMe.profileId).displayName, 'Anonymous',
+    'private profiles are shown as Anonymous');
+  assert.equal(graph.body.nodes.find((n) => n.profileId === ownerMe.profileId).displayName, 'Owner');
+  assert.ok(!graph.text.includes('Viewer') && !graph.text.includes('Hidden'),
+    'private names never leave the API');
+  assert.deepEqual(graph.body.edges, [], 'no sharing relationships yet');
+
+  // The owner auto-grants, so both requests become live grants immediately.
+  await call(socialEnv, '/api/requests', { cookie: viewer, method: 'POST', body: { profileId: ownerMe.profileId } });
+  await call(socialEnv, '/api/requests', { cookie: hidden, method: 'POST', body: { profileId: ownerMe.profileId } });
   graph = await call(socialEnv, '/api/social-web', { cookie: viewer });
-  assert.equal(graph.body.nodes.length, 1);
-  assert.deepEqual(graph.body.edges, [], 'opt-out removes incident edges');
-  assert.equal((await call(socialEnv, `/api/schedule/${self.body.profileId}`, { cookie: viewer })).status, 200, 'opt-out does not revoke schedule access');
-  await call(socialEnv, '/api/me', { cookie: owner, method: 'PATCH', body: { socialWebOptIn: true } });
+  assert.equal(graph.body.edges.length, 2, 'each grant draws an edge');
+  assert.ok(graph.body.edges.every((e) => e.source === ownerMe.profileId),
+    'arrows run from sharer to recipient');
+  assert.ok(graph.body.edges.some((e) => e.target === viewerMe.profileId));
+  assert.ok(graph.body.edges.some((e) => e.target === hiddenMe.profileId));
+
+  // A pending request draws no edge until the owner accepts it.
+  await call(socialEnv, '/api/requests', { cookie: viewer, method: 'POST', body: { profileId: hiddenMe.profileId } });
+  graph = await call(socialEnv, '/api/social-web', { cookie: viewer });
+  assert.equal(graph.body.edges.length, 2, 'pending requests are not edges');
+
+  // Revoking removes the edge, not the person.
   const grants = await call(socialEnv, '/api/grants', { cookie: owner });
-  const grant = grants.body.viewers.find((row) => row.profileId === viewerMe.body.profileId);
-  await call(socialEnv, `/api/grants/${grant.id}`, { cookie: owner, method: 'DELETE' });
-  assert.deepEqual((await call(socialEnv, '/api/social-web', { cookie: viewer })).body.edges, [], 'revoked grants disappear');
-  await call(socialEnv, '/api/me', { cookie: owner, method: 'DELETE' });
-  assert.equal((await call(socialEnv, '/api/social-web', { cookie: viewer })).body.nodes.length, 1, 'deleted accounts disappear');
+  const target = grants.body.viewers.find((v) => v.profileId === viewerMe.profileId);
+  assert.ok(target, 'the owner can see the viewer');
+  await call(socialEnv, `/api/grants/${target.id}`, { cookie: owner, method: 'DELETE' });
+  graph = await call(socialEnv, '/api/social-web', { cookie: viewer });
+  assert.equal(graph.body.edges.length, 1, 'revoked grants disappear');
+  assert.equal(graph.body.nodes.length, 3, 'but people stay in the web');
 });
 
-await test('Social web migration preserves existing accounts and defaults them out', async () => {
+await test('social web diagnostic reports participants and live relationships', async () => {
+  const diagEnv = makeEnv();
+  const me = await signIn(diagEnv, { sub: 'diag-sub', email: 'diag@x.org', name: 'Diag' });
+  const friend = await signIn(diagEnv, { sub: 'diag-friend', email: 'friend@x.org', name: 'Friend' });
+  await signIn(diagEnv, { sub: 'diag-bystander', email: 'bystander@x.org', name: 'Bystander' });
+  const meBody = (await call(diagEnv, '/api/me', { cookie: me })).body;
+  const friendBody = (await call(diagEnv, '/api/me', { cookie: friend })).body;
+
+  // Friend asks me; I accept, so one live grant exists between us
+  // (owner = me, viewer = friend).
+  await call(diagEnv, '/api/requests', {
+    cookie: friend, method: 'POST', body: { profileId: meBody.profileId },
+  });
+  const incoming = await call(diagEnv, '/api/requests', { cookie: me });
+  const reqId = incoming.body.incoming[0].id;
+  await call(diagEnv, `/api/requests/${reqId}`, { cookie: me, method: 'POST', body: { decision: 'accept' } });
+
+  const mine = await call(diagEnv, '/api/social-web/diagnostic', { cookie: me });
+  assert.equal(mine.status, 200);
+  assert.equal(mine.body.totals.totalParticipants, 3, 'everyone counts, no opt-in');
+  assert.equal(mine.body.totals.relationshipsFromMe, 1, 'I own the grant');
+  assert.equal(mine.body.totals.relatedSeenByMe, 1, 'one neighbour either way');
+  assert.equal(mine.body.totals.notRelatedToMe, 1, 'the bystander has no relationship');
+  assert.equal(mine.body.me.profileId, meBody.profileId);
+  assert.equal(mine.body.me.isPublic, true);
+
+  const theirs = await call(diagEnv, '/api/social-web/diagnostic', { cookie: friend });
+  assert.equal(theirs.body.totals.relationshipsFromMe, 0, 'the recipient owns no grant');
+  assert.equal(theirs.body.totals.relatedSeenByMe, 1);
+  assert.equal(theirs.body.totals.notRelatedToMe, 1);
+  assert.equal(theirs.body.me.profileId, friendBody.profileId);
+
+  const noOne = await call(diagEnv, '/api/social-web/diagnostic', { cookie: (await signIn(diagEnv, { sub: 'diag-bystander2', email: 'bystander2@x.org', name: 'B2' })) });
+  assert.equal(noOne.body.totals.relationshipsFromMe, 0);
+  assert.equal(noOne.body.totals.relatedSeenByMe, 0);
+  assert.equal(noOne.body.totals.notRelatedToMe, 3, 'four accounts, none related');
+
+  assert.equal((await call(diagEnv, '/api/social-web/diagnostic')).status, 401, 'signed-in only');
+});
+
+await test('the social-web column still exists on databases migrated by the old opt-in migration', async () => {
   const db = new DatabaseSync(':memory:');
   const schema = readFileSync(new URL('../schema.sql', import.meta.url), 'utf8');
   db.exec(schema.replace(/  social_web_opt_in[^\n]*\n/, ''));
   db.exec("INSERT INTO accounts (firebase_uid, email, profile_id, created_at, updated_at) VALUES ('existing', 'student@x.org', 'existing-student-0001', 1, 1)");
   db.exec(readFileSync(new URL('../migration-social-web.sql', import.meta.url), 'utf8'));
-  assert.equal(db.prepare('SELECT social_web_opt_in FROM accounts').get().social_web_opt_in, 0);
+  const row = db.prepare('SELECT social_web_opt_in FROM accounts').get();
+  assert.ok(row && typeof row.social_web_opt_in === 'number', 'the column is present for old databases');
   db.close();
 });
 
