@@ -453,6 +453,36 @@ body, html {
 .dashboard .class-settings__oauth-buttons { display: flex; flex-wrap: wrap; gap: 10px; }
 .dashboard .class-settings__oauth-buttons button { flex: none; }
 
+/* --- Add a friend search row ------------------------------------------- */
+
+/* The directory search used to sit in .class-settings__fields, a two-column
+   group grid (max-content | minmax(180px, 320px)), so its label took the left
+   column and the input plus Search button were squeezed into a 320px column on
+   the right. It is one control, not a labelled field group, so it gets its own
+   full-width row: the input takes the space, Search sits to its right. The
+   visible label is gone, so the input keeps an aria-label for screen readers. */
+.dashboard .class-settings__directory-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.dashboard .class-settings__directory-search input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.dashboard .class-settings__directory-search button {
+  flex: 0 0 auto;
+}
+
+/* Below the dashboard's single-column breakpoint the input and button still fit
+   side by side, so only the wrap is relaxed rather than the row's shape. */
+@media (max-width: 420px) {
+  .dashboard .class-settings__directory-search { flex-wrap: wrap; }
+  .dashboard .class-settings__directory-search input { flex: 1 1 100%; }
+}
+
 /* --- friend rows and hints, tuned for the new surface ------------------- */
 
 .dashboard .class-settings__hint { color: var(--muted); }
