@@ -204,8 +204,13 @@ await test('embedded with no session, the card offers sign-in', async () => {
   await page.settle();
   assert.equal(page.errors.length, 0, page.errors.join(' | '));
   assert.match(page.text(), /Sign in to view friends!/, 'the empty card explains how to get friends');
-  assert.ok(page.window.document.querySelector('.empty-action .empty-action__logo'),
-    'and carries the Hilltoppers mark');
+  const mark = page.window.document.querySelector('.empty-action .empty-action__logo');
+  assert.ok(mark, 'and carries the Hilltoppers mark');
+  // The mark is the real PNG now, not the old hand-drawn house glyph.
+  assert.equal(mark.tagName, 'IMG', 'the mark is an image, not an inline glyph');
+  assert.match(mark.getAttribute('src'), /^icons\/logo-h\.png\?v=/,
+    'pointing at the H mark asset with a cache-busting token');
+  assert.equal(mark.getAttribute('alt'), '', 'and it is decorative, so it carries no text');
 
   // Clicking it must open a tab. The frame has no room for a sign-in form, and
   // the session belongs to the settings page, so the click hands off to it.
@@ -214,6 +219,13 @@ await test('embedded with no session, the card offers sign-in', async () => {
   button.dispatchEvent(new page.window.Event('click', { bubbles: true }));
   assert.equal(page.opens.length, 1, 'sign-in opened exactly one tab');
   assert.match(page.opens[0], /settings\.html$/, 'pointing at the settings page, where signing in happens');
+
+  // The offer is the card's one action, so it sits centred rather than pinned
+  // to the leading edge. The same rule covers the frame and a direct visit.
+  const centred = readFileSync(repoPath('index.html'), 'utf8')
+    .match(/\.empty-action\s*\{[^}]*\}/g).join(' ');
+  assert.match(centred, /display:\s*flex/, 'the empty action is a flex row so it can centre');
+  assert.match(centred, /justify-content:\s*center/, 'and the button is centred within it');
 });
 
 await test('embedded, the card shows the friends the account was granted', async () => {
