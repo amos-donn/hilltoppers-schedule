@@ -599,6 +599,7 @@
         }
 
         function renderFriends() {
+          syncFriendButtons();
           friendRows.innerHTML = '';
           if (state.friends.length === 0) {
             friendRows.appendChild(emptyHint('No friends yet. Add one below.'));
@@ -1205,6 +1206,15 @@
         var grantViewers = document.getElementById('grant-viewers');
         var grantViewing = document.getElementById('grant-viewing');
 
+        function syncFriendButtons() {
+          document.querySelectorAll('[data-add-friend]').forEach(function (button) {
+            var profileId = H.normalizeEmail(button.getAttribute('data-add-friend'));
+            var added = state.friends.some(function (friend) { return friend.email === profileId; });
+            button.disabled = added;
+            button.textContent = added ? 'Added' : 'Add to friends';
+          });
+        }
+
         function renderGrants(data) {
           grantViewers.innerHTML = '';
           grantViewing.innerHTML = '';
@@ -1237,8 +1247,11 @@
           data.viewing.forEach(function (grant) {
             var view = el('button', { type: 'button', class: 'secondary', text: 'View' });
             view.addEventListener('click', function () { openSchedule(grant.profileId); });
-            var add = el('button', { type: 'button', class: 'secondary', text: 'Add to friends' });
-            add.addEventListener('click', function () { addFriendFromProfile(grant); add.textContent = 'Added'; add.disabled = true; });
+            var add = el('button', { type: 'button', class: 'secondary', text: 'Add to friends', 'data-add-friend': grant.profileId });
+            add.addEventListener('click', function () {
+              if (add.disabled) return;
+              addFriendFromProfile(grant);
+            });
             grantViewing.appendChild(el('div', { class: 'class-settings__friend-row' }, [
               el('div', { class: 'class-settings__friend-info' }, [
                 el('strong', { text: grant.displayName || grant.profileId }),
@@ -1247,17 +1260,18 @@
               el('div', { class: 'class-settings__friend-actions' }, [view, add])
             ]));
           });
+          syncFriendButtons();
         }
 
         function refreshGrants() {
           if (!A.isSignedIn()) return;
           A.listGrants().then(function (result) {
             if (!result.ok) return;
-            renderGrants(result.data);
             // A grant is the permission; the card's friend list is derived from
             // it. Merging here means someone whose request was accepted appears
             // on the card without having to come back and add them by hand.
             adoptGrantedFriends(result.data.viewing || []);
+            renderGrants(result.data);
           });
         }
 
