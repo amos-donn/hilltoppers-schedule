@@ -103,6 +103,35 @@ migration adds, so deploying it first makes every request fail.
    Verify with `PRAGMA table_info(accounts);` — you should see 13 new columns
    ending in `_enc` or `_bidx`.
 
+   From a terminal, instead of pasting 17 statements, the whole file is one
+   command:
+
+   ```bash
+   npx wrangler d1 execute hilltoppers-schedule --remote \
+     --file=worker/migration-encrypt-fields.sql
+   ```
+
+   Two flags carry all the weight:
+
+   - `--file`, not `--command`. `--command` takes SQL *text*; handing it a path
+     produces `near "worker": syntax error`, because SQLite parses the filename
+     as a statement. That is also exactly what happens if you paste the path
+     into the D1 console, which only ever executes SQL text.
+   - `--remote`. Without it the migration runs against a throwaway local
+     database and reports success while changing nothing in production.
+
+   The file aborts on the first error rather than continuing, so if it stops with
+   `duplicate column name: firebase_uid_enc` the database was created from the
+   current `schema.sql` and **already has these columns — there is nothing to
+   do.** Check before running:
+
+   ```sql
+   SELECT COUNT(*) AS already_migrated FROM pragma_table_info('accounts')
+   WHERE name LIKE '%\_enc' ESCAPE '\' OR name LIKE '%\_bidx' ESCAPE '\';
+   ```
+
+   0 means run the migration; 13 means skip it and go to step 2.
+
 2. **Set the key.** Cloudflare dashboard → the Worker → **Settings → Variables
    and Secrets** → **Add** → type **Secret**, name `DATA_KEY`, value = the
    output of the command below. Encrypt = on.
@@ -146,12 +175,29 @@ still-necessary control.
 
 ## 3. Put the Worker code in place
 
+Either way works; they produce the same Worker.
+
+**Paste it (current method)**
+
 1. Worker → **Edit code**.
 2. Delete whatever is in the editor, paste the entire contents of
    `worker/api.js`, and **Deploy**.
 
-That is the whole deployment. There is no framework and no dependencies, which
-is why the browser editor is enough.
+**Or deploy with Wrangler**
+
+```bash
+npx wrangler deploy
+```
+
+`wrangler.toml` declares the Worker name, the entrypoint, and the `DB` binding,
+so the database can no longer drift from what this README says. Before your
+first `wrangler deploy`, set the compatibility date in `wrangler.toml` to
+whatever the dashboard shows under **Settings → Runtime** — a deploy adopts that
+value and moving it changes runtime behaviour.
+
+Wrangler needs `CLOUDFLARE_ACCOUNT_ID` and a `CLOUDFLARE_API_TOKEN` in your
+*shell* to manage a deployment. Those are not app configuration and do not belong
+in this project's Keys tab; nothing in the repo reads them.
 
 ## 4. Check it works
 

@@ -1,0 +1,47 @@
+# Cloudflare Worker configuration for the Hilltoppers Schedule API.
+#
+# Nothing in this repository depends on this file at runtime: the Worker can
+# still be deployed by pasting worker/api.js into the dashboard editor, which
+# is how it has been deployed so far. What this file buys is reproducibility -
+# the database can no longer drift from the README, and migrations become a
+# single command instead of one pasted statement at a time.
+#
+# Every value here mirrors what is already configured on the deployed Worker,
+# so a first `wrangler deploy` should change nothing about what is running.
+#
+#   npx wrangler deploy
+#   npx wrangler d1 execute hilltoppers-schedule --remote --file=worker/migration-encrypt-fields.sql
+
+name = "hilltoppers-schedule-friends"
+main = "worker/api.js"
+
+# Match whatever the dashboard currently shows under Settings > Runtime, before
+# the first wrangler deploy. A wrangler deploy adopts this value, and moving it
+# changes runtime behaviour. The Worker only uses WebCrypto, fetch and the
+# standard request/response types, all of which are long stable, so a
+# conservative date is the safe choice.
+compatibility_date = "2024-09-23"
+
+# account_id is deliberately absent. It is a public identifier, but it is only
+# needed to manage a deployment, not to serve a request, so it belongs in the
+# shell as CLOUDFLARE_ACCOUNT_ID. Add it here if you would rather have it in
+# one place.
+
+[[d1_databases]]
+# `binding` is the name the Worker reads as env.DB - it must stay exactly "DB",
+# and it matches the binding already on the deployed Worker.
+binding = "DB"
+database_name = "hilltoppers-schedule"
+database_id = "581d4ea8-71dc-4c44-ac7f-53df194cb1c4"
+
+# No [vars] table on purpose.
+#
+# DATA_KEY and DATA_KEY_PREV are encryption secrets and must never appear in a
+# file in the repository; they belong in `npx wrangler secret put DATA_KEY` or
+# on the dashboard's Variables and Secrets page, and this file does not
+# overwrite them.
+#
+# FIREBASE_PROJECT_ID is the only plain variable the Worker reads, and
+# worker/api.js already defaults it to schedule-59d28, so declaring it here
+# would add nothing. Leaving [vars] out also means a wrangler deploy has no
+# opinion about the inert GOOGLE_* leftovers from the old sign-in.
