@@ -13,7 +13,7 @@
     <!-- The Hilltoppers dashboard shell: sidebar tabs, the sage palette,
          and the custom dropdowns. Loaded after classSettings.css, which it
          restyles. -->
-    <link rel="stylesheet" href="dashboard.css?v=20261001a" />
+    <link rel="stylesheet" href="dashboard.css?v=20261001b" />
   </head>
   <body>
     <div class="dashboard">
@@ -282,14 +282,9 @@
             <p class="class-settings__hint class-settings__hint--intro">
               Search public profiles, or paste a profile ID someone gave you.
             </p>
-            <div class="class-settings__fields">
-              <div class="class-settings__field">
-                <label for="directory-search">Profile ID or name</label>
-                <div class="class-settings__email-actions">
-                  <input type="text" id="directory-search" placeholder="brave-heron-4821" />
-                  <button type="button" class="secondary" id="directory-go">Search</button>
-                </div>
-              </div>
+            <div class="class-settings__directory-search">
+              <input type="text" id="directory-search" aria-label="Profile ID or name" placeholder="brave-heron-4821" />
+              <button type="button" class="secondary" id="directory-go">Search</button>
             </div>
             <div id="directory-results" class="class-settings__friend-list"></div>
             <p class="class-settings__hint" id="directory-status" hidden></p>

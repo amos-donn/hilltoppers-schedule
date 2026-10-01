@@ -4,6 +4,7 @@
   "type": "module",
   "description": "Static GitHub Pages site for the Hilltoppers schedule card and its settings page.",
   "scripts": {
+    "preview": "node scripts/preview-server.mjs",
     "test": "node worker/test/api.test.mjs && node worker/test/page.test.mjs && node worker/test/card.test.mjs && node worker/test/resize.test.mjs && node worker/test/privacy.test.mjs && node worker/test/assets.test.mjs"
   },
   "devDependencies": {
