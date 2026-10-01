@@ -51,6 +51,9 @@ function makeEnv() {
     DB: { prepare: (sql) => new Stmt(db, sql) },
     FIREBASE_PROJECT_ID: FIREBASE_PROJECT,
     SESSION_SECRET: 'test-session-secret',
+    // A real 32-byte key, so profile encryption runs for real here instead of
+    // being stubbed. Fixed so runs are reproducible; production generates one.
+    DATA_KEY: 'aGlsbHRvcHBlcnMtdGVzdC1rZXktdjEAAAAAAAAAAAA',
     __db: db,
   };
 }
@@ -234,8 +237,9 @@ await test('a forged ID token is rejected', async () => {
   assert.equal(res.status, 401);
   assert.equal(res.body.error, 'invalid_token');
   assert.ok(!cookieFrom(res), 'no session cookie should be issued for a forged token');
-  const rows = env.__db.prepare("SELECT COUNT(*) AS n FROM accounts WHERE firebase_uid = 'attacker'").get();
-  assert.equal(rows.n, 0, 'no account should be created from a forged token');
+  const rows = env.__db.prepare('SELECT COUNT(*) AS n FROM accounts').get();
+  const forged = env.__db.prepare('SELECT COUNT(*) AS n FROM accounts WHERE firebase_uid_bidx IS NOT NULL').get();
+  assert.equal(forged.n, rows.n, 'a forged token must not create an account with a uid index');
 });
 
 await test('a token for the wrong audience is rejected', async () => {
@@ -274,8 +278,9 @@ await test('an unverified email is refused', async () => {
   });
   const res = await call(env, '/api/auth/firebase', { method: 'POST', body: { idToken: token } });
   assert.equal(res.status, 401);
-  const rows = env.__db.prepare("SELECT COUNT(*) AS n FROM accounts WHERE firebase_uid = 'unverified'").get();
-  assert.equal(rows.n, 0, 'no account for an unconfirmed address');
+  const rows = env.__db.prepare('SELECT COUNT(*) AS n FROM accounts').get();
+  const unverified = env.__db.prepare('SELECT COUNT(*) AS n FROM accounts WHERE email_bidx IS NOT NULL').get();
+  assert.equal(unverified.n, rows.n, 'no account for an unconfirmed address');
 });
 
 await test('a verified non-school address is accepted', async () => {
@@ -603,6 +608,8 @@ await test('deleting an account cascades and notifies viewers', async () => {
   const before = await call(env, `/api/schedule/${aliceMe.body.profileId}`, { cookie: erin });
   assert.equal(before.status, 200, 'Erin can read Alice before deletion');
 
+  const accountsBefore = env.__db.prepare('SELECT COUNT(*) AS n FROM accounts').get().n;
+
   const del = await call(env, '/api/me', { method: 'DELETE', cookie: env.alice.cookie });
   assert.equal(del.status, 200);
 
@@ -612,10 +619,8 @@ await test('deleting an account cascades and notifies viewers', async () => {
   const gone = await call(env, '/api/me', { cookie: env.alice.cookie });
   assert.equal(gone.status, 401, 'the deleted session is no longer valid');
 
-  const leftovers = {
-    accounts: env.__db.prepare("SELECT COUNT(*) AS n FROM accounts WHERE firebase_uid = 'sub-alice'").get().n,
-  };
-  assert.equal(leftovers.accounts, 0, 'account row removed');
+  const accountsAfter = env.__db.prepare('SELECT COUNT(*) AS n FROM accounts').get().n;
+  assert.equal(accountsAfter, accountsBefore - 1, 'exactly the one account row was removed');
   const erinNotices = await call(env, '/api/notices', { cookie: erin });
   assert.ok(
     erinNotices.body.notices.some((n) => n.kind === 'access.revoked'),

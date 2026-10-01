@@ -8,6 +8,14 @@
  * Bindings this Worker expects (set in the dashboard, not in this file):
  *   DB                  D1 database binding
  *   FIREBASE_PROJECT_ID plain text variable; defaults to schedule-59d28
+ *   DATA_KEY            secret: 32 random bytes, base64 or base64url. Encrypts
+ *                       every profile field at rest. Optional DATA_KEY_PREV
+ *                       holds the previous key during a rotation.
+ *
+ * DATA_KEY has no safe default and no fallback: without it this Worker refuses
+ * to start rather than fall back to storing profiles in the clear. Back it up
+ * somewhere safe - without it every profile field already written is
+ * unrecoverable. See the Field encryption section below and worker/README.md.
  *
  * It reads no other binding. Leftovers from the Google sign-in
  * (GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, SESSION_SECRET) are ignored.
@@ -31,6 +39,13 @@
  *                              the courses of a profile I have access to
  *
  * Design notes worth knowing before changing this file:
+ *
+ * - Every profile field is encrypted with AES-256-GCM before it reaches D1, and
+ *   a blind index makes exact-match lookups work without the database ever
+ *   seeing a plaintext value. Handlers still work with plain objects; only this
+ *   Worker knows how they were stored. Read the Field encryption section before
+ *   touching any query on accounts, because most of them can no longer filter or
+ *   join on a profile column.
  *
  * - Access codes are bearer secrets. They are generated here, stored only as a
  *   SHA-256 hash, and never returned by any endpoint. A code is scoped to one
@@ -106,6 +121,328 @@ function nowSeconds() {
 }
 
 // ---------------------------------------------------------------------------
+// Field encryption
+//
+// D1 has no column-level encryption, and Cloudflare's own encryption at rest
+// does not help with the case this section exists for: reading the database.
+// Someone with the D1 console, a Time Travel snapshot, a stolen read-only
+// token, or a SQL injection bug could otherwise read every profile in the
+// table. Encrypting here moves that boundary up into this Worker, so the
+// stored bytes are useless on their own.
+//
+// It lives inline rather than in a separate module on purpose: this file is
+// deployed by pasting it into the Cloudflare dashboard's editor, which accepts
+// exactly one file. An import would break that deployment.
+//
+// HOW A VALUE IS STORED
+//
+//   v1.a.<iv>.<ciphertext>    base64url, 12-byte random IV, AES-256-GCM
+//
+// "v1" is the format tag and "a" is the writing slot. The tag records the
+// format, not which key encrypted the value: a rotation moves a key from
+// "active" to "previous" without rewriting a single row, so decryption tries
+// each configured key in turn rather than trusting the tag. Anything that does
+// not match that shape is a legacy plaintext value.
+//
+// Every ciphertext is bound to its row and column with AES-GCM additional
+// authenticated data, so a value cannot be moved to another row or another
+// column and still decrypt:
+//
+//   accounts:<profile_id>:<field>
+//
+// profile_id cannot name itself, so its own AAD is "accounts:self:profile_id".
+// That one field is not row-bound, which is acceptable because its uniqueness
+// is enforced by its blind index, so a copied value cannot resolve to a second
+// account. profile_id is immutable once issued, which is what keeps the AAD
+// stable over the row's life.
+//
+// WHY THERE IS A BLIND INDEX
+//
+// You cannot run LIKE, or any comparison, over AES-GCM ciphertext: every
+// encryption produces different bytes. So a field that has to be found by an
+// exact match also gets a blind index - an HMAC-SHA256 of the normalised value
+// under a separately derived key:
+//
+//   accounts.profile_id_bidx = HMAC("profile_id" + " " + "brave-otter-4821")
+//
+// Lookups become WHERE profile_id_bidx = ?, and the database never sees the
+// plaintext. The field name is part of the HMAC message, not just the key:
+// without it an email and a profile ID that normalise alike would collide and
+// a lookup on one could match a row on the other.
+//
+// Directory search is the one query that needs LIKE and cannot move into SQL,
+// so it filters and sorts in JS after decrypting the public rows it already had
+// to decrypt. At the scale of one school that is not worth optimising, and it
+// is the reason this section exists rather than a per-column key in SQL.
+//
+// MIGRATION
+//
+// Existing rows hold plaintext in the original columns, and SQL cannot encrypt.
+// repairAccount migrates a row the first time it is read: it encrypts each
+// legacy value, fills in the blind index, and overwrites the original column
+// with an opaque placeholder. Every read path calls it, so the console clears
+// progressively as people use the site, with no separate backfill job and no
+// window where a row is readable but unmigrated.
+//
+// WHAT THIS DOES NOT DO
+//
+// The key lives in this Worker's environment, which is readable by anyone with
+// access to the Cloudflare account. This protects the stored data, not the
+// account. It also cannot hide the shape of the social graph: grants and
+// requests still join on integer account ids, because access control depends on
+// them. Only client-side encryption would hide that, and it would break search.
+// ---------------------------------------------------------------------------
+
+const CIPHER_PREFIX = 'v1';
+const REDACTED_PREFIX = 'enc:';
+const IV_BYTES = 12;
+
+// Fixed, non-secret HKDF salt. Its job is to domain-separate this derivation
+// from any other use of the same master secret.
+const HKDF_SALT = new TextEncoder().encode('hilltoppers-schedule/field-encryption/v1');
+const HKDF_INFO_ENC = new TextEncoder().encode('field-encryption');
+const HKDF_INFO_BIDX = new TextEncoder().encode('blind-index');
+
+// Tight enough that no realistic profile field can be mistaken for ciphertext.
+// A profile ID cannot contain dots in this pattern, and an address cannot match
+// at all because there is no "@".
+const CIPHER_RE = /^v1\.[ab]\.[A-Za-z0-9_-]{16}\.[A-Za-z0-9_-]+$/;
+
+/**
+ * Every encrypted field on accounts, and how each one is looked up.
+ *
+ * `indexed` means the field also gets a `<field>_bidx` blind index, which is
+ * what makes an exact-match query on it possible at all.
+ */
+const ACCOUNT_FIELDS = {
+  firebase_uid: { indexed: true, normalize: (v) => String(v ?? '') },
+  email: { indexed: true, normalize: (v) => String(v ?? '').trim().toLowerCase() },
+  name: { indexed: false },
+  profile_id: { indexed: true, normalize: (v) => String(v ?? '').trim().toLowerCase() },
+  display_name: { indexed: false },
+  time_format: { indexed: false },
+  grade: { indexed: false },
+  lunch_wave: { indexed: false },
+  block_prefs: { indexed: false },
+  schedule_prefs: { indexed: false },
+};
+
+const ACCOUNT_FIELD_NAMES = Object.keys(ACCOUNT_FIELDS);
+const ACCOUNT_INDEXED_FIELDS = ACCOUNT_FIELD_NAMES.filter((f) => ACCOUNT_FIELDS[f].indexed);
+
+/**
+ * Original columns that are NOT NULL and so still need a value after their
+ * contents move into the ciphertext column. Nullable ones are simply nulled,
+ * which also keeps a ciphertext string from ever being written into the
+ * INTEGER-affinity grade and lunch_wave columns.
+ */
+const LEGACY_MUST_FILL = new Set([
+  'firebase_uid', 'email', 'profile_id', 'time_format', 'block_prefs', 'schedule_prefs',
+]);
+
+/** True only for a value this Worker wrote. Anything else is legacy plaintext. */
+function isEncrypted(value) {
+  return typeof value === 'string' && CIPHER_RE.test(value);
+}
+
+/** True for the opaque placeholder left behind in a legacy column. */
+function isRedacted(value) {
+  return typeof value === 'string' && value.startsWith(REDACTED_PREFIX);
+}
+
+/** A value to park in a legacy NOT NULL column once its contents are encrypted. */
+function redactedPlaceholder() {
+  const bytes = crypto.getRandomValues(new Uint8Array(8));
+  return REDACTED_PREFIX + [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/** What a legacy column should hold for `field` once it has been migrated. */
+function legacyPlaceholderFor(field) {
+  return LEGACY_MUST_FILL.has(field) ? redactedPlaceholder() : null;
+}
+
+/** AAD for an accounts field. Pass null profileId only for profile_id itself. */
+function accountAad(profileId, field) {
+  return `accounts:${profileId == null ? 'self' : profileId}:${field}`;
+}
+
+/** AAD for a notices payload, bound to the account the notice belongs to. */
+function noticeAad(accountId) {
+  return `notices:${accountId}:payload`;
+}
+
+function toHex(bytes) {
+  return [...new Uint8Array(bytes)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * Accept a 32-byte key as base64 or base64url. Anything else is a configuration
+ * mistake worth naming loudly, because silently using a weak key would be worse
+ * than not encrypting at all.
+ */
+function decodeKeyMaterial(text) {
+  const trimmed = String(text || '').trim();
+  if (!trimmed) return null;
+  let bytes;
+  try {
+    bytes = fromB64url(trimmed);
+  } catch {
+    return null;
+  }
+  return bytes.length === 32 ? bytes : null;
+}
+
+/** Expand one master secret into the two purpose-separated keys actually used. */
+async function deriveSlot(masterBytes) {
+  const base = await crypto.subtle.importKey('raw', masterBytes, 'HKDF', false, ['deriveKey']);
+  const [enc, bidx] = await Promise.all([
+    crypto.subtle.deriveKey(
+      { name: 'HKDF', hash: 'SHA-256', salt: HKDF_SALT, info: HKDF_INFO_ENC },
+      base,
+      { name: 'AES-GCM', length: 256 },
+      false,
+      ['encrypt', 'decrypt']
+    ),
+    crypto.subtle.deriveKey(
+      { name: 'HKDF', hash: 'SHA-256', salt: HKDF_SALT, info: HKDF_INFO_BIDX },
+      base,
+      { name: 'HMAC', hash: 'SHA-256', length: 256 },
+      false,
+      ['sign']
+    ),
+  ]);
+  return { enc, bidx };
+}
+
+// Deriving keys takes a few hundred microseconds and every request decrypts
+// several fields, so the keyring is cached per isolate. The cache key is the
+// secrets themselves, which also makes it correct the moment a rotation deploys.
+let cachedKeyring = null;
+let cachedKeySignature = '';
+
+async function fieldKeyring(env) {
+  const signature = `${env.DATA_KEY || ''}|${env.DATA_KEY_PREV || ''}`;
+  if (cachedKeyring && cachedKeySignature === signature) return cachedKeyring;
+
+  const activeBytes = decodeKeyMaterial(env.DATA_KEY);
+  if (!activeBytes) {
+    throw new Error(
+      'DATA_KEY is missing or is not 32 bytes of base64. Set it with ' +
+      '"wrangler secret put DATA_KEY" before deploying, and keep a backup: ' +
+      'without it every encrypted profile field is unreadable.'
+    );
+  }
+  const previousBytes = env.DATA_KEY_PREV ? decodeKeyMaterial(env.DATA_KEY_PREV) : null;
+
+  cachedKeyring = {
+    active: await deriveSlot(activeBytes),
+    previous: previousBytes ? await deriveSlot(previousBytes) : null,
+  };
+  cachedKeySignature = signature;
+  return cachedKeyring;
+}
+
+/**
+ * Encrypt one field value.
+ *
+ * The value is JSON-encoded first so that null, 0 and "" survive the round trip
+ * distinctly, which matters because display_name, grade and lunch_wave all use
+ * those. A fresh random IV per value means the same input never produces the
+ * same ciphertext twice, so a dump of the table leaks no equality information.
+ */
+async function encryptField(env, value, aad) {
+  const keys = await fieldKeyring(env);
+  const iv = crypto.getRandomValues(new Uint8Array(IV_BYTES));
+  const plaintext = new TextEncoder().encode(JSON.stringify(value === undefined ? null : value));
+  const ciphertext = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv, additionalData: new TextEncoder().encode(aad), tagLength: 128 },
+    keys.active.enc,
+    plaintext
+  );
+  return `${CIPHER_PREFIX}.a.${b64url(iv)}.${b64url(ciphertext)}`;
+}
+
+/**
+ * Decrypt one field value.
+ *
+ * A value this Worker did not write is returned unchanged. That is the
+ * migration path, not a hole: such a row is one the database was already
+ * storing in the clear, and repairAccount re-encrypts it on the way out. What
+ * must never happen is returning something plausible for a value that claims
+ * to be ciphertext but does not authenticate, so that case throws.
+ */
+async function decryptField(env, value, aad) {
+  if (!isEncrypted(value)) return value;
+  const keys = await fieldKeyring(env);
+  const parts = value.split('.');
+  const params = {
+    name: 'AES-GCM',
+    iv: fromB64url(parts[2]),
+    additionalData: new TextEncoder().encode(aad),
+    tagLength: 128,
+  };
+
+  // Every configured key is tried, newest first, because a stored slot tag
+  // cannot identify the key on its own across a rotation. Trying each key is
+  // safe: AES-GCM authenticates, so the wrong key fails to decrypt rather than
+  // returning something plausible.
+  const slots = [keys.active];
+  if (keys.previous) slots.push(keys.previous);
+  const ciphertext = fromB64url(parts[3]);
+
+  for (const slot of slots) {
+    let plaintext;
+    try {
+      plaintext = await crypto.subtle.decrypt(params, slot.enc, ciphertext);
+    } catch {
+      continue;
+    }
+    return JSON.parse(new TextDecoder().decode(plaintext));
+  }
+  throw new Error('encrypted field failed authentication: wrong row, wrong column, or tampered');
+}
+
+/** Blind-index normalisation, including the per-field domain separator. */
+function bidxMessage(field, value) {
+  const spec = ACCOUNT_FIELDS[field];
+  const normalized = spec && spec.normalize ? spec.normalize(value) : String(value ?? '');
+  return `${field} ${normalized}`;
+}
+
+/** Blind index for `field` under the current key. */
+async function blindIndexFor(env, field, value) {
+  const keys = await fieldKeyring(env);
+  const signature = await crypto.subtle.sign(
+    'HMAC',
+    keys.active.bidx,
+    new TextEncoder().encode(bidxMessage(field, value))
+  );
+  return toHex(signature);
+}
+
+/**
+ * Every index a value could have under a configured key.
+ *
+ * During a rotation both keys must be tried or rows written before the swap
+ * become unreachable. Read-repair re-signs them onto the current key the first
+ * time they are found.
+ */
+async function blindIndexCandidates(env, field, value) {
+  const keys = await fieldKeyring(env);
+  const message = new TextEncoder().encode(bidxMessage(field, value));
+  const out = [toHex(await crypto.subtle.sign('HMAC', keys.active.bidx, message))];
+  if (keys.previous) {
+    out.push(toHex(await crypto.subtle.sign('HMAC', keys.previous.bidx, message)));
+  }
+  return out;
+}
+
+/** "?" for one bind parameter, "? , ?" for several. */
+function placeholders(count) {
+  return new Array(count).fill('?').join(', ');
+}
+
+// ---------------------------------------------------------------------------
 // Session cookies
 //
 // The cookie carries a random token. Only its hash is stored, so the database
@@ -148,7 +485,176 @@ async function currentAccount(request, env) {
   )
     .bind(tokenHash, nowSeconds())
     .first();
-  return row || null;
+  // The joined row carries every encrypted column, so it goes through the same
+  // decrypt-and-migrate path as any other single-row read. Every authenticated
+  // request lands here, which is why one sign-in migrates an account.
+  return readAccount(env, row);
+}
+
+// ---------------------------------------------------------------------------
+// Reading and writing encrypted accounts
+//
+// decryptAccount turns a raw row back into the plain shape the handlers below
+// already use, so no endpoint has to know any of this. readAccount adds the
+// lazy migration. Both take a raw row rather than running their own query,
+// because each call site needs a different WHERE clause.
+// ---------------------------------------------------------------------------
+
+/** Fail with the fix, rather than with a confusing null, if the columns are absent. */
+function assertEncryptedSchema(row) {
+  if (!row || !('profile_id_enc' in row)) {
+    throw new Error(
+      'accounts is missing its encrypted columns. Run ' +
+      'worker/migration-encrypt-fields.sql against this database before deploying ' +
+      'this Worker.'
+    );
+  }
+}
+
+/** Ciphertext plus blind index for every encrypted field of an account. */
+async function encryptedAccountValues(env, account) {
+  const out = {};
+  for (const field of ACCOUNT_FIELD_NAMES) {
+    const aad = accountAad(field === 'profile_id' ? null : account.profile_id, field);
+    out[`${field}_enc`] = await encryptField(env, account[field], aad);
+  }
+  for (const field of ACCOUNT_INDEXED_FIELDS) {
+    out[`${field}_bidx`] = await blindIndexFor(env, field, account[field]);
+  }
+  return out;
+}
+
+/**
+ * The stored value for a field: the ciphertext column when it has one, and the
+ * original column when the row has not been migrated yet.
+ *
+ * This fallback is what makes the lazy migration safe. A row that predates
+ * encryption has an empty _enc column and a real value in the original one, so
+ * reading it here is what keeps an unmigrated row correct until repairAccount
+ * rewrites it. A redacted placeholder means "migrated", so it is never treated
+ * as a value.
+ */
+function storedField(row, field) {
+  const encrypted = row[`${field}_enc`];
+  if (encrypted !== null && encrypted !== undefined && encrypted !== '') return encrypted;
+  const legacy = row[field];
+  if (legacy === null || legacy === undefined || legacy === '') return null;
+  return isRedacted(legacy) || isEncrypted(legacy) ? null : legacy;
+}
+
+/** Decrypt a raw accounts row into the shape the handlers expect. */
+async function decryptAccount(env, row) {
+  assertEncryptedSchema(row);
+  const profileId = await decryptField(env, storedField(row, 'profile_id'), accountAad(null, 'profile_id'));
+  const out = {
+    id: row.id,
+    is_public: row.is_public,
+    auto_grant: row.auto_grant,
+    social_web_opt_in: row.social_web_opt_in,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    profile_id: profileId,
+  };
+  for (const field of ACCOUNT_FIELD_NAMES) {
+    if (field === 'profile_id') continue;
+    out[field] = await decryptField(env, storedField(row, field), accountAad(profileId, field));
+  }
+  return out;
+}
+
+/**
+ * Migrate one row in place, if it still needs it.
+ *
+ * For each field: encrypt a legacy plaintext value if the ciphertext column is
+ * empty, re-sign a blind index that does not match the current key, and
+ * overwrite any legacy column that still holds the real value with a
+ * placeholder. That last step is the point of the whole exercise - without it
+ * the plaintext would simply sit there next to the ciphertext.
+ *
+ * Only the caller decides whether a row is worth a write; this returns whether
+ * it did one, so a converged row costs nothing beyond three HMACs.
+ *
+ * updated_at is deliberately not touched: migrating a row is not the student
+ * changing their profile, and there is nothing else in this Worker that reads
+ * it.
+ */
+async function repairAccount(env, row, account) {
+  const sets = [];
+  const values = [];
+
+  for (const field of ACCOUNT_FIELD_NAMES) {
+    const legacy = row[field];
+    const holdsPlaintext = legacy !== null && legacy !== undefined && legacy !== ''
+      && !isRedacted(legacy) && !isEncrypted(legacy);
+    const aad = accountAad(field === 'profile_id' ? null : account.profile_id, field);
+
+    if (holdsPlaintext && !isEncrypted(row[`${field}_enc`])) {
+      sets.push(`${field}_enc = ?`);
+      values.push(await encryptField(env, legacy, aad));
+    }
+
+    if (ACCOUNT_FIELDS[field].indexed) {
+      // Recomputing rather than only filling a NULL is what makes a rotation
+      // converge: a stale index is rewritten once and then matches forever.
+      const current = await blindIndexFor(env, field, account[field]);
+      if (row[`${field}_bidx`] !== current) {
+        sets.push(`${field}_bidx = ?`);
+        values.push(current);
+      }
+    }
+
+    if (holdsPlaintext) {
+      sets.push(`${field} = ?`);
+      values.push(legacyPlaceholderFor(field));
+    }
+  }
+
+  if (!sets.length) return false;
+  await env.DB.prepare(`UPDATE accounts SET ${sets.join(', ')} WHERE id = ?`)
+    .bind(...values, row.id)
+    .run();
+  return true;
+}
+
+/**
+ * Decrypt a single-row read and migrate the row on the way out.
+ *
+ * List reads deliberately do not call this: migrating every row a directory
+ * search touches would turn one request into a burst of writes. Single-row
+ * reads are enough to migrate everyone, because currentAccount runs on every
+ * authenticated request, so any real user migrates the first time they load the
+ * site.
+ */
+async function readAccount(env, row) {
+  if (!row) return null;
+  const account = await decryptAccount(env, row);
+  await repairAccount(env, row, account);
+  return account;
+}
+
+/** Look accounts up by profile ID, for callers that need several at once. */
+async function accountsByProfileId(env, profileIds) {
+  const wanted = [...new Set(profileIds.filter(Boolean))];
+  if (!wanted.length) return new Map();
+  const candidates = [];
+  for (const id of wanted) candidates.push(...await blindIndexCandidates(env, 'profile_id', id));
+
+  // The blind index finds migrated rows; the profile_id comparison catches
+  // rows that have not been migrated yet and so have no index at all.
+  const rows = await env.DB.prepare(
+    `SELECT * FROM accounts
+      WHERE profile_id_bidx IN (${placeholders(candidates.length)})
+         OR profile_id IN (${placeholders(wanted.length)})`
+  )
+    .bind(...candidates, ...wanted)
+    .all();
+
+  const out = new Map();
+  for (const row of rows.results || []) {
+    const account = await decryptAccount(env, row);
+    out.set(account.profile_id, account);
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -178,8 +684,14 @@ async function generateProfileId(env) {
     const b = PROFILE_WORDS_B[Math.floor(Math.random() * PROFILE_WORDS_B.length)];
     const n = Math.floor(Math.random() * 9000) + 1000;
     const candidate = `${a}-${b}-${n}`;
-    const taken = await env.DB.prepare('SELECT 1 FROM accounts WHERE profile_id = ?')
-      .bind(candidate)
+    // Collisions are checked through the blind index, plus the original column
+    // so that rows which have not been migrated yet still count as taken.
+    const candidates = await blindIndexCandidates(env, 'profile_id', candidate);
+    const taken = await env.DB.prepare(
+      `SELECT 1 FROM accounts
+        WHERE profile_id_bidx IN (${placeholders(candidates.length)}) OR profile_id = ?`
+    )
+      .bind(...candidates, candidate)
       .first();
     if (!taken) return candidate;
   }
@@ -207,10 +719,15 @@ async function createGrant(env, ownerAccountId, viewerAccountId) {
 }
 
 async function notify(env, accountId, kind, payload = {}) {
+  // The payload carries the acting profile ID, so it is encrypted like every
+  // other profile field. The original column keeps a structurally valid
+  // placeholder because the schema declares it NOT NULL.
+  const payloadEnc = await encryptField(env, payload, noticeAad(accountId));
   await env.DB.prepare(
-    'INSERT INTO notices (account_id, kind, payload, created_at) VALUES (?, ?, ?, ?)'
+    `INSERT INTO notices (account_id, kind, payload, payload_enc, created_at)
+     VALUES (?, ?, ?, ?, ?)`
   )
-    .bind(accountId, kind, JSON.stringify(payload), nowSeconds())
+    .bind(accountId, kind, '{}', payloadEnc, nowSeconds())
     .run();
 }
 
@@ -371,6 +888,18 @@ async function verifyFirebaseIdToken(idToken, projectId) {
   return { uid: String(claims.sub), email, name: String(claims.name || '').trim() };
 }
 
+/** Find the account for a Firebase uid, through its blind index. */
+async function findAccountByFirebaseUid(env, uid) {
+  const candidates = await blindIndexCandidates(env, 'firebase_uid', uid);
+  const row = await env.DB.prepare(
+    `SELECT * FROM accounts
+      WHERE firebase_uid_bidx IN (${placeholders(candidates.length)}) OR firebase_uid = ?`
+  )
+    .bind(...candidates, uid)
+    .first();
+  return readAccount(env, row);
+}
+
 /**
  * Sign in: the browser has already authenticated against Firebase and posts the
  * ID token it received. Once the token verifies, the account is looked up by
@@ -384,27 +913,67 @@ async function handleFirebaseSignIn(request, env) {
   if (!claims) return json({ error: 'invalid_token' }, 401);
 
   const ts = nowSeconds();
-  let account = await env.DB.prepare('SELECT * FROM accounts WHERE firebase_uid = ?')
-    .bind(claims.uid)
-    .first();
+  let account = await findAccountByFirebaseUid(env, claims.uid);
 
   if (!account) {
     const profileId = await generateProfileId(env);
     const name = claims.name || claims.email.split('@')[0];
+    // block_prefs and schedule_prefs are stored as the JSON strings the schema
+    // declares, so safeJson keeps working on the decrypted value unchanged.
+    const encrypted = await encryptedAccountValues(env, {
+      firebase_uid: claims.uid,
+      email: claims.email,
+      name,
+      profile_id: profileId,
+      display_name: name,
+      time_format: '12h',
+      grade: null,
+      lunch_wave: null,
+      block_prefs: '{}',
+      schedule_prefs: '{}',
+    });
+
+    // Every original column is written with a placeholder rather than left to a
+    // default: the real values go in the _enc columns, and the originals are
+    // NOT NULL in the schema.
+    const encryptedColumns = ACCOUNT_FIELD_NAMES.map((f) => `${f}_enc`);
+    const indexColumns = ACCOUNT_INDEXED_FIELDS.map((f) => `${f}_bidx`);
+    const columns = [
+      ...encryptedColumns,
+      ...indexColumns,
+      ...ACCOUNT_FIELD_NAMES.map((f) => f),
+      'created_at',
+      'updated_at',
+    ];
     await env.DB.prepare(
-      `INSERT INTO accounts (firebase_uid, email, name, profile_id, display_name, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO accounts (${columns.join(', ')})
+       VALUES (${placeholders(columns.length)})`
     )
-      .bind(claims.uid, claims.email, name, profileId, name, ts, ts)
+      .bind(
+        ...encryptedColumns.map((c) => encrypted[c]),
+        ...indexColumns.map((c) => encrypted[c]),
+        ...ACCOUNT_FIELD_NAMES.map((f) => legacyPlaceholderFor(f)),
+        ts,
+        ts,
+      )
       .run();
-    account = await env.DB.prepare('SELECT * FROM accounts WHERE firebase_uid = ?')
-      .bind(claims.uid)
-      .first();
+
+    account = await findAccountByFirebaseUid(env, claims.uid);
   } else if (account.email !== claims.email) {
     // A changed address must not change identity, which is why the account is
     // keyed on the Firebase uid and only the display fields are updated.
-    await env.DB.prepare('UPDATE accounts SET email = ?, updated_at = ? WHERE id = ?')
-      .bind(claims.email, ts, account.id)
+    const encrypted = await encryptedAccountValues(env, { ...account, email: claims.email });
+    await env.DB.prepare(
+      `UPDATE accounts SET email_enc = ?, email_bidx = ?, email = ?, updated_at = ?
+        WHERE id = ?`
+    )
+      .bind(
+        encrypted.email_enc,
+        encrypted.email_bidx,
+        legacyPlaceholderFor('email'),
+        ts,
+        account.id,
+      )
       .run();
     account = { ...account, email: claims.email };
   }
@@ -433,25 +1002,37 @@ function fromB64url(text) {
 
 /** Only consensual public graph metadata; never courses, email, or grant codes. */
 async function handleSocialWeb(env) {
-  const { results: profiles } = await env.DB.prepare(`
-    SELECT profile_id, display_name, name FROM accounts
-    WHERE social_web_opt_in = 1 ORDER BY profile_id
-  `).all();
-  const { results: grants } = await env.DB.prepare(`
-    SELECT owner.profile_id AS source, viewer.profile_id AS target
-    FROM grants g
-    JOIN accounts owner ON owner.id = g.owner_account_id
-    JOIN accounts viewer ON viewer.id = g.viewer_account_id
-    WHERE g.revoked_at IS NULL
-      AND owner.social_web_opt_in = 1 AND viewer.social_web_opt_in = 1
-    ORDER BY owner.profile_id, viewer.profile_id
-  `).all();
-  const nodes = profiles.map(publicDirectoryEntry);
-  const visible = new Set(nodes.map((node) => node.profileId));
+  // social_web_opt_in stays plaintext precisely so this filter can stay a SQL
+  // WHERE clause. The profile IDs behind it cannot, so rows are decrypted here
+  // and the edges are resolved through account ids instead of a join on the
+  // profile ID column.
+  const { results: rows } = await env.DB.prepare(
+    'SELECT * FROM accounts WHERE social_web_opt_in = 1'
+  ).all();
+
+  const accounts = [];
+  for (const row of rows || []) accounts.push(await decryptAccount(env, row));
+
+  const optedIn = new Map(accounts.map((account) => [account.id, account.profile_id]));
+  const { results: grants } = await env.DB.prepare(
+    'SELECT owner_account_id, viewer_account_id FROM grants WHERE revoked_at IS NULL'
+  ).all();
+
+  const edges = [];
+  for (const grant of grants || []) {
+    const source = optedIn.get(grant.owner_account_id);
+    const target = optedIn.get(grant.viewer_account_id);
+    // Either endpoint not being opted in hides the whole edge, which is what
+    // the SQL join on both opt-ins used to do.
+    if (source && target) edges.push({ source, target });
+  }
+
+  accounts.sort((a, b) => a.profile_id.localeCompare(b.profile_id));
+  edges.sort((a, b) => a.source.localeCompare(b.source) || a.target.localeCompare(b.target));
+
   return json({
-    nodes,
-    edges: grants.filter((edge) => visible.has(edge.source) && visible.has(edge.target))
-      .map((edge) => ({ source: edge.source, target: edge.target })),
+    nodes: accounts.map(publicDirectoryEntry),
+    edges,
   }, 200, { 'Cache-Control': 'no-store' });
 }
 
@@ -463,10 +1044,9 @@ async function handleMe(request, env, account) {
     const fields = [];
     const values = [];
 
-    if (typeof body.displayName === 'string') {
-      fields.push('display_name = ?');
-      values.push(body.displayName.trim().slice(0, 80));
-    }
+    // These three stay plaintext: they are privacy switches rather than
+    // profile data, and the directory and social web both filter on them in
+    // SQL, which is not possible over ciphertext.
     if (typeof body.isPublic === 'boolean') {
       fields.push('is_public = ?');
       values.push(body.isPublic ? 1 : 0);
@@ -479,25 +1059,34 @@ async function handleMe(request, env, account) {
       fields.push('social_web_opt_in = ?');
       values.push(body.socialWebOptIn ? 1 : 0);
     }
+
+    // Encrypted fields are gathered first so each can be written with the row's
+    // profile_id as its additional authenticated data. The original columns are
+    // not rewritten: this account arrived through currentAccount, so
+    // repairAccount has already replaced them with placeholders.
+    const next = {};
+    if (typeof body.displayName === 'string') {
+      next.display_name = body.displayName.trim().slice(0, 80);
+    }
     if (typeof body.timeFormat === 'string') {
-      fields.push('time_format = ?');
-      values.push(body.timeFormat === '24h' ? '24h' : '12h');
+      next.time_format = body.timeFormat === '24h' ? '24h' : '12h';
     }
     if (body.grade === null || typeof body.grade === 'number') {
-      fields.push('grade = ?');
-      values.push(body.grade);
+      next.grade = body.grade;
     }
     if (body.lunchWave === null || typeof body.lunchWave === 'number') {
-      fields.push('lunch_wave = ?');
-      values.push(body.lunchWave);
+      next.lunch_wave = body.lunchWave;
     }
     if (body.blockPrefs !== undefined) {
-      fields.push('block_prefs = ?');
-      values.push(JSON.stringify(body.blockPrefs));
+      next.block_prefs = JSON.stringify(body.blockPrefs);
     }
     if (body.schedulePrefs !== undefined) {
-      fields.push('schedule_prefs = ?');
-      values.push(JSON.stringify(body.schedulePrefs));
+      next.schedule_prefs = JSON.stringify(body.schedulePrefs);
+    }
+
+    for (const [field, value] of Object.entries(next)) {
+      fields.push(`${field}_enc = ?`);
+      values.push(await encryptField(env, value, accountAad(account.profile_id, field)));
     }
 
     if (fields.length) {
@@ -511,7 +1100,7 @@ async function handleMe(request, env, account) {
     const updated = await env.DB.prepare('SELECT * FROM accounts WHERE id = ?')
       .bind(account.id)
       .first();
-    return json(publicSelf(updated));
+    return json(publicSelf(await decryptAccount(env, updated)));
   }
 
   return json({ error: 'method_not_allowed' }, 405);
@@ -545,28 +1134,47 @@ async function handleDirectory(request, env) {
 
   // Only public profiles are listed, and the listing carries handle and name
   // only. Courses are never part of a directory result.
-  let rows;
-  if (q) {
-    rows = await env.DB.prepare(
-      `SELECT profile_id, display_name, name FROM accounts
-        WHERE is_public = 1 AND (LOWER(profile_id) LIKE ? OR LOWER(COALESCE(display_name, name)) LIKE ?)
-        ORDER BY profile_id LIMIT 25`
-    )
-      .bind(`%${q}%`, `%${q}%`)
-      .all();
-  } else {
-    rows = await env.DB.prepare(
-      `SELECT profile_id, display_name, name FROM accounts
-        WHERE is_public = 1 ORDER BY display_name LIMIT 25`
-    ).all();
+  //
+  // is_public stays plaintext so this stays a SQL WHERE clause, but the match
+  // cannot be: LIKE over AES-GCM ciphertext is meaningless, and a blind index
+  // only answers exact matches. So the public rows are decrypted here and
+  // matched in JS, which is what keeps the search box working. At the scale of
+  // one school the whole public table is small.
+  const { results: rows } = await env.DB.prepare(
+    'SELECT * FROM accounts WHERE is_public = 1'
+  ).all();
+
+  const matches = [];
+  for (const row of rows || []) {
+    const account = await decryptAccount(env, row);
+    const displayName = account.display_name || account.name || '';
+    const haystack = `${account.profile_id} ${displayName}`.toLowerCase();
+    if (q && !haystack.includes(q)) continue;
+    matches.push({ profileId: account.profile_id, displayName, sortKey: displayName.toLowerCase() });
   }
-  return json({ profiles: (rows.results || []).map(publicDirectoryEntry) });
+
+  matches.sort((a, b) => (q
+    ? a.profileId.localeCompare(b.profileId)
+    : a.sortKey.localeCompare(b.sortKey) || a.profileId.localeCompare(b.profileId)));
+
+  return json({
+    profiles: matches
+      .slice(0, 25)
+      .map(({ profileId, displayName }) => ({ profileId, displayName })),
+  });
 }
 
 async function lookupAccountByProfileId(env, profileId) {
-  return env.DB.prepare('SELECT * FROM accounts WHERE profile_id = ?')
-    .bind(String(profileId || '').trim().toLowerCase())
+  const wanted = String(profileId || '').trim().toLowerCase();
+  if (!wanted) return null;
+  const candidates = await blindIndexCandidates(env, 'profile_id', wanted);
+  const row = await env.DB.prepare(
+    `SELECT * FROM accounts
+      WHERE profile_id_bidx IN (${placeholders(candidates.length)}) OR profile_id = ?`
+  )
+    .bind(...candidates, wanted)
     .first();
+  return readAccount(env, row);
 }
 
 /**
@@ -605,33 +1213,45 @@ async function handleCreateRequest(request, env, account) {
 }
 
 async function handleListRequests(env, account) {
+  // The join key is a numeric account id, which stays plaintext, so both joins
+  // remain in SQL. Only the profile ID and name they used to select have to be
+  // decrypted afterwards. a.* carries every encrypted column; the request id is
+  // aliased so it cannot collide with the account id in the same row.
   const incoming = await env.DB.prepare(
-    `SELECT r.id, r.status, r.created_at, a.profile_id, COALESCE(a.display_name, a.name) AS display_name
+    `SELECT r.id AS request_id, r.status, r.created_at, a.*
        FROM requests r JOIN accounts a ON a.id = r.from_account_id
       WHERE r.to_account_id = ? ORDER BY r.created_at DESC`
   )
     .bind(account.id)
     .all();
   const outgoing = await env.DB.prepare(
-    `SELECT r.id, r.status, r.created_at, a.profile_id, COALESCE(a.display_name, a.name) AS display_name
+    `SELECT r.id AS request_id, r.status, r.created_at, a.*
        FROM requests r JOIN accounts a ON a.id = r.to_account_id
       WHERE r.from_account_id = ? ORDER BY r.created_at DESC`
   )
     .bind(account.id)
     .all();
   return json({
-    incoming: (incoming.results || []).map(mapRequest),
-    outgoing: (outgoing.results || []).map(mapRequest),
+    incoming: await mapRequests(env, incoming.results),
+    outgoing: await mapRequests(env, outgoing.results),
   });
 }
 
-function mapRequest(row) {
+async function mapRequests(env, rows) {
+  const out = [];
+  for (const row of rows || []) {
+    out.push(mapRequest(row.request_id, row.status, row.created_at, await decryptAccount(env, row)));
+  }
+  return out;
+}
+
+function mapRequest(id, status, createdAt, account) {
   return {
-    id: row.id,
-    status: row.status,
-    createdAt: row.created_at,
-    profileId: row.profile_id,
-    displayName: row.display_name || '',
+    id,
+    status,
+    createdAt,
+    profileId: account.profile_id,
+    displayName: account.display_name || account.name || '',
   };
 }
 
@@ -667,7 +1287,7 @@ async function handleDecideRequest(request, env, account, requestId, body) {
 /** Who can see my schedule, and whose schedule I can see. */
 async function handleListGrants(env, account) {
   const outgoing = await env.DB.prepare(
-    `SELECT g.id, g.created_at, a.profile_id, COALESCE(a.display_name, a.name) AS display_name
+    `SELECT g.id AS grant_id, g.created_at, a.*
        FROM grants g JOIN accounts a ON a.id = g.viewer_account_id
       WHERE g.owner_account_id = ? AND g.revoked_at IS NULL
       ORDER BY g.created_at DESC`
@@ -675,21 +1295,27 @@ async function handleListGrants(env, account) {
     .bind(account.id)
     .all();
   const incoming = await env.DB.prepare(
-    `SELECT g.id, g.created_at, a.profile_id, COALESCE(a.display_name, a.name) AS display_name
+    `SELECT g.id AS grant_id, g.created_at, a.*
        FROM grants g JOIN accounts a ON a.id = g.owner_account_id
       WHERE g.viewer_account_id = ? AND g.revoked_at IS NULL
       ORDER BY g.created_at DESC`
   )
     .bind(account.id)
     .all();
-  const shape = (rows) =>
-    (rows.results || []).map((r) => ({
-      id: r.id,
-      since: r.created_at,
-      profileId: r.profile_id,
-      displayName: r.display_name || '',
-    }));
-  return json({ viewers: shape(outgoing), viewing: shape(incoming) });
+  const shape = async (rows) => {
+    const out = [];
+    for (const row of rows.results || []) {
+      const other = await decryptAccount(env, row);
+      out.push({
+        id: row.grant_id,
+        since: row.created_at,
+        profileId: other.profile_id,
+        displayName: other.display_name || other.name || '',
+      });
+    }
+    return out;
+  };
+  return json({ viewers: await shape(outgoing), viewing: await shape(incoming) });
 }
 
 /**
@@ -715,28 +1341,61 @@ async function handleRevokeGrant(env, account, grantId) {
 }
 
 async function handleListNotices(env, account) {
-  const rows = await env.DB.prepare(
-    `SELECT n.id, n.kind, n.payload, n.created_at, n.seen_at,
-            COALESCE(a.display_name, a.name) AS actor_name, a.profile_id AS actor_profile_id
-       FROM notices n
-       LEFT JOIN accounts a ON a.profile_id = json_extract(n.payload, '$.profileId')
-      WHERE n.account_id = ?
-      ORDER BY n.created_at DESC LIMIT 50`
+  // This used to join accounts on json_extract(payload, '$.profileId'), which
+  // stops being possible the moment the payload becomes ciphertext. So the
+  // payloads are decrypted first and the profiles they name are then resolved in
+  // one query through their blind indexes.
+  const { results: rows } = await env.DB.prepare(
+    `SELECT id, kind, payload, payload_enc, created_at, seen_at
+       FROM notices WHERE account_id = ? ORDER BY created_at DESC LIMIT 50`
   )
     .bind(account.id)
     .all();
+
+  const notices = [];
+  const stale = [];
+  for (const row of rows || []) {
+    let payload = await decryptField(env, row.payload_enc || row.payload, noticeAad(account.id));
+    // A payload written before this change is still a JSON string.
+    if (typeof payload === 'string') payload = safeJson(payload);
+    if (!payload || typeof payload !== 'object') payload = {};
+
+    // Migrate notices written before payloads were encrypted. One CASE
+    // statement covers the whole page, so this stays a single round trip.
+    if (!isEncrypted(row.payload_enc)) {
+      stale.push({ id: row.id, enc: await encryptField(env, payload, noticeAad(account.id)) });
+    }
+    notices.push({ row, payload });
+  }
+
+  if (stale.length) {
+    const when = stale.map(() => 'WHEN ? THEN ?').join(' ');
+    const ids = stale.map(() => '?').join(', ');
+    await env.DB.prepare(
+      `UPDATE notices SET payload = '{}', payload_enc = CASE id ${when} ELSE payload_enc END
+        WHERE id IN (${ids})`
+    )
+      .bind(...stale.flatMap((s) => [s.id, s.enc]), ...stale.map((s) => s.id))
+      .run();
+  }
+
+  const actors = await accountsByProfileId(env, notices.map((n) => n.payload.profileId));
+
   return json({
-    notices: (rows.results || []).map((r) => ({
-      id: r.id,
-      kind: r.kind,
-      payload: safeJson(r.payload),
-      createdAt: r.created_at,
-      seen: Boolean(r.seen_at),
-      // Who did this, so the page can name them instead of saying "Someone".
-      // Resolved at read time, so a name change is reflected on old notices.
-      actorName: r.actor_name || '',
-      actorProfileId: r.actor_profile_id || '',
-    })),
+    notices: notices.map(({ row, payload }) => {
+      const actor = actors.get(payload.profileId);
+      return {
+        id: row.id,
+        kind: row.kind,
+        payload,
+        createdAt: row.created_at,
+        seen: Boolean(row.seen_at),
+        // Who did this, so the page can name them instead of saying "Someone".
+        // Resolved at read time, so a name change is reflected on old notices.
+        actorName: actor ? actor.display_name || actor.name || '' : '',
+        actorProfileId: payload.profileId || '',
+      };
+    }),
   });
 }
 
@@ -875,3 +1534,18 @@ async function route(request, env, url, path, method) {
 
   return json({ error: 'not_found' }, 404);
 }
+
+// Exported for the test suite. The Worker itself only uses the default export;
+// these are here so worker/test can read a stored row the way the Worker reads
+// it, instead of asserting against ciphertext it cannot interpret. They are
+// inert in production, and deleting them would not change a single response.
+export {
+  ACCOUNT_FIELD_NAMES,
+  accountAad,
+  blindIndexFor,
+  decryptAccount,
+  decryptField,
+  encryptField,
+  isEncrypted,
+  isRedacted,
+};

@@ -18,6 +18,7 @@ import assert from 'node:assert/strict';
 import {
   API_ORIGIN, PAGE_ORIGIN, repoPath, routerFetch, wait, idToken,
   signInAs as signInAsShared, setCookieJar, getCookieJar, db,
+  accountOf, accountIdOf, plainFieldOf, setEncryptedFieldOf,
 } from './harness.mjs';
 
 // jsdom does not fetch, so every page request goes through the shared router.
@@ -283,14 +284,14 @@ await test('the visibility toggle writes through to the account', async () => {
   $('visibility').value = 'public';
   $('visibility').dispatchEvent(new window.Event('change'));
   await settle();
-  assert.equal(db.prepare('SELECT is_public FROM accounts WHERE firebase_uid = ?').get('sub-page-alice').is_public, 1);
+  assert.equal(await plainFieldOf('sub-page-alice', 'is_public'), 1);
 });
 
 await test('the auto-grant toggle writes through to the account', async () => {
   $('auto-grant').checked = false;
   $('auto-grant').dispatchEvent(new window.Event('change'));
   await settle();
-  assert.equal(db.prepare('SELECT auto_grant FROM accounts WHERE firebase_uid = ?').get('sub-page-alice').auto_grant, 0);
+  assert.equal(await plainFieldOf('sub-page-alice', 'auto_grant'), 0);
 });
 
 await test('editing a course name saves locally and to the account', async () => {
@@ -298,7 +299,7 @@ await test('editing a course name saves locally and to the account', async () =>
   input.value = 'AP Biology';
   input.dispatchEvent(new window.Event('input'));
   await settle();
-  const stored = JSON.parse(db.prepare('SELECT block_prefs FROM accounts WHERE firebase_uid = ?').get('sub-page-alice').block_prefs);
+  const stored = JSON.parse((await accountOf('sub-page-alice')).block_prefs);
   const firstKey = Object.keys(stored)[0];
   assert.equal(stored[firstKey].name, 'AP Biology', 'the course reached D1');
   const local = JSON.parse(window.localStorage.getItem('blockPreferences') || '{}');
@@ -309,12 +310,11 @@ await test('course changes made in another browser load on sign-in', async () =>
   // The account's courses change underneath this browser, then the page is
   // loaded cold, as on a second device. It must adopt the account's version.
   const other = JSON.parse(JSON.stringify(JSON.parse(
-    db.prepare('SELECT block_prefs FROM accounts WHERE firebase_uid = ?').get('sub-page-alice').block_prefs
+    (await accountOf('sub-page-alice')).block_prefs
   )));
   const key = Object.keys(other)[0];
   other[key].name = 'From Another Device';
-  db.prepare('UPDATE accounts SET block_prefs = ? WHERE firebase_uid = ?')
-    .run(JSON.stringify(other), 'sub-page-alice');
+  await setEncryptedFieldOf('sub-page-alice', 'block_prefs', JSON.stringify(other));
 
   const fresh = mountPage();
   await fresh.settle();
@@ -343,7 +343,7 @@ await test('the directory search renders public profiles', async () => {
   assert.ok(rows[0].querySelector('button'), 'and offers an action');
   // Keep Bob's cookie and profile id for the tests that follow.
   bob.cookie = bobCookie;
-  bob.profileId = db.prepare("SELECT profile_id FROM accounts WHERE firebase_uid = 'sub-page-bob'").get().profile_id;
+  bob.profileId = (await accountOf('sub-page-bob')).profile_id;
 });
 
 await test('asking for a schedule either grants access or records a request', async () => {
@@ -356,7 +356,7 @@ await test('asking for a schedule either grants access or records a request', as
   const status = $('directory-status').textContent;
   assert.match(status, /Request sent|Access granted/, 'the click produced a real result');
 
-  const aliceId = db.prepare("SELECT id FROM accounts WHERE firebase_uid = 'sub-page-alice'").get().id;
+  const aliceId = await accountIdOf('sub-page-alice');
   const grant = db.prepare(
     'SELECT revoked_at FROM grants WHERE viewer_account_id = ? AND revoked_at IS NULL'
   ).get(aliceId);
@@ -374,9 +374,7 @@ await test('asking for a schedule either grants access or records a request', as
 await test('a request from someone else can be accepted in the UI', async () => {
   // Bob asks Alice. Alice has auto-grant off, so it lands as pending for her.
   const pageCookie = getCookieJar();
-  const aliceProfileId = db.prepare(
-    "SELECT profile_id FROM accounts WHERE firebase_uid = 'sub-page-alice'"
-  ).get().profile_id;
+  const aliceProfileId = (await accountOf('sub-page-alice')).profile_id;
   await asOther(bob.cookie, () => window.HTAccount.askForSchedule(aliceProfileId));
   setCookieJar(pageCookie);
   await window.HTAccount.refresh();
@@ -390,8 +388,8 @@ await test('a request from someone else can be accepted in the UI', async () => 
   await settle();
 
   const grant = db.prepare(
-    'SELECT revoked_at FROM grants WHERE owner_account_id = (SELECT id FROM accounts WHERE firebase_uid = ?)'
-  ).get('sub-page-alice');
+    'SELECT revoked_at FROM grants WHERE owner_account_id = ?'
+  ).get(await accountIdOf('sub-page-alice'));
   assert.ok(grant, 'accepting created a grant');
   assert.equal(grant.revoked_at, null);
 });
@@ -404,8 +402,8 @@ await test('the access panel lists viewers and can revoke', async () => {
   revoke.dispatchEvent(new window.Event('click'));
   await settle();
   const grant = db.prepare(
-    'SELECT revoked_at FROM grants WHERE owner_account_id = (SELECT id FROM accounts WHERE firebase_uid = ?)'
-  ).get('sub-page-alice');
+    'SELECT revoked_at FROM grants WHERE owner_account_id = ?'
+  ).get(await accountIdOf('sub-page-alice'));
   assert.ok(grant.revoked_at, 'the grant is stamped revoked');
 });
 
@@ -453,12 +451,12 @@ await test('a request notice offers Accept, and accepting grants access', async 
   await signInAs('sub-page-owner-notice', 'owner.notice@example.org', 'Owner Notice');
   await window.HTAccount.updateProfile({ isPublic: false, autoGrant: false, displayName: 'Owner Notice' });
   await window.HTAccount.refresh();
-  const ownerId = db.prepare("SELECT profile_id FROM accounts WHERE firebase_uid = 'sub-page-owner-notice'").get();
+  const ownerProfileId = (await accountOf('sub-page-owner-notice')).profile_id;
 
   const daveCookie = await signInAs('sub-page-dave-notice', 'dave.notice@example.org', 'Dave Notice');
   await asOther(daveCookie, async () => {
     await window.HTAccount.updateProfile({ displayName: 'Dave Notice' });
-    const ask = await window.HTAccount.askForSchedule(ownerId.profile_id);
+    const ask = await window.HTAccount.askForSchedule(ownerProfileId);
     assert.equal(ask.data.status, 'pending', 'the private owner is asked, not granted');
   });
 
@@ -480,9 +478,8 @@ await test('a request notice offers Accept, and accepting grants access', async 
   await settle();
 
   assert.ok(db.prepare(
-    `SELECT 1 FROM grants WHERE viewer_account_id =
-       (SELECT id FROM accounts WHERE firebase_uid = 'sub-page-dave-notice') AND revoked_at IS NULL`
-  ).get(), 'accepting from the notice created a live grant');
+    'SELECT 1 FROM grants WHERE viewer_account_id = ? AND revoked_at IS NULL'
+  ).get(await accountIdOf('sub-page-dave-notice')), 'accepting from the notice created a live grant');
 });
 
 await test('clearing a notice removes just that row', async () => {
@@ -520,12 +517,12 @@ await test('a stale cached account.js does not leave Clear a silent no-op', asyn
   await settle();
   await window.HTAccount.updateProfile({ isPublic: false, autoGrant: false, displayName: 'Stale Owner' });
   await window.HTAccount.refresh();
-  const ownerId = db.prepare("SELECT profile_id FROM accounts WHERE firebase_uid = 'sub-stale-owner-page'").get();
+  const ownerProfileId = (await accountOf('sub-stale-owner-page')).profile_id;
 
   const daveCookie = await signInAs('sub-stale-dave-page', 'stale.dave@example.org', 'Stale Dave');
   await asOther(daveCookie, async () => {
     await window.HTAccount.updateProfile({ displayName: 'Stale Dave' });
-    await window.HTAccount.askForSchedule(ownerId.profile_id);
+    await window.HTAccount.askForSchedule(ownerProfileId);
   });
 
   const stale = mountPage({ accountSource: staleAccount });
@@ -660,11 +657,11 @@ await test('accepting a request puts the granter on the asker\'s card', async ()
   // whose schedules you can see, so when Carol accepts, it is Dave's card that
   // should gain Carol -- without Dave having to add her by hand.
   const carolCookie = await signInAs('sub-page-carol', 'carol@example.org', 'Carol');
-  const carolId = db.prepare("SELECT id, profile_id FROM accounts WHERE firebase_uid = 'sub-page-carol'").get();
+  const carol = await accountOf('sub-page-carol');
 
   const daveCookie = await signInAs('sub-page-dave', 'dave@example.org', 'Dave');
-  const daveId = db.prepare("SELECT id, profile_id FROM accounts WHERE firebase_uid = 'sub-page-dave'").get();
-  await asOther(daveCookie, () => window.HTAccount.askForSchedule(carolId.profile_id));
+  const dave = await accountOf('sub-page-dave');
+  await asOther(daveCookie, () => window.HTAccount.askForSchedule(carol.profile_id));
 
   // Carol accepts, in her own session.
   setCookieJar(carolCookie);
@@ -677,14 +674,14 @@ await test('accepting a request puts the granter on the asker\'s card', async ()
 
   assert.ok(db.prepare(
     'SELECT 1 FROM grants WHERE viewer_account_id = ? AND owner_account_id = ? AND revoked_at IS NULL'
-  ).get(daveId.id, carolId.id), 'a live grant exists for Dave');
+  ).get(dave.id, carol.id), 'a live grant exists for Dave');
 
   // Dave signs in and should find Carol already on his card.
   await signInAs('sub-page-dave', 'dave@example.org', 'Dave');
   await window.HTAccount.refresh();
   await settle();
   const friends = JSON.parse(window.localStorage.getItem('friends') || '[]');
-  assert.ok(friends.some((f) => f.email === carolId.profile_id), 'Carol is on Dave\'s card automatically');
+  assert.ok(friends.some((f) => f.email === carol.profile_id), 'Carol is on Dave\'s card automatically');
 });
 
 await test('marking notices read clears the new badge', async () => {
@@ -707,7 +704,7 @@ await test('a friend added from the directory carries real course data for the c
   // Frank gets must include the courses, or the card would render an empty
   // schedule even though the grant is valid.
   const erinCookie = await signInAs('sub-page-erin', 'erin@example.org', 'Erin');
-  const erinId = db.prepare("SELECT id, profile_id FROM accounts WHERE firebase_uid = 'sub-page-erin'").get();
+  const erin = await accountOf('sub-page-erin');
   await window.HTAccount.updateProfile({
     isPublic: true,
     autoGrant: true,
@@ -722,7 +719,7 @@ await test('a friend added from the directory carries real course data for the c
   await window.HTAccount.refresh();
   await settle();
 
-  $('directory-search').value = erinId.profile_id;
+  $('directory-search').value = erin.profile_id;
   $('directory-go').dispatchEvent(new window.Event('click'));
   await settle();
   const row = $('directory-results').querySelector('.class-settings__friend-row');
@@ -731,17 +728,17 @@ await test('a friend added from the directory carries real course data for the c
   await settle();
 
   const friends = JSON.parse(window.localStorage.getItem('friends') || '[]');
-  const erin = friends.find((f) => f.email === erinId.profile_id);
+  const erinEntry = friends.find((f) => f.email === erin.profile_id);
   assert.ok(erin, 'Erin is on Frank\'s card');
-  assert.equal(erin.blockPrefs.A.name, 'Chemistry', 'her course reached the card entry');
-  assert.equal(erin.lunchWave, 1, 'her lunch wave reached the card entry');
-  assert.equal(erin.grade, 11, 'her grade reached the card entry');
+  assert.equal(erinEntry.blockPrefs.A.name, 'Chemistry', 'her course reached the card entry');
+  assert.equal(erinEntry.lunchWave, 1, 'her lunch wave reached the card entry');
+  assert.equal(erinEntry.grade, 11, 'her grade reached the card entry');
 });
 
 await test('schedule access buttons stay in sync with friends after removal, re-addition and reload', async () => {
-  const erinId = db.prepare("SELECT profile_id FROM accounts WHERE firebase_uid = 'sub-page-erin'").get().profile_id;
+  const erinProfileId = (await accountOf('sub-page-erin')).profile_id;
   const addButton = (p) => [...p.$('grant-viewing').querySelectorAll('[data-add-friend]')]
-    .find((button) => button.getAttribute('data-add-friend') === erinId);
+    .find((button) => button.getAttribute('data-add-friend') === erinProfileId);
   const assertAdded = (p) => {
     const button = addButton(p);
     assert.ok(button, 'Erin has a schedule access card');
@@ -753,7 +750,7 @@ await test('schedule access buttons stay in sync with friends after removal, re-
   await settle();
   assertAdded(page);
   const friendRow = [...$('friend-rows').querySelectorAll('.class-settings__friend-row')]
-    .find((row) => row.textContent.includes(erinId));
+    .find((row) => row.textContent.includes(erinProfileId));
   friendRow.querySelector('.class-settings__icon-button').click();
   assert.equal(addButton(page).disabled, false, 'removing the friend enables adding them again');
   assert.equal(addButton(page).textContent, 'Add to friends');
@@ -762,7 +759,7 @@ await test('schedule access buttons stay in sync with friends after removal, re-
   await settle();
   assertAdded(page);
   const friends = JSON.parse(window.localStorage.getItem('friends'));
-  assert.equal(friends.filter((friend) => friend.email === erinId).length, 1, 'only one friend entry is saved');
+  assert.equal(friends.filter((friend) => friend.email === erinProfileId).length, 1, 'only one friend entry is saved');
 
   const reloaded = mountPage({ storage: { friends } });
   try {
@@ -778,7 +775,7 @@ await test('schedule access buttons stay in sync with friends after removal, re-
     await fresh.settle();
     assertAdded(fresh);
     assert.ok(JSON.parse(fresh.window.localStorage.getItem('friends'))
-      .some((friend) => friend.email === erinId), 'automatically adopted friends also disable the button');
+      .some((friend) => friend.email === erinProfileId), 'automatically adopted friends also disable the button');
     assert.deepEqual(fresh.errors, [], 'cold load has no runtime errors');
   } finally {
     fresh.dom.window.close();
@@ -876,9 +873,7 @@ await test('the course and lunch still reach the card after a page-level update'
   // A profile update must not wipe the courses the page is holding.
   await window.HTAccount.updateProfile({ displayName: 'Frank F.' });
   await settle();
-  const stored = JSON.parse(db.prepare(
-    "SELECT block_prefs FROM accounts WHERE firebase_uid = 'sub-page-frank'"
-  ).get().block_prefs);
+  const stored = JSON.parse((await accountOf('sub-page-frank')).block_prefs);
   const names = Object.values(stored).map((b) => b.name);
   assert.ok(names.some((n) => n.length), 'the account still holds courses: ' + JSON.stringify(names));
 });

@@ -9,6 +9,15 @@
 --
 -- Upgrading a database created for the old Google sign-in? Run
 -- migration-firebase.sql first, then this file.
+--
+-- Profile data is encrypted by the Worker, so the original `email`, `name`,
+-- `profile_id`, `display_name`, `time_format`, `grade`, `lunch_wave`,
+-- `block_prefs` and `schedule_prefs` columns are legacy: on a migrated
+-- database they hold a placeholder. The real values live in the `_enc`
+-- columns (AES-256-GCM) and, where a field has to be found by an exact match,
+-- in the `_bidx` blind index. `firebase_uid` is legacy for the same reason.
+-- See worker/crypto.js and worker/migration-encrypt-fields.sql. An existing
+-- database gets these columns from that migration, not from this file.
 
 CREATE TABLE IF NOT EXISTS accounts (
   id             INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -26,7 +35,20 @@ CREATE TABLE IF NOT EXISTS accounts (
   block_prefs    TEXT    NOT NULL DEFAULT '{}',
   schedule_prefs TEXT    NOT NULL DEFAULT '{}',
   created_at     INTEGER NOT NULL,
-  updated_at     INTEGER NOT NULL
+  updated_at     INTEGER NOT NULL,
+  firebase_uid_enc  TEXT,
+  firebase_uid_bidx TEXT,
+  email_enc         TEXT,
+  email_bidx        TEXT,
+  name_enc          TEXT,
+  profile_id_enc    TEXT,
+  profile_id_bidx   TEXT,
+  display_name_enc  TEXT,
+  time_format_enc   TEXT,
+  grade_enc         TEXT,
+  lunch_wave_enc    TEXT,
+  block_prefs_enc   TEXT,
+  schedule_prefs_enc TEXT
 );
 
 CREATE TABLE IF NOT EXISTS sessions (
@@ -60,7 +82,8 @@ CREATE TABLE IF NOT EXISTS notices (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
   account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
   kind       TEXT    NOT NULL,
-  payload    TEXT    NOT NULL DEFAULT '{}',
+  payload     TEXT    NOT NULL DEFAULT '{}',
+  payload_enc TEXT,
   created_at INTEGER NOT NULL,
   seen_at    INTEGER
 );
@@ -76,3 +99,12 @@ CREATE INDEX IF NOT EXISTS idx_grants_owner ON grants (owner_account_id);
 CREATE INDEX IF NOT EXISTS idx_requests_to ON requests (to_account_id, status);
 
 CREATE INDEX IF NOT EXISTS idx_notices_account ON notices (account_id, seen_at);
+
+-- Blind indexes. Unique on the two fields that identify an account, so a
+-- lookup can never resolve to two rows. NULL-heavy until every row has been
+-- migrated, which a unique index allows.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_firebase_uid_bidx ON accounts (firebase_uid_bidx);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_profile_id_bidx ON accounts (profile_id_bidx);
+
+CREATE INDEX IF NOT EXISTS idx_accounts_email_bidx ON accounts (email_bidx);
