@@ -35,7 +35,7 @@
       groups.push(group);
     });
     groups.sort(function (a, b) { return b.length - a.length; });
-    var sizes = groups.map(function (group) { return Math.max(180, Math.sqrt(group.length) * 145); });
+    var sizes = groups.map(function (group) { return Math.max(210, Math.sqrt(group.length) * 170); });
     var columns = Math.max(1, Math.ceil(Math.sqrt(groups.length)));
     var rowY = 0;
     for (var start = 0; start < groups.length; start += columns) {
@@ -48,14 +48,16 @@
         var cy = rowY + height / 2;
         group.forEach(function (node, i) {
           var angle = i * 2.399963;
-          var r = Math.sqrt(i) * 75;
+          // Spread further inside the group so labels and the lines between
+          // people do not sit on top of each other.
+          var r = Math.sqrt(i) * 96;
           node.x = cx + Math.cos(angle) * r;
           node.y = cy + Math.sin(angle) * r;
           node.cx = cx; node.cy = cy;
         });
-        columnX += radius * 2 + 120;
+        columnX += radius * 2 + 170;
       });
-      rowY += height + 120;
+      rowY += height + 170;
     }
     // Spatial buckets avoid an all-pairs simulation on a whole school's graph.
     for (var step = 0; step < 180; step++) {
@@ -63,20 +65,20 @@
       nodes.forEach(function (node) {
         node.fx = (node.cx - node.x) * 0.008;
         node.fy = (node.cy - node.y) * 0.008;
-        var key = Math.floor(node.x / 220) + ',' + Math.floor(node.y / 220);
+        var key = Math.floor(node.x / 275) + ',' + Math.floor(node.y / 275);
         if (!buckets.has(key)) buckets.set(key, []);
         buckets.get(key).push(node);
       });
       nodes.forEach(function (node) {
-        var bx = Math.floor(node.x / 220), by = Math.floor(node.y / 220);
+        var bx = Math.floor(node.x / 275), by = Math.floor(node.y / 275);
         for (var gx = bx - 1; gx <= bx + 1; gx++) {
           for (var gy = by - 1; gy <= by + 1; gy++) {
             (buckets.get(gx + ',' + gy) || []).forEach(function (other) {
               if (node === other) return;
               var dx = node.x - other.x, dy = node.y - other.y;
               var distance = Math.max(1, Math.hypot(dx, dy));
-              if (distance > 220) return;
-              var force = Math.min(18, 2800 / (distance * distance));
+              if (distance > 275) return;
+              var force = Math.min(20, 3900 / (distance * distance));
               node.fx += dx / distance * force;
               node.fy += dy / distance * force;
             });
@@ -87,7 +89,11 @@
         var a = byId.get(edge.source), b = byId.get(edge.target);
         var dx = b.x - a.x, dy = b.y - a.y;
         var distance = Math.max(1, Math.hypot(dx, dy));
-        var force = (distance - 135) * 0.035;
+        // Longer lines than before, and noticeably longer when someone hangs
+        // off a group by a single connection, so that person sits apart.
+        var rest = (neighbors.get(edge.source).length === 1 || neighbors.get(edge.target).length === 1)
+          ? 250 : 205;
+        var force = (distance - rest) * 0.035;
         a.fx += dx / distance * force; a.fy += dy / distance * force;
         b.fx -= dx / distance * force; b.fy -= dy / distance * force;
       });
@@ -97,6 +103,17 @@
         node.y += Math.max(-14, Math.min(14, node.fy)) * cooling;
       });
     }
+    // A person with a single connection keeps a little extra distance from it,
+    // which lengthens just their line without breaking the group clustering.
+    nodes.forEach(function (node) {
+      var friends = neighbors.get(node.profileId);
+      if (friends.length !== 1) return;
+      var other = byId.get(friends[0]);
+      var dx = node.x - other.x, dy = node.y - other.y;
+      var distance = Math.max(1, Math.hypot(dx, dy));
+      node.x += dx / distance * 30;
+      node.y += dy / distance * 30;
+    });
     return nodes;
   }
 
@@ -130,8 +147,8 @@
     if (!nodes.length) return;
     var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
     nodes.forEach(function (node) {
-      minX = Math.min(minX, node.x - 95); maxX = Math.max(maxX, node.x + 95);
-      minY = Math.min(minY, node.y - 45); maxY = Math.max(maxY, node.y + 65);
+      minX = Math.min(minX, node.x - 110); maxX = Math.max(maxX, node.x + 110);
+      minY = Math.min(minY, node.y - 55); maxY = Math.max(maxY, node.y + 75);
     });
     fitScale = Math.min(2, 920 / (maxX - minX), 560 / (maxY - minY));
     camera = { scale: fitScale, x: 500 - (minX + maxX) / 2 * fitScale, y: 320 - (minY + maxY) / 2 * fitScale };
@@ -199,9 +216,11 @@
       var dx = b.x - a.x, dy = b.y - a.y, distance = Math.max(1, Math.hypot(dx, dy));
       var ux = dx / distance, uy = dy / distance;
       // Reciprocal grants curve on opposite sides, keeping both arrows visible.
-      var bend = pairs.has(edge.target + ':' + edge.source) ? 28 : 0;
+      var bend = pairs.has(edge.target + ':' + edge.source) ? 34 : 0;
       var path = element('path', {
-        d: 'M' + (a.x + ux * 24) + ',' + (a.y + uy * 24) + ' Q' + ((a.x + b.x) / 2 - uy * bend) + ',' + ((a.y + b.y) / 2 + ux * bend) + ' ' + (b.x - ux * 31) + ',' + (b.y - uy * 31),
+        // The line starts and ends further from each circle, so it clears the
+        // name under a node instead of cutting across it.
+        d: 'M' + (a.x + ux * 34) + ',' + (a.y + uy * 34) + ' Q' + ((a.x + b.x) / 2 - uy * bend) + ',' + ((a.y + b.y) / 2 + ux * bend) + ' ' + (b.x - ux * 44) + ',' + (b.y - uy * 44),
         class: 'social-web__edge', 'marker-end': 'url(#social-web-arrow)'
       });
       path.appendChild(element('title', {}, label(edge.source) + ' shares their schedule with ' + label(edge.target)));
