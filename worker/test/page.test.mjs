@@ -737,6 +737,53 @@ await test('a friend added from the directory carries real course data for the c
   assert.equal(erin.grade, 11, 'her grade reached the card entry');
 });
 
+await test('schedule access buttons stay in sync with friends after removal, re-addition and reload', async () => {
+  const erinId = db.prepare("SELECT profile_id FROM accounts WHERE firebase_uid = 'sub-page-erin'").get().profile_id;
+  const addButton = (p) => [...p.$('grant-viewing').querySelectorAll('[data-add-friend]')]
+    .find((button) => button.getAttribute('data-add-friend') === erinId);
+  const assertAdded = (p) => {
+    const button = addButton(p);
+    assert.ok(button, 'Erin has a schedule access card');
+    assert.equal(button.disabled, true, 'an existing friend cannot be added again');
+    assert.equal(button.textContent, 'Added');
+  };
+
+  await window.HTAccount.refresh();
+  await settle();
+  assertAdded(page);
+  const friendRow = [...$('friend-rows').querySelectorAll('.class-settings__friend-row')]
+    .find((row) => row.textContent.includes(erinId));
+  friendRow.querySelector('.class-settings__icon-button').click();
+  assert.equal(addButton(page).disabled, false, 'removing the friend enables adding them again');
+  assert.equal(addButton(page).textContent, 'Add to friends');
+  addButton(page).click();
+  assertAdded(page);
+  await settle();
+  assertAdded(page);
+  const friends = JSON.parse(window.localStorage.getItem('friends'));
+  assert.equal(friends.filter((friend) => friend.email === erinId).length, 1, 'only one friend entry is saved');
+
+  const reloaded = mountPage({ storage: { friends } });
+  try {
+    await reloaded.settle();
+    assertAdded(reloaded);
+    assert.deepEqual(reloaded.errors, [], 'reload has no runtime errors');
+  } finally {
+    reloaded.dom.window.close();
+  }
+
+  const fresh = mountPage();
+  try {
+    await fresh.settle();
+    assertAdded(fresh);
+    assert.ok(JSON.parse(fresh.window.localStorage.getItem('friends'))
+      .some((friend) => friend.email === erinId), 'automatically adopted friends also disable the button');
+    assert.deepEqual(fresh.errors, [], 'cold load has no runtime errors');
+  } finally {
+    fresh.dom.window.close();
+  }
+});
+
 await test('typing a course name does not lose focus to a re-render', async () => {
   const input = $('block-rows').querySelector('input[type=text]');
   input.focus();
