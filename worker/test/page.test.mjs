@@ -66,6 +66,7 @@ function mountPage(options = {}) {
   w.addEventListener('error', (e) => errors.push(String(e.error || e.message)));
   const sources = {
     'schedule-core.js': readFileSync(repoPath('schedule-core.js'), 'utf8'),
+    'social-web.js': readFileSync(repoPath('social-web.js'), 'utf8'),
     // A stale deploy can pair fresh HTML with the account.js from before it,
     // so a test can substitute that older module.
     'account.js': options.accountSource || readFileSync(repoPath('account.js'), 'utf8'),
@@ -614,7 +615,7 @@ await test('signing in does not reveal a tab that is not selected', async () => 
   await window.HTAccount.refresh();
   await settle(2);
 
-  const visible = ['account', 'friends', 'notices']
+  const visible = ['account', 'friends', 'notices', 'social-web']
     .filter((name) => !$(`panel-${name}`).hidden);
   assert.deepEqual(visible, ['account'], 'only the selected tab is showing');
 });
@@ -782,6 +783,80 @@ await test('schedule access buttons stay in sync with friends after removal, re-
   } finally {
     fresh.dom.window.close();
   }
+});
+
+await test('Social web opt-in persists and the graph supports selection, pan and zoom', async () => {
+  assert.equal($('social-web-opt-in').checked, false, 'participation defaults off');
+  $('social-web-opt-in').checked = true;
+  $('social-web-opt-in').dispatchEvent(new window.Event('change'));
+  await settle();
+  assert.equal((await window.HTAccount.refresh()).socialWebOptIn, true);
+  await settle();
+  const erinCookie = await signInAsShared('sub-page-erin', 'erin@example.org', 'Erin');
+  await asOther(erinCookie, () => window.HTAccount.updateProfile({ socialWebOptIn: true }));
+  // Restore Frank, as the helper above signed the shared jar into Erin.
+  await signInAsShared('sub-page-frank', 'frank@example.org', 'Frank');
+  await window.HTAccount.refresh();
+  $('tab-social-web-btn').click();
+  await settle();
+  assert.equal($('panel-social-web').hidden, false);
+  assert.equal($('panel-account').hidden, true);
+  assert.equal($('page-title').textContent, 'Social web');
+  assert.equal($('social-web-workspace').hidden, false);
+  assert.equal($('social-web-scene').querySelectorAll('.social-web__node').length, 2);
+  const edge = $('social-web-scene').querySelector('.social-web__edge');
+  assert.ok(edge);
+  assert.match(edge.textContent, /Erin shares their schedule with Frank/);
+  assert.equal(edge.getAttribute('marker-end'), 'url(#social-web-arrow)');
+  const me = $('social-web-scene').querySelector('.is-you');
+  me.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+  assert.equal(me.getAttribute('aria-pressed'), 'true');
+  assert.match($('social-web-details').textContent, /Can see: Erin/);
+  const original = $('social-web-scene').getAttribute('transform');
+  $('social-web-zoom-in').click();
+  assert.notEqual($('social-web-scene').getAttribute('transform'), original);
+  $('social-web-fit').click();
+  assert.equal($('social-web-scene').getAttribute('transform'), original);
+  $('social-web-canvas').dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+  assert.notEqual($('social-web-scene').getAttribute('transform'), original, 'keyboard pans');
+  $('social-web-fit').click();
+  const pointer = (type, x, y, id = 1) => {
+    const event = new window.MouseEvent(type, { clientX: x, clientY: y, button: 0, bubbles: true });
+    Object.defineProperty(event, 'pointerId', { value: id });
+    $('social-web-canvas').dispatchEvent(event);
+  };
+  pointer('pointerdown', 0, 0); pointer('pointermove', 70, 30); pointer('pointerup', 70, 30);
+  assert.notEqual($('social-web-scene').getAttribute('transform'), original, 'drag pans');
+  $('social-web-fit').click();
+  pointer('pointerdown', 100, 100, 1); pointer('pointerdown', 200, 100, 2);
+  pointer('pointermove', 300, 100, 2);
+  assert.notEqual($('social-web-zoom').textContent, '100%', 'pinch zooms');
+  pointer('pointerup', 100, 100, 1); pointer('pointerup', 300, 100, 2);
+  const reloaded = mountPage();
+  try {
+    await reloaded.settle();
+    assert.equal(reloaded.$('social-web-opt-in').checked, true, 'consent survives a cold page');
+    assert.equal(reloaded.errors.length, 0);
+  } finally { reloaded.dom.window.close(); }
+  $('social-web-opt-in').checked = false;
+  $('social-web-opt-in').dispatchEvent(new window.Event('change'));
+  await settle();
+  assert.equal($('social-web-scene').querySelector('.is-you'), null, 'opting out removes you');
+  assert.equal($('social-web-scene').querySelector('.social-web__edge'), null, 'incident edge is removed');
+  $('social-web-account-link').click();
+  await settle(2);
+  assert.equal($('panel-account').hidden, false, 'participation link navigates to Account');
+});
+
+await test('force layout gathers connected groups and is deterministic', async () => {
+  const nodes = ['a', 'b', 'c', 'd', 'e', 'f'].map((profileId) => ({ profileId, displayName: profileId }));
+  const edges = [{ source: 'a', target: 'b' }, { source: 'b', target: 'c' }, { source: 'c', target: 'a' },
+    { source: 'd', target: 'e' }, { source: 'e', target: 'f' }, { source: 'f', target: 'd' }];
+  const positions = window.HTSocialWeb.layout(nodes, edges);
+  assert.deepEqual(positions, window.HTSocialWeb.layout(nodes, edges));
+  const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+  assert.ok(distance(positions[0], positions[1]) < distance(positions[0], positions[3]), 'linked people are closer than separate groups');
+  assert.ok(positions.every((node) => Number.isFinite(node.x) && Number.isFinite(node.y)));
 });
 
 await test('typing a course name does not lose focus to a re-render', async () => {

@@ -240,6 +240,7 @@ function publicSelf(row) {
     email: row.email,
     isPublic: Boolean(row.is_public),
     autoGrant: Boolean(row.auto_grant),
+    socialWebOptIn: Boolean(row.social_web_opt_in),
     timeFormat: row.time_format,
     grade: row.grade,
     lunchWave: row.lunch_wave,
@@ -430,6 +431,30 @@ function fromB64url(text) {
 // Handlers
 // ---------------------------------------------------------------------------
 
+/** Only consensual public graph metadata; never courses, email, or grant codes. */
+async function handleSocialWeb(env) {
+  const { results: profiles } = await env.DB.prepare(`
+    SELECT profile_id, display_name, name FROM accounts
+    WHERE social_web_opt_in = 1 ORDER BY profile_id
+  `).all();
+  const { results: grants } = await env.DB.prepare(`
+    SELECT owner.profile_id AS source, viewer.profile_id AS target
+    FROM grants g
+    JOIN accounts owner ON owner.id = g.owner_account_id
+    JOIN accounts viewer ON viewer.id = g.viewer_account_id
+    WHERE g.revoked_at IS NULL
+      AND owner.social_web_opt_in = 1 AND viewer.social_web_opt_in = 1
+    ORDER BY owner.profile_id, viewer.profile_id
+  `).all();
+  const nodes = profiles.map(publicDirectoryEntry);
+  const visible = new Set(nodes.map((node) => node.profileId));
+  return json({
+    nodes,
+    edges: grants.filter((edge) => visible.has(edge.source) && visible.has(edge.target))
+      .map((edge) => ({ source: edge.source, target: edge.target })),
+  }, 200, { 'Cache-Control': 'no-store' });
+}
+
 async function handleMe(request, env, account) {
   if (request.method === 'GET') return json(publicSelf(account));
 
@@ -449,6 +474,10 @@ async function handleMe(request, env, account) {
     if (typeof body.autoGrant === 'boolean') {
       fields.push('auto_grant = ?');
       values.push(body.autoGrant ? 1 : 0);
+    }
+    if (typeof body.socialWebOptIn === 'boolean') {
+      fields.push('social_web_opt_in = ?');
+      values.push(body.socialWebOptIn ? 1 : 0);
     }
     if (typeof body.timeFormat === 'string') {
       fields.push('time_format = ?');
@@ -814,6 +843,7 @@ async function route(request, env, url, path, method) {
   }
 
   if (path === '/api/directory' && method === 'GET') return handleDirectory(request, env);
+  if (path === '/api/social-web' && method === 'GET') return handleSocialWeb(env);
 
   if (path === '/api/requests') {
     if (method === 'GET') return handleListRequests(env, account);

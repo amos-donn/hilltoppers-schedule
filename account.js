@@ -194,6 +194,7 @@
     listRequests: listRequests,
     decideRequest: decideRequest,
     listGrants: listGrants,
+    getSocialWeb: function () { return api('/api/social-web'); },
     revokeGrant: revokeGrant,
     listNotices: listNotices,
     markNoticesSeen: markNoticesSeen,
