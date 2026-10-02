@@ -103,16 +103,77 @@
         node.y += Math.max(-14, Math.min(14, node.fy)) * cooling;
       });
     }
-    // A person with a single connection keeps a little extra distance from it,
-    // which lengthens just their line without breaking the group clustering.
-    nodes.forEach(function (node) {
-      var friends = neighbors.get(node.profileId);
-      if (friends.length !== 1) return;
-      var other = byId.get(friends[0]);
-      var dx = node.x - other.x, dy = node.y - other.y;
-      var distance = Math.max(1, Math.hypot(dx, dy));
-      node.x += dx / distance * 30;
-      node.y += dy / distance * 30;
+    // --- The invisible group barrier --------------------------------------
+    // A group's core is its 2-core: everyone with at least two friends inside
+    // the group. Anyone who only reaches that core through a chain of one-friend
+    // links has no connection to the group itself, so the barrier holds them
+    // outside it, one ring further out per hop. Without this the spring forces
+    // would settle a friend-of-a-friend in the middle of the cluster.
+    groups.forEach(function (group) {
+      var ids = new Set(group.map(function (node) { return node.profileId; }));
+      var core = new Set(ids);
+      var peeled = true;
+      while (peeled) {
+        peeled = false;
+        core.forEach(function (id) {
+          var inside = neighbors.get(id).filter(function (other) { return core.has(other); }).length;
+          if (inside < 2) { core.delete(id); peeled = true; }
+        });
+      }
+      // A plain chain or a pair has no cluster to be outside of, so it keeps
+      // the ordinary spring layout.
+      if (!core.size) return;
+
+      var cx = 0, cy = 0;
+      core.forEach(function (id) { var node = byId.get(id); cx += node.x; cy += node.y; });
+      cx /= core.size; cy /= core.size;
+      var radius = 0;
+      core.forEach(function (id) {
+        var node = byId.get(id);
+        radius = Math.max(radius, Math.hypot(node.x - cx, node.y - cy));
+      });
+      var barrier = radius + 70;
+
+      function hopsFromCore(id) {
+        var seen = new Set([id]);
+        var queue = [[id, 0]];
+        for (var i = 0; i < queue.length; i++) {
+          if (core.has(queue[i][0])) return queue[i][1];
+          neighbors.get(queue[i][0]).forEach(function (other) {
+            if (!seen.has(other)) { seen.add(other); queue.push([other, queue[i][1] + 1]); }
+          });
+        }
+        return 1;
+      }
+
+      var layers = new Map();
+      group.forEach(function (node) {
+        if (core.has(node.profileId)) return;
+        var hop = hopsFromCore(node.profileId);
+        if (!layers.has(hop)) layers.set(hop, []);
+        layers.get(hop).push(node);
+      });
+      Array.from(layers.keys()).sort(function (a, b) { return a - b; }).forEach(function (hop) {
+        var layer = layers.get(hop);
+        // Keep each person on the side of the group they already reached for,
+        // fanned out so same-ring neighbours do not overlap.
+        layer.forEach(function (node) { node.angle = Math.atan2(node.y - cy, node.x - cx); });
+        layer.sort(function (a, b) {
+          return a.angle - b.angle || (a.profileId < b.profileId ? -1 : a.profileId > b.profileId ? 1 : 0);
+        });
+        // A minimum angular gap is what actually spaces a ring out when several
+        // people hang off the same friend.
+        for (var i = 1; i < layer.length; i++) {
+          var gap = layer[i].angle - layer[i - 1].angle;
+          var wanted = 2 * Math.asin(Math.min(1, 62 / (barrier + 45 + (hop - 1) * 88)));
+          if (gap < wanted) layer[i].angle = layer[i - 1].angle + wanted;
+        }
+        layer.forEach(function (node, index) {
+          var r = barrier + 45 + (hop - 1) * 88 + (index % 2) * 34;
+          node.x = cx + Math.cos(node.angle) * r;
+          node.y = cy + Math.sin(node.angle) * r;
+        });
+      });
     });
     return nodes;
   }
@@ -204,6 +265,43 @@
       var p = document.createElement('p'); p.textContent = text; details.appendChild(p);
     });
   }
+  /**
+   * The `d` of one edge's path. The straight line is bent around anyone
+   * standing between the two people, so a connection flows around an icon and
+   * its name instead of passing underneath them.
+   */
+  function edgePath(a, b, blockers, reciprocal) {
+    var dx = b.x - a.x, dy = b.y - a.y, distance = Math.max(1, Math.hypot(dx, dy));
+    var ux = dx / distance, uy = dy / distance;
+    // Reciprocal grants curve on opposite sides, keeping both arrows visible.
+    var bend = reciprocal ? 34 : 0;
+    var posSide = 0, negSide = 0;
+    (blockers || []).forEach(function (other) {
+      if (!other || other === a || other === b) return;
+      var along = ((other.x - a.x) * ux + (other.y - a.y) * uy) / distance;
+      // Near the endpoints the start/end offsets already clear the node.
+      if (along <= 0.1 || along >= 0.9) return;
+      var px = a.x + ux * along * distance, py = a.y + uy * along * distance;
+      var overlap = 58 - Math.hypot(other.x - px, other.y - py);
+      if (overlap <= 0) return;
+      if ((other.x - px) * -uy + (other.y - py) * ux >= 0) posSide += overlap;
+      else negSide += overlap;
+    });
+    if (posSide || negSide) {
+      // Bend away from the busier side, far enough for the curve's apex to
+      // clear whatever is standing there (the apex is half the bend).
+      var away = posSide >= negSide ? -1 : 1;
+      var worse = Math.max(posSide, negSide);
+      var better = Math.min(posSide, negSide);
+      bend += away * Math.min(190, 2 * Math.max(45, worse - better / 2));
+    }
+    // The line starts and ends away from each circle, so it clears the name
+    // under a node instead of cutting across it.
+    return 'M' + (a.x + ux * 34) + ',' + (a.y + uy * 34)
+      + ' Q' + ((a.x + b.x) / 2 - uy * bend) + ',' + ((a.y + b.y) / 2 + ux * bend)
+      + ' ' + (b.x - ux * 44) + ',' + (b.y - uy * 44);
+  }
+
   function render(data) {
     graph = data;
     positions = new Map(layout(data.nodes, data.edges).map(function (node) { return [node.profileId, node]; }));
@@ -213,14 +311,8 @@
     data.edges.forEach(function (edge) {
       var a = positions.get(edge.source), b = positions.get(edge.target);
       if (!a || !b || a === b) return;
-      var dx = b.x - a.x, dy = b.y - a.y, distance = Math.max(1, Math.hypot(dx, dy));
-      var ux = dx / distance, uy = dy / distance;
-      // Reciprocal grants curve on opposite sides, keeping both arrows visible.
-      var bend = pairs.has(edge.target + ':' + edge.source) ? 34 : 0;
       var path = element('path', {
-        // The line starts and ends further from each circle, so it clears the
-        // name under a node instead of cutting across it.
-        d: 'M' + (a.x + ux * 34) + ',' + (a.y + uy * 34) + ' Q' + ((a.x + b.x) / 2 - uy * bend) + ',' + ((a.y + b.y) / 2 + ux * bend) + ' ' + (b.x - ux * 44) + ',' + (b.y - uy * 44),
+        d: edgePath(a, b, Array.from(positions.values()), pairs.has(edge.target + ':' + edge.source)),
         class: 'social-web__edge', 'marker-end': 'url(#social-web-arrow)'
       });
       path.appendChild(element('title', {}, label(edge.source) + ' shares their schedule with ' + label(edge.target)));
@@ -347,5 +439,5 @@
     else return;
     event.preventDefault();
   });
-  window.HTSocialWeb = { setAccount: setAccount, refresh: refresh, layout: layout };
+  window.HTSocialWeb = { setAccount: setAccount, refresh: refresh, layout: layout, edgePath: edgePath };
 })();
