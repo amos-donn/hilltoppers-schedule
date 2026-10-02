@@ -846,6 +846,49 @@ await test('force layout gathers connected groups and is deterministic', async (
   assert.ok(positions.every((node) => Number.isFinite(node.x) && Number.isFinite(node.y)));
 });
 
+await test('the invisible group barrier keeps one-friend people outside the cluster', async () => {
+  // A friend group (a, b and c all mutually linked), one person hanging off it
+  // by a single connection (d), and one more hanging off that person (e), who
+  // has no friend in the group at all.
+  const nodes = ['a', 'b', 'c', 'd', 'e'].map((profileId) => ({ profileId, displayName: profileId }));
+  const edges = [
+    { source: 'a', target: 'b' }, { source: 'b', target: 'c' }, { source: 'c', target: 'a' },
+    { source: 'a', target: 'd' }, { source: 'd', target: 'e' },
+  ];
+  const positions = window.HTSocialWeb.layout(nodes, edges);
+  const by = (id) => positions.find((p) => p.profileId === id);
+  const core = ['a', 'b', 'c'].map(by);
+  const cx = core.reduce((sum, node) => sum + node.x, 0) / core.length;
+  const cy = core.reduce((sum, node) => sum + node.y, 0) / core.length;
+  const coreRadius = Math.max.apply(null, core.map((node) => Math.hypot(node.x - cx, node.y - cy)));
+  const leaf = Math.hypot(by('d').x - cx, by('d').y - cy);
+  const chained = Math.hypot(by('e').x - cx, by('e').y - cy);
+  assert.ok(leaf > coreRadius + 60, 'a one-friend person sits outside the group, not inside it');
+  assert.ok(chained > leaf + 80, 'and a friend of that person sits a further ring out');
+  assert.deepEqual(window.HTSocialWeb.layout(nodes, edges), positions, 'the layout stays deterministic');
+});
+
+await test('edges flow around the icons between them instead of under them', async () => {
+  const a = { x: 0, y: 0 };
+  const b = { x: 240, y: 0 };
+  const blocker = { x: 120, y: 6 };
+  assert.match(window.HTSocialWeb.edgePath(a, b, [a, b], false), /Q120,0 /,
+    'an unobstructed edge is a straight line');
+
+  const bent = window.HTSocialWeb.edgePath(a, b, [a, b, blocker], false);
+  const numbers = bent.match(/M([-\d.]+),([-\d.]+) Q([-\d.]+),([-\d.]+) ([-\d.]+),([-\d.]+)/).slice(1).map(Number);
+  const [ax, ay, qx, qy, bx, by] = numbers;
+  assert.ok(Math.abs(qy) > 40, 'the control point bends clear of the blocking icon');
+
+  let closest = Infinity;
+  for (let t = 0.15; t <= 0.85; t += 0.05) {
+    const x = (1 - t) * (1 - t) * ax + 2 * (1 - t) * t * qx + t * t * bx;
+    const y = (1 - t) * (1 - t) * ay + 2 * (1 - t) * t * qy + t * t * by;
+    closest = Math.min(closest, Math.hypot(x - blocker.x, y - blocker.y));
+  }
+  assert.ok(closest > 40, 'the drawn line keeps clear of the icon along its whole length');
+});
+
 await test('typing a course name does not lose focus to a re-render', async () => {
   const input = $('block-rows').querySelector('input[type=text]');
   input.focus();
