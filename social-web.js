@@ -235,6 +235,24 @@
     var node = positions.get(id);
     return node ? node.displayName || node.profileId : id;
   }
+
+  /**
+   * Is this person showing their ID in the graph?
+   *
+   * A private profile appears as "Anonymous". Printing its profile ID next to
+   * that would hand over the one thing anonymity was for: the ID is a bearer
+   * handle, so anyone reading it could go and request their schedule. Showing
+   * a name is fine -- that is what the student chose -- but the ID is not, so a
+   * private profile shows neither.
+   *
+   * Your own ID is always yours to see, and public profiles already publish it.
+   */
+  function showsProfileId(id) {
+    var node = positions.get(id);
+    if (!node) return false;
+    if (account && id === account.profileId) return true;
+    return node.displayName !== 'Anonymous';
+  }
   function select(id) {
     selected = positions.has(id) ? id : '';
     picker.value = selected;
@@ -256,7 +274,8 @@
     details.replaceChildren();
     if (!selected) { details.textContent = 'Select a person to explore their connections.'; return; }
     var heading = document.createElement('strong');
-    heading.textContent = label(selected) + (account && selected === account.profileId ? ' (you)' : '') + ' · ' + selected;
+    heading.textContent = label(selected) + (account && selected === account.profileId ? ' (you)' : '')
+      + (showsProfileId(selected) ? ' · ' + selected : '');
     details.appendChild(heading);
     var giving = graph.edges.filter(function (edge) { return edge.source === selected; }).map(function (edge) { return label(edge.target); });
     var receiving = graph.edges.filter(function (edge) { return edge.target === selected; }).map(function (edge) { return label(edge.source); });
@@ -324,7 +343,7 @@
       var group = element('g', {
         transform: 'translate(' + node.x + ' ' + node.y + ')',
         class: 'social-web__node' + (isMe ? ' is-you' : ''),
-        role: 'button', tabindex: '0', 'aria-label': label(node.profileId) + ' (' + node.profileId + ')' + (isMe ? ', you' : ''), 'aria-pressed': 'false',
+        role: 'button', tabindex: '0', 'aria-label': label(node.profileId) + (showsProfileId(node.profileId) ? ' (' + node.profileId + ')' : '') + (isMe ? ', you' : ''), 'aria-pressed': 'false',
         'data-profile-id': node.profileId
       });
       group.appendChild(element('circle', { r: 24 }));
@@ -332,7 +351,7 @@
       group.appendChild(element('text', { class: 'social-web__initials', y: 5 }, initials));
       var name = label(node.profileId);
       group.appendChild(element('text', { class: 'social-web__label', y: 45 }, (name.length > 23 ? name.slice(0, 22) + '…' : name) + (isMe ? ' · you' : '')));
-      group.appendChild(element('title', {}, name + ' · ' + node.profileId));
+      group.appendChild(element('title', {}, name + (showsProfileId(node.profileId) ? ' · ' + node.profileId : '')));
       group.addEventListener('click', function (event) { if (!event.detail) select(selected === node.profileId ? '' : node.profileId); });
       group.addEventListener('keydown', function (event) {
         if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); select(node.profileId); }

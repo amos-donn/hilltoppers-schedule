@@ -786,6 +786,56 @@ await test('schedule access buttons stay in sync with friends after removal, re-
   }
 });
 
+await test('a private profile in the Social web shows neither name nor ID', async () => {
+  // A profile ID is a bearer handle, so printing one beside "Anonymous" hands
+  // over exactly what the student was hiding: anyone could go request their
+  // schedule with it.
+  await signInAsShared('sub-page-anon', 'anon@example.org', 'Secret Person');
+  await window.HTAccount.updateProfile({ isPublic: false });
+  const anonProfile = (await window.HTAccount.refresh()).profileId;
+
+  // Read the graph back as somebody else.
+  const viewerCookie = await signInAsShared('sub-page-viewer', 'viewer@example.org', 'Viewer');
+  await window.HTAccount.refresh();
+  $('tab-social-web-btn').click();
+  await settle();
+
+  const data = await window.HTAccount.getSocialWeb();
+  assert.equal(data.ok, true, 'the graph loaded');
+  const node = data.data.nodes.find((n) => n.profileId === anonProfile);
+  assert.ok(node, 'the private profile is still in the graph');
+  assert.equal(node.displayName, 'Anonymous', 'and shown as Anonymous');
+
+  const group = $('social-web-scene').querySelector('[data-profile-id="' + anonProfile + '"]');
+  assert.ok(group, 'their circle is drawn');
+  assert.equal(group.getAttribute('aria-label').includes(anonProfile), false,
+    'the accessible name must not carry the ID');
+  assert.equal(group.querySelector('title').textContent.includes(anonProfile), false,
+    'nor may the hover tooltip');
+
+  group.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+  await settle();
+  const shown = $('social-web-details').textContent;
+  assert.equal(shown.includes(anonProfile), false,
+    'clicking an Anonymous profile must not reveal their ID: ' + shown);
+  assert.match(shown, /Anonymous/, 'it says Anonymous instead');
+
+  // A public profile still shows its ID, because that is what the student
+  // chose to publish.
+  await signInAsShared('sub-page-open', 'open@example.org', 'Open Person');
+  await window.HTAccount.refresh();
+  const openProfile = (await window.HTAccount.refresh()).profileId;
+  await signInAsShared('sub-page-viewer', 'viewer@example.org', 'Viewer');
+  await window.HTAccount.refresh();
+  $('social-web-refresh').click();
+  await settle();
+
+  const openGroup = $('social-web-scene').querySelector('[data-profile-id="' + openProfile + '"]');
+  assert.ok(openGroup, 'the public profile is drawn');
+  assert.ok(openGroup.getAttribute('aria-label').includes(openProfile),
+    'a public profile still publishes its ID');
+});
+
 await test('the Social web includes everyone by default and supports selection, pan and zoom', async () => {
   const erinCookie = await signInAsShared('sub-page-erin', 'erin@example.org', 'Erin');
   void erinCookie;
