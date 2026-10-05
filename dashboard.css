@@ -682,12 +682,14 @@ body, html {
   z-index: 60;
 }
 
-/* Locking scroll under the tour stops the page sliding while a step is
-   positioned against a fixed element. */
-.tour-open,
-.tour-open body {
-  overflow: hidden;
-}
+/* The page is deliberately NOT scroll-locked while the tour runs.
+
+   Setting `overflow: hidden` on the root makes the document element the scroll
+   container, which breaks two things at once: `scrollIntoView` stops being able
+   to move the page, so a step could not centre its target; and the sidebar is
+   `position: sticky` against the normal scroller, so locking the scroll made it
+   jump up the screen. Instead the tour centres each target and re-places itself
+   if the page scrolls underneath. */
 
 .tour__scrim {
   position: absolute;
