@@ -375,6 +375,47 @@ await test('the directory lists public profiles only, without courses or email',
   assert.ok(!('blockPrefs' in r.body.profiles[0]), 'the directory must not expose courses');
 });
 
+await test('a private profile is reachable by its ID but never by name', async () => {
+  const dirEnv = makeEnv();
+  const seeker = await signIn(dirEnv, { sub: 'seeker', email: 'seeker@x.org', name: 'Seeker' });
+  const hidden = await signIn(dirEnv, { sub: 'hidden-one', email: 'hidden@x.org', name: 'Hidden One' });
+  await call(dirEnv, '/api/me', { cookie: hidden, method: 'PATCH', body: { isPublic: false } });
+  const hiddenMe = (await call(dirEnv, '/api/me', { cookie: hidden })).body;
+
+  // A profile ID is a bearer handle: holding it already lets you request the
+  // schedule, so the ID must resolve even when the profile is private.
+  const byId = await call(dirEnv, `/api/directory?q=${encodeURIComponent(hiddenMe.profileId)}`, { cookie: seeker });
+  const found = byId.body.profiles.find((p) => p.profileId === hiddenMe.profileId);
+  assert.ok(found, 'an exact profile ID finds a private profile');
+
+  // But the name must not come with it. The student asked to be anonymous, and
+  // handing their name to whoever has the ID defeats that.
+  assert.equal(found.displayName, 'Anonymous',
+    'the ID resolves without giving away the name behind it');
+  assert.ok(!byId.text.includes('Hidden One'), 'the private name is not in the response at all');
+
+  // Name and partial searches are discovery, so a private profile stays out.
+  for (const q of ['Hidden', 'hidden', 'idden', 'one']) {
+    const r = await call(dirEnv, `/api/directory?q=${encodeURIComponent(q)}`, { cookie: seeker });
+    const ids = r.body.profiles.map((p) => p.profileId);
+    assert.ok(!ids.includes(hiddenMe.profileId),
+      `a name search for "${q}" must not surface a private profile`);
+    assert.ok(!r.text.includes('Hidden One'), `no private name leaks for "${q}"`);
+  }
+
+  // A public profile still resolves by ID and by name, and still shows its name.
+  const open = await signIn(dirEnv, { sub: 'open-one', email: 'open@x.org', name: 'Open One' });
+  await call(dirEnv, '/api/me', { cookie: open, method: 'PATCH', body: { isPublic: true } });
+  const openMe = (await call(dirEnv, '/api/me', { cookie: open })).body;
+  const byName = await call(dirEnv, '/api/directory?q=Open%20One', { cookie: seeker });
+  assert.ok(byName.body.profiles.some((p) => p.profileId === openMe.profileId),
+    'a public profile is still findable by name');
+  const byOpenId = await call(dirEnv, `/api/directory?q=${encodeURIComponent(openMe.profileId)}`, { cookie: seeker });
+  assert.equal(
+    byOpenId.body.profiles.find((p) => p.profileId === openMe.profileId).displayName,
+    'Open One', 'and a public profile shows its name by ID too');
+});
+
 await test('revoking access: a viewer loses the schedule and gets a notice', async () => {
   const ask = await call(env, '/api/requests', {
     method: 'POST',

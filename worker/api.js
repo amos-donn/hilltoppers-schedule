@@ -1184,25 +1184,39 @@ async function handleDirectory(request, env) {
   const url = new URL(request.url);
   const q = (url.searchParams.get('q') || '').trim().toLowerCase();
 
-  // Only public profiles are listed, and the listing carries handle and name
-  // only. Courses are never part of a directory result.
+  // A profile ID is a bearer handle. Whoever holds it can already reach that
+  // student's schedule by asking for it, so hiding the name behind it would
+  // protect nothing while making the ID useless. So: an exact profile-ID
+  // lookup answers for public and private profiles alike.
   //
-  // is_public stays plaintext so this stays a SQL WHERE clause, but the match
-  // cannot be: LIKE over AES-GCM ciphertext is meaningless, and a blind index
-  // only answers exact matches. So the public rows are decrypted here and
-  // matched in JS, which is what keeps the search box working. At the scale of
-  // one school the whole public table is small.
-  const { results: rows } = await env.DB.prepare(
-    'SELECT * FROM accounts WHERE is_public = 1'
-  ).all();
+  // Searching by name is the opposite. That is discovery, and a private
+  // profile exists precisely to opt out of being discovered, so a name search
+  // only ever returns public profiles.
+  //
+  // Both rules are applied after decryption rather than in SQL: is_public stays
+  // plaintext, but LIKE over AES-GCM ciphertext is meaningless and a blind index
+  // only answers exact matches. At the scale of one school the whole table is
+  // small, so decrypting and matching in JS keeps the search box working.
+  const { results: rows } = await env.DB.prepare('SELECT * FROM accounts').all();
 
   const matches = [];
   for (const row of rows || []) {
     const account = await decryptAccount(env, row);
+    const profileId = account.profile_id;
     const displayName = account.display_name || account.name || '';
-    const haystack = `${account.profile_id} ${displayName}`.toLowerCase();
-    if (q && !haystack.includes(q)) continue;
-    matches.push({ profileId: account.profile_id, displayName, sortKey: displayName.toLowerCase() });
+    const exactId = q && profileId.toLowerCase() === q;
+    // Private profiles are reachable by their ID alone, never by name.
+    if (!account.is_public && !exactId) continue;
+
+    if (q && !exactId) {
+      const haystack = `${profileId} ${displayName}`.toLowerCase();
+      if (!haystack.includes(q)) continue;
+    }
+    // Holding someone's ID does not entitle you to their name. A private
+    // profile stays anonymous even for the person who holds its ID: the ID
+    // resolves, the name does not.
+    const shownName = account.is_public ? displayName : 'Anonymous';
+    matches.push({ profileId, displayName: shownName, sortKey: shownName.toLowerCase() });
   }
 
   matches.sort((a, b) => (q
