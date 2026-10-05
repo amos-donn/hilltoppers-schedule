@@ -994,6 +994,105 @@ await test('friends are reordered by dragging a row onto another', async () => {
 });
 
 
+await test('a step centres its target and does not scroll-lock the page', async () => {
+  // Arriving at a step while scrolled down used to leave the spotlight
+  // framing stale coordinates, because `block: 'nearest'` is a no-op when the
+  // element is already partly visible. Centring is what fixes it, and it only
+  // works because the page is not scroll-locked.
+  const t = mountPage({ storage: { settingsTourSeen: 1 } });
+  await signInAs('sub-tour-scroll', 'scroll@example.org', 'Scroll');
+  await t.window.HTAccount.refresh();
+  await t.settle();
+
+  const target = t.$('profile-id');
+  const centred = [];
+  target.scrollIntoView = function (options) { centred.push(options); };
+
+  t.window.HTTour.start();
+  t.$('tour-next').click(); // onto the profile-id step
+
+  assert.equal(centred.length, 1, 'the step asked the page to scroll');
+  assert.equal(centred[0].block, 'center',
+    'and asked to centre, not to scroll the minimum (which does nothing)');
+  assert.equal(centred[0].behavior, 'instant',
+    'a smooth scroll would be measured mid-flight and land in the wrong place');
+
+  // Locking the root scroller is what stopped scrollIntoView working and made
+  // the sticky sidebar jump, so assert it is not locked.
+  const rootOverflow = t.window.getComputedStyle(t.window.document.documentElement).overflow;
+  assert.notEqual(rootOverflow, 'hidden', 'the page is not scroll-locked while the tour runs');
+
+  t.window.HTTour.stop();
+});
+
+await test('no step card covers the control it is pointing at', async () => {
+  // jsdom reports every rect as zero, so an overlap assertion against real
+  // numbers would pass no matter what. Give the elements honest geometry --
+  // including a narrow window, which is when the placement fallback actually
+  // misbehaves -- and then check the card is clear of the spotlight.
+  const t = mountPage({ storage: { settingsTourSeen: 1 } });
+
+  const VIEWPORT = { w: 1280, h: 900 }; // desktop: sides fit, so clamping is not the path
+  Object.defineProperty(t.window, 'innerWidth', { value: VIEWPORT.w, configurable: true });
+  Object.defineProperty(t.window, 'innerHeight', { value: VIEWPORT.h, configurable: true });
+
+  const card = () => t.$('tour').querySelector('.tour__card');
+  Object.defineProperty(t.window.HTMLElement.prototype, 'offsetWidth', {
+    get() { return this.classList.contains('tour__card') ? 300 : 0; }, configurable: true,
+  });
+  Object.defineProperty(t.window.HTMLElement.prototype, 'offsetHeight', {
+    get() { return this.classList.contains('tour__card') ? 170 : 0; }, configurable: true,
+  });
+
+  // The sidebar sits hard against the left edge, 232px wide, so its tabs are
+  // the one target with no room on either side.
+  const sidebar = t.$('tablist').getBoundingClientRect.bind(t.$('tablist'));
+  t.$('tablist').getBoundingClientRect = () => ({ left: 0, top: 120, width: 232, height: 400, right: 232, bottom: 520 });
+  t.$('tab-friends-btn').getBoundingClientRect = () => {
+    const base = sidebar();
+    return { left: 14, top: base.top, width: 204, height: 44, right: 218, bottom: base.top + 44 };
+  };
+  t.$('directory-search').getBoundingClientRect = () => ({ left: 20, top: 300, width: 200, height: 40, right: 220, bottom: 340 });
+
+  await signInAs('sub-tour-overlap', 'overlap@example.org', 'Overlap');
+  await t.window.HTAccount.refresh();
+  await t.settle();
+  t.window.HTTour.start();
+
+  const rectOf = (node) => ({
+    left: Number.parseFloat(node.style.left),
+    top: Number.parseFloat(node.style.top),
+    width: Number.parseFloat(node.style.width),
+    height: Number.parseFloat(node.style.height),
+  });
+  const cardRect = () => {
+    const c = card();
+    return {
+      left: Number.parseFloat(c.style.left), top: Number.parseFloat(c.style.top),
+      width: 300, height: 170,
+    };
+  };
+  const overlaps = (a, b) => a.left < b.left + b.width && a.left + a.width > b.left
+    && a.top < b.top + b.height && a.top + a.height > b.top;
+
+  const total = t.window.HTTour.steps().length;
+  for (let i = 0; i < total; i++) {
+    const title = t.$('tour-title').textContent;
+    const hole = t.$('tour').querySelector('.tour__hole');
+    if (!hole.hidden) {
+      assert.ok(!overlaps(cardRect(), rectOf(hole)),
+        'step "' + title + '" must not cover the control it points at');
+    }
+    // The card must also stay on screen.
+    const c = cardRect();
+    assert.ok(c.left >= 0 && c.top >= 0
+      && c.left + c.width <= VIEWPORT.w && c.top + c.height <= VIEWPORT.h,
+      'step "' + title + '" keeps its card fully on screen');
+    t.$('tour-next').click();
+  }
+  t.window.HTTour.stop();
+});
+
 await test('no uncaught errors occurred across the whole run', async () => {
   assert.equal(errors.length, 0, errors.join(' | '));
 });
@@ -1103,13 +1202,17 @@ await test('the tour dims the page and spotlights the thing it points at', async
   assert.ok(Number.parseFloat(hole.style.width) > 0, 'it has a width');
   assert.ok(Number.parseFloat(hole.style.left) >= 0, 'it has a left edge');
   assert.equal(t.$('tour').classList.contains('tour--on'), true, 'the overlay is marked on');
-  assert.ok(t.window.document.documentElement.classList.contains('tour-open'),
-    'the page behind the tour cannot scroll');
+  // The page behind the tour is deliberately not scroll-locked; see the
+  // centring test for why locking it broke both scrolling and the sidebar.
+  assert.notEqual(
+    t.window.getComputedStyle(t.window.document.documentElement).overflow,
+    'hidden',
+    'the page behind the tour can still scroll, so a step can centre its target');
 
   t.window.HTTour.stop();
   assert.equal(hole.hidden, true, 'the spotlight goes away with the tour');
-  assert.equal(t.window.document.documentElement.classList.contains('tour-open'), false,
-    'and the page scrolls again');
+  assert.equal(t.$('tour').classList.contains('tour--on'), false,
+    'and the overlay is marked off');
 });
 
 await test('a step that switches tab moves the page to it first', async () => {

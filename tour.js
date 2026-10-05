@@ -70,7 +70,11 @@
       target: 'tab-friends-btn',
       title: 'Friends',
       body: 'Everyone you can see the schedule of lives here, in the order they show on the card. Drag the grip to reorder.',
-      placement: 'right'
+      // Below, not beside. This tab is in the 232px sidebar hard against the
+      // left edge, so on a narrow window no side fits and the fallback clamp
+      // drops the card straight back over the tab it is explaining. Underneath
+      // there is always room, because the nav runs down the whole column.
+      placement: 'bottom'
     },
     {
       id: 'add-friend',
@@ -229,6 +233,11 @@
 
     document.addEventListener('keydown', onKeydown, true);
     window.addEventListener('resize', position);
+    // The page is not scroll-locked, so if the visitor scrolls or the browser
+    // restores a scroll position, the spotlight has to follow rather than stay
+    // behind on the old coordinates.
+    window.addEventListener('scroll', reposition, true);
+    window.addEventListener('orientationchange', position);
 
     built = true;
   }
@@ -374,23 +383,74 @@
           ? ['top', 'bottom', 'right', 'left']
           : ['bottom', 'top', 'right', 'left'];
 
+    var x = null;
+    var y = null;
+    var placed = false;
     for (var i = 0; i < options.length; i++) {
       var side = options[i];
-      var x = null;
-      var y = null;
       if (side === 'right') { x = left + width + gap; y = top + height / 2 - ch / 2; }
       else if (side === 'left') { x = left - gap - cw; y = top + height / 2 - ch / 2; }
       else if (side === 'top') { x = left + width / 2 - cw / 2; y = top - gap - ch; }
       else { x = left + width / 2 - cw / 2; y = top + height + gap; }
 
-      if (x >= 8 && x + cw <= vw - 8 && y >= 8 && y + ch <= vh - 8) break;
-      // Nothing fit; keep the last candidate and clamp it below.
-      x = Math.max(8, Math.min(x, vw - cw - 8));
-      y = Math.max(8, Math.min(y, vh - ch - 8));
+      if (x >= 8 && x + cw <= vw - 8 && y >= 8 && y + ch <= vh - 8) { placed = true; break; }
     }
 
-    card.style.left = Math.round(Math.max(8, Math.min(x, vw - cw - 8))) + 'px';
-    card.style.top = Math.round(Math.max(8, Math.min(y, vh - ch - 8))) + 'px';
+    if (!placed) {
+      // Nothing fits beside the target -- a narrow window against the sidebar
+      // tabs, or a target wider than the viewport. Clamping alone is not
+      // enough: it parks the card at the top-left corner, which for a target
+      // near the edge means the card covers the very control it is explaining.
+      // So clamp, then check, and fall back to underneath or above, where there
+      // is always room because that is the direction the page scrolls.
+      x = clamp(x, vw, cw);
+      y = clamp(y, vh, ch);
+      if (covers(x, y, cw, ch, left, top, width, height)) {
+        var below = top + height + gap;
+        var above = top - gap - ch;
+        if (below + ch <= vh - 8) { y = below; }
+        else if (above >= 8) { y = above; }
+        // If neither fits vertically the card is taller than the viewport, and
+        // there is nowhere better to put it than the clamped corner.
+      }
+    }
+
+    card.style.left = Math.round(clamp(x, vw, cw)) + 'px';
+    card.style.top = Math.round(clamp(y, vh, ch)) + 'px';
+  }
+
+  /** Keep a coordinate inside the viewport with an 8px margin. */
+  function clamp(value, viewport, size) {
+    return Math.max(8, Math.min(value, viewport - size - 8));
+  }
+
+  /** Do two rectangles overlap? Used to keep the card off its own subject. */
+  function covers(x, y, cw, ch, left, top, width, height) {
+    return x < left + width && x + cw > left && y < top + height && y + ch > top;
+  }
+
+  /**
+   * Centre the step's target in the viewport before measuring it.
+   *
+   * This has to be `block: 'center'`, not `'nearest'`. `nearest` is a no-op
+   * whenever the element is already partly on screen, so arriving at a step
+   * while scrolled halfway down the page left the spotlight framing whatever
+   * happened to be at those coordinates. Centring also means the card has room
+   * on the side it prefers, which `nearest` cannot promise.
+   *
+   * `behavior: 'instant'` on purpose: a smooth scroll animates over several
+   * frames, and the rect would be measured mid-flight, so the spotlight would
+   * land somewhere the target is about to leave.
+   */
+  function centreTarget(target) {
+    if (!target || typeof target.scrollIntoView !== 'function') return;
+    try {
+      target.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' });
+    } catch (e) {
+      // Older engines reject `behavior: 'instant'`. Falling back still centres,
+      // which is the property that matters.
+      target.scrollIntoView({ block: 'center', inline: 'nearest' });
+    }
   }
 
   function position() {
@@ -399,13 +459,29 @@
     if (!step) return;
     showTabFor(step);
     var target = step.target ? document.getElementById(step.target) : null;
-    // scrollIntoView is a no-op in jsdom and can be absent on older engines, so
-    // a step must not depend on it existing.
-    if (target && typeof target.scrollIntoView === 'function') {
-      target.scrollIntoView({ block: 'nearest' });
-    }
+    centreTarget(target);
+    placeNow(target);
+  }
+
+  /**
+   * Re-measure and re-place without scrolling.
+   *
+   * This is deliberately separate from `position`. If a scroll event re-centred
+   * the target, the scroll would fire another event, and the tour would fight
+   * the visitor for the scroll position forever.
+   */
+  function placeNow(target) {
+    var step = activeSteps[current];
+    if (!step) return;
     var rect = target ? target.getBoundingClientRect() : { left: 0, top: 0, width: 0, height: 0 };
     place(els.hole, els.card, step, rect);
+  }
+
+  function reposition() {
+    if (!running) return;
+    var step = activeSteps[current];
+    if (!step) return;
+    placeNow(step.target ? document.getElementById(step.target) : null);
   }
 
   function render() {
@@ -439,7 +515,6 @@
     current = 0;
     els.root.hidden = false;
     els.root.classList.add('tour--on');
-    document.documentElement.classList.add('tour-open');
     render();
     // The card itself takes focus so the arrow keys work immediately, rather
     // than making the visitor click Next first.
@@ -456,7 +531,6 @@
       els.hole.hidden = true;
       els.centered.hidden = true;
     }
-    document.documentElement.classList.remove('tour-open');
     if (completed) remember();
     // Hand focus back so a keyboard user is not dropped at the top of the page.
     if (lastFocus && document.contains(lastFocus)) lastFocus.focus();
