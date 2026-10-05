@@ -68,6 +68,7 @@ function mountPage(options = {}) {
   const sources = {
     'schedule-core.js': readFileSync(repoPath('schedule-core.js'), 'utf8'),
     'social-web.js': readFileSync(repoPath('social-web.js'), 'utf8'),
+    'tour.js': readFileSync(repoPath('tour.js'), 'utf8'),
     // A stale deploy can pair fresh HTML with the account.js from before it,
     // so a test can substitute that older module.
     'account.js': options.accountSource || readFileSync(repoPath('account.js'), 'utf8'),
@@ -90,7 +91,10 @@ function mountPage(options = {}) {
   };
 }
 
-const page = mountPage();
+// The shared page marks the tour as already seen. Otherwise the first sign-in
+// below would throw the tour overlay over the page, and its scrim would eat the
+// clicks every later test depends on. The tour gets its own pages further down.
+const page = mountPage({ storage: { settingsTourSeen: 1 } });
 const { window, errors } = page;
 const $ = page.$;
 const settle = page.settle;
@@ -989,8 +993,214 @@ await test('friends are reordered by dragging a row onto another', async () => {
   assert.equal(dragPage.errors.length + reloaded.errors.length, 0, 'no errors in either page');
 });
 
+
 await test('no uncaught errors occurred across the whole run', async () => {
   assert.equal(errors.length, 0, errors.join(' | '));
+});
+
+// ---------------------------------------------------------------------------
+// Onboarding tour
+//
+// Each test gets its own page so the overlay cannot leak into the next one,
+// and so a tour that auto-starts on sign-in is exercised the way a new student
+// would meet it.
+// ---------------------------------------------------------------------------
+
+await test('signing in for the first time starts the tour', async () => {
+  const fresh = mountPage();
+  await signInAs('sub-tour-new', 'newbie@example.org', 'Newbie');
+  await fresh.window.HTAccount.refresh();
+  await fresh.settle();
+
+  assert.ok(fresh.window.HTTour, 'the tour module loaded');
+  assert.equal(fresh.window.HTTour.isRunning(), true, 'the tour opened itself');
+  assert.equal(fresh.$('tour').hidden, false, 'the overlay is up');
+
+  const count = fresh.$('tour-count').textContent;
+  assert.equal(count, 'Step 1 of ' + fresh.window.HTTour.steps().length,
+    'it opens on the first step and knows how many there are');
+  assert.ok(fresh.$('tour-title').textContent.length > 0, 'the step has a title');
+  assert.ok(fresh.$('tour-back').hidden, 'there is no Back on the first step');
+  // The step count varies with sign-in state, so the copy must not quote one.
+  assert.doesNotMatch(fresh.$('tour-body').textContent, /\b(one|two|three|four|five|six|seven|eight|nine|ten|\d+)\b/i,
+    'the opening copy does not promise a number of steps it cannot keep');
+
+  fresh.window.HTTour.stop();
+});
+
+await test('a finished tour does not open again on the next visit', async () => {
+  const first = mountPage();
+  await signInAs('sub-tour-once', 'once@example.org', 'Once');
+  await first.window.HTAccount.refresh();
+  await first.settle();
+  assert.equal(first.window.HTTour.isRunning(), true, 'it ran the first time');
+
+  // Walk it out through the Done button, the way a visitor finishes it.
+  for (let i = 0; i < 20; i++) first.$('tour-next').click();
+  assert.equal(first.window.HTTour.isRunning(), false, 'Done closes the tour');
+  assert.equal(first.$('tour').hidden, true, 'the overlay is gone');
+  assert.equal(first.window.localStorage.getItem('settingsTourSeen'), '1',
+    'it is remembered so it never nags');
+
+  // A returning browser already has the flag in storage.
+  const second = mountPage({ storage: { settingsTourSeen: 1 } });
+  await signInAs('sub-tour-once', 'once@example.org', 'Once');
+  await second.window.HTAccount.refresh();
+  await second.settle();
+  assert.equal(second.window.HTTour.isRunning(), false,
+    'a second visit does not reopen it');
+});
+
+await test('Next and Back walk the steps and the last one says Done', async () => {
+  const t = mountPage({ storage: { settingsTourSeen: 1 } });
+  // Signed in, so every step applies and the tour runs its full length.
+  await signInAs('sub-tour-steps', 'steps@example.org', 'Steps');
+  await t.window.HTAccount.refresh();
+  await t.settle();
+  t.window.HTTour.start();
+  const total = t.window.HTTour.steps().length;
+  assert.equal(t.$('tour-count').textContent, 'Step 1 of ' + total,
+    'a signed-in visitor gets every step');
+  const titles = t.window.HTTour.steps().map((s) => s.title);
+
+  assert.equal(t.$('tour-title').textContent, titles[0], 'it opens on step one');
+  assert.equal(t.$('tour-next').textContent, 'Next');
+
+  t.$('tour-next').click();
+  assert.equal(t.$('tour-title').textContent, titles[1], 'Next advances');
+  assert.equal(t.$('tour-back').hidden, false, 'Back appears once there is somewhere to go');
+
+  t.$('tour-back').click();
+  assert.equal(t.$('tour-title').textContent, titles[0], 'Back goes back');
+  assert.equal(t.$('tour-back').hidden, true, 'and hides itself at the start again');
+
+  // total-1 clicks from step one lands on step total.
+  for (let i = 0; i < total - 1; i++) t.$('tour-next').click();
+  assert.equal(t.$('tour-title').textContent, titles[total - 1], 'reaches the last step');
+  assert.equal(t.$('tour-next').textContent, 'Done with tour',
+    'the last button is labelled for what it does');
+
+  t.window.HTTour.stop();
+});
+
+await test('the tour dims the page and spotlights the thing it points at', async () => {
+  const t = mountPage({ storage: { settingsTourSeen: 1 } });
+  t.window.HTTour.start();
+
+  const hole = t.$('tour').querySelector('.tour__hole');
+  const full = t.$('tour').querySelector('.tour__scrim-full');
+
+  // The opening card has nothing to point at, so it dims evenly.
+  assert.equal(full.hidden, false, 'the welcome step dims the whole page');
+  assert.equal(hole.hidden, true, 'and cuts no hole');
+
+  // The second step points at something, so it spotlights instead.
+  t.$('tour-next').click();
+  assert.equal(hole.hidden, false, 'a pointed-at step shows the spotlight');
+  assert.equal(full.hidden, true, 'and drops the full-page dim');
+  // The dimming is that hole's box-shadow spread, so the hole has to be
+  // positioned over the target.
+  assert.ok(Number.parseFloat(hole.style.width) > 0, 'it has a width');
+  assert.ok(Number.parseFloat(hole.style.left) >= 0, 'it has a left edge');
+  assert.equal(t.$('tour').classList.contains('tour--on'), true, 'the overlay is marked on');
+  assert.ok(t.window.document.documentElement.classList.contains('tour-open'),
+    'the page behind the tour cannot scroll');
+
+  t.window.HTTour.stop();
+  assert.equal(hole.hidden, true, 'the spotlight goes away with the tour');
+  assert.equal(t.window.document.documentElement.classList.contains('tour-open'), false,
+    'and the page scrolls again');
+});
+
+await test('a step that switches tab moves the page to it first', async () => {
+  const t = mountPage({ storage: { settingsTourSeen: 1 } });
+  await signInAs('sub-tour-tab', 'tab@example.org', 'Tab');
+  await t.window.HTAccount.refresh();
+  await t.settle();
+  t.window.HTTour.start();
+
+  // Step 6 points at the directory search, which lives in the Friends panel.
+  const step = t.window.HTTour.steps().find((s) => s.target === 'directory-search');
+  const index = t.window.HTTour.steps().indexOf(step);
+  for (let i = 0; i < index; i++) t.$('tour-next').click();
+
+  assert.equal(t.$('tab-friends-btn').getAttribute('aria-selected'), 'true',
+    'the tour opened the tab the step lives in');
+  assert.equal(t.$('panel-friends').hidden, false, 'and revealed its panel');
+  assert.equal(t.$('tour-title').textContent, step.title);
+
+  t.window.HTTour.stop();
+});
+
+await test('Escape and Skip both leave, and only a completed run is remembered', async () => {
+  // Start from a visitor who has never seen the tour, so "not remembered yet"
+  // is the honest starting state.
+  const t = mountPage({ storage: { settingsTourSeen: 1 } });
+  t.window.localStorage.removeItem('settingsTourSeen');
+  t.window.HTTour.start();
+
+  t.window.document.dispatchEvent(new t.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  assert.equal(t.window.HTTour.isRunning(), false, 'Escape leaves the tour');
+  assert.equal(t.window.localStorage.getItem('settingsTourSeen'), null,
+    'leaving early does not mark it seen, so it can be replayed');
+
+  t.window.HTTour.start();
+  t.$('tour-skip').click();
+  assert.equal(t.window.HTTour.isRunning(), false, 'Skip leaves too');
+  assert.equal(t.window.localStorage.getItem('settingsTourSeen'), null,
+    'skipping is not finishing');
+});
+
+await test('the Replay button in Account brings the tour back', async () => {
+  const t = mountPage({ storage: { settingsTourSeen: 1 } });
+  await signInAs('sub-tour-replay', 'replay@example.org', 'Replay');
+  await t.window.HTAccount.refresh();
+  await t.settle();
+
+  assert.equal(t.$('tour-replay').hidden, false, 'the button shows to a signed-in student');
+  assert.equal(t.window.HTTour.isRunning(), false, 'and the tour did not open by itself');
+
+  t.$('tour-replay').click();
+  assert.equal(t.window.HTTour.isRunning(), true, 'clicking it starts the tour');
+  assert.equal(t.$('tour-count').textContent, 'Step 1 of ' + t.window.HTTour.steps().length,
+    'from the beginning');
+
+  t.window.HTTour.stop();
+});
+
+await test('a step with no visible target drops out of the tour', async () => {
+  // Signed out, the account sections are hidden. Their steps must disappear
+  // rather than point at something the visitor cannot see, so the tour is
+  // shorter for a signed-out visitor than the full step list.
+  const t = mountPage();
+  // The shared cookie jar is still signed in as whoever ran last, so sign out
+  // before asserting this page starts signed out.
+  await t.window.HTAccount.signOut();
+  await t.window.HTAccount.refresh();
+  await t.settle();
+
+  assert.equal(t.$('account-signed-in').hidden, true, 'signed out to start with');
+  const gated = t.window.HTTour.steps().filter((s) => s.signedInOnly);
+  assert.ok(gated.length > 0, 'the tour does have signed-in steps');
+
+  t.window.HTTour.start();
+  const shown = Number.parseInt(t.$('tour-count').textContent.split(' ')[3], 10);
+  assert.ok(shown < t.window.HTTour.steps().length,
+    'a signed-out visitor sees fewer steps than there are, not the full list');
+  assert.equal(shown, t.window.HTTour.steps().filter((s) => !s.signedInOnly).length,
+    'exactly the steps that do not need an account');
+
+  // Every step it does run must point at something it can actually see.
+  const total = t.window.HTTour.steps().length;
+  for (let i = 0; i < total; i++) {
+    const title = t.$('tour-title').textContent;
+    const step = t.window.HTTour.steps().find((s) => s.title === title);
+    assert.ok(step, 'every step the tour shows is one of the real steps');
+    assert.ok(!step.signedInOnly,
+      'no signed-in-only step (' + step.id + ') is shown to a signed-out visitor');
+    t.$('tour-next').click();
+  }
+  t.window.HTTour.stop();
 });
 
 console.log(results.join('\n'));

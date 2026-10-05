@@ -13,7 +13,7 @@
     <!-- The Hilltoppers dashboard shell: sidebar tabs, the sage palette,
          and the custom dropdowns. Loaded after classSettings.css, which it
          restyles. -->
-    <link rel="stylesheet" href="dashboard.css?v=20261001b" />
+    <link rel="stylesheet" href="dashboard.css?v=20261002a" />
   </head>
   <body>
     <div class="dashboard">
@@ -200,6 +200,13 @@
                 profile ID and schedule-sharing connections to signed-in students,
                 never your classes or email, and does not grant schedule access.
               </p>
+              <div class="class-settings__share-actions">
+                <button type="button" class="secondary" id="tour-replay">Replay the tour</button>
+              </div>
+              <p class="class-settings__hint">
+                New here? The tour walks through each section and takes about a
+                minute.
+              </p>
               <p class="class-settings__hint" id="account-save-status" hidden></p>
             </div>
           </div>
@@ -340,7 +347,10 @@
             <p class="class-settings__hint">An arrow runs from the person sharing their schedule to the person who can see it. Connected circles naturally gather together &mdash; these are sharing patterns, not confirmed friend groups.</p>
             <p id="social-web-status" class="class-settings__hint" role="status" aria-live="polite">Sign in to explore the Social web.</p>
             <a href="#account" id="social-web-account-link">Your profile controls who you show in Account</a>
-            <div id="social-web-workspace" hidden>
+            <!-- data-tour-defer: the canvas below only appears once the graph
+                 loads. The tour should still point at it on a slow or empty
+                 connection, so this container is not read as "missing". -->
+            <div id="social-web-workspace" data-tour-defer hidden>
               <div class="social-web__toolbar" role="group" aria-label="Graph controls">
                 <button type="button" class="secondary" id="social-web-zoom-out" aria-label="Zoom out">&minus;</button>
                 <output id="social-web-zoom" aria-label="Zoom level">100%</output>
@@ -368,6 +378,7 @@
     <script src="auth.js?v=20260930a"></script>
     <script src="account.js?v=20261001a"></script>
     <script src="social-web.js?v=20261001c"></script>
+    <script src="tour.js?v=20261002a"></script>
     <script>
       (function () {
         'use strict';
@@ -1619,6 +1630,11 @@
             refreshRequests();
             refreshGrants();
             refreshNotices();
+            // The tour runs after sign-in is settled, because most of it
+            // points at account sections that only exist once you are in.
+            // autoStart is a no-op after the first run, so this firing on
+            // every later sign-in is harmless.
+            if (window.HTTour) window.HTTour.autoStart();
           }
         });
 
