@@ -534,6 +534,9 @@ await test("the friends section is one card per friend, expanding to their day",
   assert.match(card.querySelector('.friend-name').textContent, /Erin/, 'the friend is named');
   assert.match(card.querySelector('.friend-course').textContent, /Physics/, 'with their live class');
   assert.match(card.querySelector('.friend-time').textContent, /30:00/, 'and the time left in it');
+  // Everyone is in the same block, so naming it on every card says nothing.
+  assert.equal(card.querySelector('.friend-block-badge'), null,
+    "the card does not name the friend's block");
   assert.ok(card.querySelector('.schedule-list.collapsed'), 'their day starts collapsed');
 
   // Clicking the card expands their full day as an accordion.

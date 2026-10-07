@@ -1562,19 +1562,6 @@ header {
   max-width: 100%;
 }
 
-.friend-block-badge {
-  flex: 0 0 auto;
-  padding: 1px 6px;
-  border-radius: 4px;
-  background: #f0f2f5;
-  color: #555f6a;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
 .friend-course {
   font-size: 13px;
   color: #161b22;
