@@ -382,11 +382,11 @@
         var nowLine;
         if (status.currentBlock) {
           var display = H.resolveBlockDisplay(status.currentBlock.name, state.schedule.dayType, friend.blockPrefs);
-          var key = H.getBlockKey(status.currentBlock.name);
           var value = el('span', { class: 'friend-time', text: H.formatCountdown(status.remainingMs) });
           trackCountdown(value, H.parseBlockTime(status.currentBlock.end, baseDate).getTime());
+          // The period is the same for everyone, so a friend's card names the
+          // class and the time left in it rather than repeating the block.
           nowLine = el('div', { class: 'friend-status' + (display.isFree ? ' is-free' : '') }, [
-            key ? el('span', { class: 'friend-block-badge', text: key + ' Block' }) : null,
             el('span', { class: 'friend-course', text: display.label }),
             value
           ]);
