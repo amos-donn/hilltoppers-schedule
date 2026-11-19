@@ -370,6 +370,16 @@ await test('asking for a schedule either grants access or records a request', as
   if (grant) {
     const friends = JSON.parse(window.localStorage.getItem('friends') || '[]');
     assert.ok(friends.some((f) => f.email === bob.profileId), 'granted access added them to the card');
+  } else {
+    // A request the student sent produces no notice for them, so Notices has
+    // to carry it, with the unanswered state and a count on the tab.
+    const waited = [...$('notice-list').querySelectorAll('.class-settings__notice')]
+      .find((row) => /You asked Bob/.test(row.textContent));
+    assert.ok(waited, 'the request the student sent shows up under Notices');
+    assert.match(waited.textContent, /Pending/, 'and says it is still pending');
+    assert.equal($('notices-pending-badge').hidden, false,
+      'the Notices tab shows a pending count');
+    assert.match($('notices-pending-badge').textContent, /^Pending \d+$/);
   }
 });
 
@@ -386,6 +396,8 @@ await test('a request from someone else can be accepted in the UI', async () => 
   const noticeRow = [...$('notice-list').querySelectorAll('.class-settings__notice')]
     .find((row) => /asked for your schedule/i.test(row.textContent) && /Bob/.test(row.textContent));
   assert.ok(noticeRow, 'the request appears as a notice');
+  assert.match(noticeRow.textContent, /Pending/,
+    'an unanswered request is flagged on its notice');
   noticeRow.dispatchEvent(new window.Event('click'));
   await settle();
   const accept = [...$('notice-list').querySelectorAll('button')].find((b) => b.textContent === 'Accept');
@@ -398,6 +410,12 @@ await test('a request from someone else can be accepted in the UI', async () => 
   ).get(await accountIdOf('sub-page-alice'));
   assert.ok(grant, 'accepting created a grant');
   assert.equal(grant.revoked_at, null);
+
+  const answered = [...$('notice-list').querySelectorAll('.class-settings__notice')]
+    .find((row) => /asked for your schedule/i.test(row.textContent) && /Bob/.test(row.textContent));
+  assert.ok(answered, 'the notice stays after it is answered');
+  assert.doesNotMatch(answered.textContent, /Pending/,
+    'and stops saying pending once accepted');
 });
 
 await test('the access panel lists viewers and can revoke', async () => {

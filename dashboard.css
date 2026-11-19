@@ -25,7 +25,6 @@ body.social-web-open #panel-social-web:not([hidden]) { display: block; height: 1
 .social-web__node.is-selected .social-web__initials, .social-web__node:focus-visible .social-web__initials { fill: white; }
 .social-web__label { fill: #344a34; font-size: 12px; text-anchor: middle; paint-order: stroke; stroke: #f3f6ed; stroke-width: 5px; stroke-linejoin: round; }
 .social-web__node.is-muted, .social-web__edge.is-muted { opacity: .16; }
-.social-web__legend { position: absolute; bottom: 16px; left: 16px; z-index: 2; background: #ffffffd9; border: 1px solid #d8e0d0; border-radius: 8px; padding: 8px 12px; font-size: 12px; color: #456344; pointer-events: none; }
 .social-web__details { position: absolute; left: 50%; bottom: 16px; z-index: 3; max-width: min(560px, calc(100% - 32px)); padding: 12px 16px; border-radius: 12px; background: #f3f6edf2; border: 1px solid #d8e0d0; color: #456344; font-size: 13px; overflow-wrap: anywhere; box-shadow: 0 8px 18px rgba(15, 17, 21, .08); backdrop-filter: blur(6px); transform: translateX(-50%); }
 .social-web__details p { margin: 6px 0 0; line-height: 1.5; }
 .social-web__details[hidden] { display: none; }
@@ -254,6 +253,10 @@ body, html {
   border: 0;
   border-radius: 8px;
   background: transparent;
+  /* Two markers (new + pending) can exceed the narrow sidebar, so they drop
+     to a second line rather than clipping. */
+  flex-wrap: wrap;
+  row-gap: 6px;
   color: #607367;
   font: inherit;
   font-size: 13px;
@@ -689,6 +692,10 @@ body, html {
  * visitor could click through the dimming into the control the tour is
  * explaining.
  */
+
+/* A pending request is a different kind of thing from an unseen notice, so the
+   Notices tab can carry a blue count next to the amber "New" marker. */
+.class-settings__badge--pending { background: rgba(37, 99, 235, .12); color: #1d4ed8; }
 
 .tour {
   position: fixed;

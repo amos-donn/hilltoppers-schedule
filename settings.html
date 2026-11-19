@@ -13,7 +13,7 @@
     <!-- The Hilltoppers dashboard shell: sidebar tabs, the sage palette,
          and the custom dropdowns. Loaded after classSettings.css, which it
          restyles. -->
-    <link rel="stylesheet" href="dashboard.css?v=20261119c" />
+    <link rel="stylesheet" href="dashboard.css?v=20261119e" />
   </head>
   <body>
     <div class="dashboard">
@@ -40,6 +40,7 @@
             <svg viewBox="0 0 256 256" fill="currentColor" aria-hidden="true"><path d="M221.8,175.94C216.25,166.38,208,139.33,208,104a80,80,0,1,0-160,0c0,35.34-8.26,62.38-13.81,71.94A16,16,0,0,0,48,200H88.81a40,40,0,0,0,78.38,0H208a16,16,0,0,0,13.8-24.06ZM128,216a24,24,0,0,1-22.62-16h45.24A24,24,0,0,1,128,216ZM48,184c7.7-13.24,16-43.92,16-80a64,64,0,1,1,128,0c0,36.05,8.28,66.73,16,80Z"/></svg>
             Notices
             <span class="class-settings__badge" id="notices-tab-badge" hidden>New</span>
+            <span class="class-settings__badge class-settings__badge--pending" id="notices-pending-badge" hidden>Pending</span>
           </button>
           <button type="button" class="dashboard__tab" role="tab" data-tab="social-web" aria-selected="false" aria-controls="panel-social-web" id="tab-social-web-btn">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M6 7l12 2M6 7l4 12M18 9l-8 10"/><circle cx="6" cy="7" r="3"/><circle cx="18" cy="9" r="3"/><circle cx="10" cy="19" r="3"/></svg>
@@ -342,10 +343,9 @@
                 <button type="button" class="secondary" id="social-web-zoom-in" aria-label="Zoom in">+</button>
                 <button type="button" class="secondary" id="social-web-fit">Fit web</button>
                 <button type="button" class="secondary" id="social-web-refresh">Refresh</button>
-                <label class="social-web__find">Find a person <select id="social-web-person"><option value="">Everyone</option></select></label>
+                <label class="social-web__find"><select id="social-web-person" aria-label="Find a person"><option value="">Everyone</option></select></label>
               </div>
               <span class="social-web__count" id="social-web-count">Everyone</span>
-              <span class="social-web__legend" aria-hidden="true">Sharer &rarr; recipient &middot; two arrowheads = both share</span>
               <div class="social-web__details" id="social-web-details" role="status" aria-live="polite" hidden></div>
             </div>
             <p id="social-web-status" class="social-web__status" role="status" aria-live="polite">Sign in to explore the Social web.</p>
@@ -744,6 +744,7 @@
         // panel instead, where the sign-in form lives.
         var topbarAuth = document.getElementById('topbar-auth');
         var noticesTabBadge = document.getElementById('notices-tab-badge');
+        var noticesPendingBadge = document.getElementById('notices-pending-badge');
         var displayName = document.getElementById('display-name');
         var profileIdInput = document.getElementById('profile-id');
         var visibility = document.getElementById('visibility');
@@ -771,6 +772,11 @@
             accessPanel.hidden = true;
             noticesPanel.hidden = true;
             dangerPanel.hidden = true;
+            // The tab markers describe the signed-in student's notices, so
+            // they cannot outlive the session that produced them.
+            latestNotices = [];
+            latestRequests = { incoming: [], outgoing: [] };
+            renderNotices();
             return;
           }
 
@@ -1177,6 +1183,9 @@
           A.listRequests().then(function (result) {
             if (!result.ok) return;
             latestRequests = result.data;
+            // The pending rows and the tab's count both come from this list, so
+            // a freshly sent (or answered) request has to redraw the notices.
+            renderNotices();
           });
         }
 
@@ -1391,21 +1400,78 @@
           return actions;
         }
 
+        /** Requests still waiting, whether on this student or on someone else. */
+        function pendingRequests() {
+          return latestRequests.incoming.concat(latestRequests.outgoing)
+            .filter(function (request) { return request.status === 'pending'; });
+        }
+
+        function pendingBadge() {
+          return el('span', {
+            class: 'class-settings__badge class-settings__badge--pending', text: 'Pending'
+          });
+        }
+
         function renderNotices() {
           var notices = latestNotices;
           noticeList.innerHTML = '';
+          var pending = pendingRequests();
           var unseen = notices.filter(function (notice) { return !notice.seen; }).length;
           // The tab is always visible, so an unseen notice needs a marker there
           // too or a signed-in student would never know to open it.
           noticesTabBadge.hidden = unseen === 0;
           noticesTabBadge.textContent = unseen > 1 ? unseen + ' new' : 'New';
-          if (!notices.length) {
+          // Requests live here now, so the tab also says how many are waiting
+          // instead of leaving them invisible until someone opens the tab.
+          noticesPendingBadge.hidden = pending.length === 0;
+          noticesPendingBadge.textContent = 'Pending ' + pending.length;
+
+          // Notices and the pending requests this student sent share one list,
+          // newest first. A sent request makes no notice for the sender, so
+          // without this row it would never appear anywhere.
+          var entries = notices.map(function (notice) {
+            return {
+              at: notice.createdAt || 0,
+              notice: notice,
+              request: requestForNotice(notice)
+            };
+          });
+          latestRequests.outgoing.forEach(function (request) {
+            if (request.status !== 'pending') return;
+            entries.push({ at: request.createdAt || 0, outgoing: request });
+          });
+          entries.sort(function (a, b) { return b.at - a.at; });
+
+          if (!entries.length) {
             noticeList.appendChild(emptyHint('Nothing new.'));
             return;
           }
-          notices.forEach(function (notice) {
+          entries.forEach(function (entry) {
+            if (entry.outgoing) {
+              var asked = entry.outgoing;
+              noticeList.appendChild(el('div', {
+                class: 'class-settings__friend-row class-settings__notice'
+              }, [
+                el('div', { class: 'class-settings__friend-info' }, [
+                  el('strong', {
+                    text: 'You asked ' + (asked.displayName || asked.profileId)
+                      + ' for their schedule.'
+                  }),
+                  el('span', {
+                    class: 'class-settings__friend-meta',
+                    text: new Date(asked.createdAt * 1000).toLocaleString()
+                  })
+                ]),
+                pendingBadge()
+              ]));
+              return;
+            }
+            var notice = entry.notice;
             var open = !!expandedNotices[notice.id];
             var when = new Date(notice.createdAt * 1000).toLocaleString();
+            // An unanswered request says so on its own notice, and the pill
+            // goes away once it has been accepted or declined.
+            var waiting = entry.request && entry.request.status === 'pending';
             var row = el('div', {
               class: 'class-settings__friend-row class-settings__notice'
                 + (open ? ' class-settings__notice--open' : ''),
@@ -1415,6 +1481,7 @@
                 el('strong', { text: noticeText(notice) }),
                 el('span', { class: 'class-settings__friend-meta', text: when })
               ]),
+              waiting ? pendingBadge() : null,
               notice.seen ? null : el('span', { class: 'class-settings__badge', text: 'New' })
             ]);
             function toggle() {
