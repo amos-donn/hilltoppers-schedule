@@ -385,10 +385,17 @@
       var p = document.createElement('p'); p.textContent = text; details.appendChild(p);
     });
   }
+  // The arrowhead's tip sits this far from a person's centre, and the line
+  // runs straight at the centre for the last stretch before it. Both are fixed
+  // so every head looks the same distance from the person and points at them,
+  // however much the middle of the line had to bend.
+  var EDGE_GAP = 44;
+  var EDGE_STUB = 14;
+
   /**
-   * The `d` of one edge's path. The straight line is bent around anyone
-   * standing between the two people, so a connection flows around an icon and
-   * its name instead of passing underneath them.
+   * The `d` of one edge's path. Only the middle bends around anyone standing
+   * between the two people; both ends are straight, radial runs into the
+   * circles, which is what keeps the arrowheads aimed at the people.
    */
   function edgePath(a, b, blockers) {
     var dx = b.x - a.x, dy = b.y - a.y, distance = Math.max(1, Math.hypot(dx, dy));
@@ -398,7 +405,7 @@
     (blockers || []).forEach(function (other) {
       if (!other || other === a || other === b) return;
       var along = ((other.x - a.x) * ux + (other.y - a.y) * uy) / distance;
-      // Near the endpoints the start/end offsets already clear the node.
+      // Near the endpoints the stubs already clear the node.
       if (along <= 0.1 || along >= 0.9) return;
       var px = a.x + ux * along * distance, py = a.y + uy * along * distance;
       var overlap = 58 - Math.hypot(other.x - px, other.y - py);
@@ -407,18 +414,36 @@
       else negSide += overlap;
     });
     if (posSide || negSide) {
-      // Bend away from the busier side, far enough for the curve's apex to
-      // clear whatever is standing there (the apex is half the bend).
+      // Bend away from the busier side. This is the widest the curve gets, so
+      // it is the full clearance the obstacles need, not half of it.
       var away = posSide >= negSide ? -1 : 1;
       var worse = Math.max(posSide, negSide);
       var better = Math.min(posSide, negSide);
-      bend += away * Math.min(190, 2 * Math.max(45, worse - better / 2));
+      // This shape only reaches its full bend at the midpoint, so it needs a
+      // deeper apex than the old quadratic to keep the same clearance.
+      bend = away * Math.min(140, Math.max(55, 1.6 * (worse - better / 2)));
     }
-    // The line starts and ends away from each circle, so it clears the name
-    // under a node instead of cutting across it.
-    return 'M' + (a.x + ux * 34) + ',' + (a.y + uy * 34)
-      + ' Q' + ((a.x + b.x) / 2 - uy * bend) + ',' + ((a.y + b.y) / 2 + ux * bend)
-      + ' ' + (b.x - ux * 44) + ',' + (b.y - uy * 44);
+    // Two people closer than two gaps cannot both keep it; short edges give up
+    // a little distance rather than crossing each other.
+    var gap = Math.min(EDGE_GAP, distance / 2 - 6);
+    var stub = Math.min(EDGE_STUB, Math.max(0, distance / 2 - gap) * 0.5);
+    var sx = a.x + ux * gap, sy = a.y + uy * gap;
+    var ex = b.x - ux * gap, ey = b.y - uy * gap;
+    var s2x = sx + ux * stub, s2y = sy + uy * stub;
+    var e2x = ex - ux * stub, e2y = ey - uy * stub;
+    var mx = (a.x + b.x) / 2 - uy * bend, my = (a.y + b.y) / 2 + ux * bend;
+    // Control reach along the chord. It makes the curve leave and rejoin the
+    // chord flat, so the stubs join without a kink.
+    var k = Math.max(20, Math.min(90, distance * 0.25));
+    return 'M' + sx + ',' + sy
+      + ' L' + s2x + ',' + s2y
+      + ' C' + (s2x + ux * k) + ',' + (s2y + uy * k)
+      + ' ' + (mx - ux * k) + ',' + (my - uy * k)
+      + ' ' + mx + ',' + my
+      + ' C' + (mx + ux * k) + ',' + (my + uy * k)
+      + ' ' + (e2x - ux * k) + ',' + (e2y - uy * k)
+      + ' ' + e2x + ',' + e2y
+      + ' L' + ex + ',' + ey;
   }
 
   function render(data) {

@@ -983,21 +983,56 @@ await test('edges flow around the icons between them instead of under them', asy
   const a = { x: 0, y: 0 };
   const b = { x: 240, y: 0 };
   const blocker = { x: 120, y: 6 };
-  assert.match(window.HTSocialWeb.edgePath(a, b, [a, b], false), /Q120,0 /,
-    'an unobstructed edge is a straight line');
 
-  const bent = window.HTSocialWeb.edgePath(a, b, [a, b, blocker], false);
-  const numbers = bent.match(/M([-\d.]+),([-\d.]+) Q([-\d.]+),([-\d.]+) ([-\d.]+),([-\d.]+)/).slice(1).map(Number);
-  const [ax, ay, qx, qy, bx, by] = numbers;
-  assert.ok(Math.abs(qy) > 40, 'the control point bends clear of the blocking icon');
-
-  let closest = Infinity;
-  for (let t = 0.15; t <= 0.85; t += 0.05) {
-    const x = (1 - t) * (1 - t) * ax + 2 * (1 - t) * t * qx + t * t * bx;
-    const y = (1 - t) * (1 - t) * ay + 2 * (1 - t) * t * qy + t * t * by;
-    closest = Math.min(closest, Math.hypot(x - blocker.x, y - blocker.y));
+  // Coordinates alternate x, y, starting with the tip at the source.
+  const straight = window.HTSocialWeb.edgePath(a, b, [a, b], false)
+    .match(/-?\d+(?:\.\d+)?/g).map(Number);
+  for (let i = 1; i < straight.length; i += 2) {
+    assert.equal(straight[i], 0, 'an unobstructed edge stays on the line between them');
   }
-  assert.ok(closest > 40, 'the drawn line keeps clear of the icon along its whole length');
+
+  // M tip, L end of the start stub, two cubics, L end of the end stub.
+  const n = window.HTSocialWeb.edgePath(a, b, [a, b, blocker], false)
+    .match(/-?\d+(?:\.\d+)?/g).map(Number);
+  assert.equal(n.length, 18, 'start stub, two curves, end stub');
+  const point = (i) => ({ x: n[i], y: n[i + 1] });
+  const at = (p0, p1, p2, p3, t) => {
+    const u = 1 - t;
+    return {
+      x: u * u * u * p0.x + 3 * u * u * t * p1.x + 3 * u * t * t * p2.x + t * t * t * p3.x,
+      y: u * u * u * p0.y + 3 * u * u * t * p1.y + 3 * u * t * t * p2.y + t * t * t * p3.y
+    };
+  };
+  let closest = Infinity;
+  for (let t = 0; t <= 1; t += 0.05) {
+    for (const s of [
+      at(point(2), point(4), point(6), point(8), t),
+      at(point(8), point(10), point(12), point(14), t)
+    ]) {
+      closest = Math.min(closest, Math.hypot(s.x - blocker.x, s.y - blocker.y));
+    }
+  }
+  assert.ok(Math.abs(point(8).y) > 40, 'the middle of the line bends clear of the blocking icon');
+  // The icon is 24 across, so 30 still passes outside it rather than under it.
+  assert.ok(closest > 30, 'the drawn line keeps clear of the icon along its whole length');
+});
+
+await test('an edge stops the same distance from every person and aims at them', async () => {
+  // The tip is a fixed 44 from the centre and the last leg is radial, so a bend
+  // in the middle cannot leave the arrowhead pointing past its person.
+  const a = { x: 0, y: 0 };
+  const b = { x: 300, y: 120 };
+  const n = window.HTSocialWeb.edgePath(a, b, [a, b], false)
+    .match(/-?\d+(?:\.\d+)?/g).map(Number);
+  const start = { x: n[0], y: n[1] };
+  const beforeEnd = { x: n[14], y: n[15] };
+  const end = { x: n[16], y: n[17] };
+  assert.ok(Math.abs(Math.hypot(start.x - a.x, start.y - a.y) - 44) < 1e-9,
+    'the tip starts 44 from the first person');
+  assert.ok(Math.abs(Math.hypot(end.x - b.x, end.y - b.y) - 44) < 1e-9,
+    'and ends 44 from the second, whatever the distance between them');
+  const cross = (end.x - beforeEnd.x) * (b.y - end.y) - (end.y - beforeEnd.y) * (b.x - end.x);
+  assert.ok(Math.abs(cross) < 1e-9, 'the leg into the circle is aimed at its centre');
 });
 
 await test('typing a course name does not lose focus to a re-render', async () => {
