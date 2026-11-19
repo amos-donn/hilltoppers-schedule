@@ -157,7 +157,6 @@ await test('signed out, the page offers sign-in and hides account panels', async
   assert.equal($('signin-dialog').hasAttribute('open'), false, 'the popup starts closed');
   assert.ok($('signin-email'), 'with an email field');
   assert.ok($('signin-password'), 'and a password field');
-  assert.equal($('requests-panel').hidden, true);
   assert.equal($('access-panel').hidden, true);
   assert.equal($('notices-panel').hidden, true);
   assert.equal($('danger-panel').hidden, true);
@@ -201,7 +200,6 @@ await test('signing in reveals every account section', async () => {
   assert.equal($('account-signed-in').hidden, false, 'the signed-in card shows');
   assert.equal($('account-signed-out').hidden, true);
   assert.equal($('topbar-auth').hidden, false, 'the sidebar now offers sign-out');
-  assert.equal($('requests-panel').hidden, false);
   assert.equal($('access-panel').hidden, false);
   assert.equal($('notices-panel').hidden, false);
   assert.equal($('danger-panel').hidden, false);
@@ -384,9 +382,13 @@ await test('a request from someone else can be accepted in the UI', async () => 
   await window.HTAccount.refresh();
   await settle();
 
-  const incoming = $('requests-incoming').querySelectorAll('.class-settings__friend-row');
-  assert.ok(incoming.length >= 1, 'the request appears under "Waiting on you"');
-  const accept = [...$('requests-incoming').querySelectorAll('button')].find((b) => b.textContent === 'Accept');
+  // Requests are answered from Notices now; open the row to reach its buttons.
+  const noticeRow = [...$('notice-list').querySelectorAll('.class-settings__notice')]
+    .find((row) => /asked for your schedule/i.test(row.textContent) && /Bob/.test(row.textContent));
+  assert.ok(noticeRow, 'the request appears as a notice');
+  noticeRow.dispatchEvent(new window.Event('click'));
+  await settle();
+  const accept = [...$('notice-list').querySelectorAll('button')].find((b) => b.textContent === 'Accept');
   assert.ok(accept, 'an Accept button is offered');
   accept.dispatchEvent(new window.Event('click'));
   await settle();
@@ -671,7 +673,12 @@ await test('accepting a request puts the granter on the asker\'s card', async ()
   setCookieJar(carolCookie);
   await window.HTAccount.refresh();
   await settle();
-  const accept = [...$('requests-incoming').querySelectorAll('button')].find((b) => b.textContent === 'Accept');
+  const noticeRow = [...$('notice-list').querySelectorAll('.class-settings__notice')]
+    .find((row) => /asked for your schedule/i.test(row.textContent) && /Dave/.test(row.textContent));
+  assert.ok(noticeRow, 'Carol sees the request as a notice');
+  noticeRow.dispatchEvent(new window.Event('click'));
+  await settle();
+  const accept = [...$('notice-list').querySelectorAll('button')].find((b) => b.textContent === 'Accept');
   assert.ok(accept, 'Carol sees an Accept button');
   accept.dispatchEvent(new window.Event('click'));
   await settle();

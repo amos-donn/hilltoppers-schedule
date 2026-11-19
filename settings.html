@@ -294,21 +294,6 @@
           </div>
         </section>
 
-        <section class="class-settings__panel" id="requests-panel" hidden>
-          <h2>Requests</h2>
-          <p class="class-settings__hint class-settings__hint--intro">
-            Who has asked for your schedule, and who you have asked.
-          </p>
-          <div class="class-settings__subsection">
-            <h3>Waiting on you</h3>
-            <div id="requests-incoming" class="class-settings__friend-list"></div>
-          </div>
-          <div class="class-settings__subsection">
-            <h3>You asked</h3>
-            <div id="requests-outgoing" class="class-settings__friend-list"></div>
-          </div>
-        </section>
-
         <section class="class-settings__panel" id="access-panel" hidden>
           <h2>Who can see your schedule</h2>
           <p class="class-settings__hint class-settings__hint--intro">
@@ -377,7 +362,7 @@
     <script src="auth.js?v=20260930a"></script>
     <script src="account.js?v=20261001a"></script>
     <script src="social-web.js?v=20261119b"></script>
-    <script src="tour.js?v=20261119a"></script>
+    <script src="tour.js?v=20261119b"></script>
     <script>
       (function () {
         'use strict';
@@ -769,7 +754,6 @@
         var autoGrant = document.getElementById('auto-grant');
         var accountEmail = document.getElementById('account-email');
         var accountStatus = document.getElementById('account-status');
-        var requestsPanel = document.getElementById('requests-panel');
         var accessPanel = document.getElementById('access-panel');
         var noticesPanel = document.getElementById('notices-panel');
         var dangerPanel = document.getElementById('danger-panel');
@@ -788,7 +772,6 @@
             signedInBox.hidden = true;
             topbarText.textContent = 'Not signed in. Settings are saved in this browser.';
             topbarAuth.hidden = true;
-            requestsPanel.hidden = true;
             accessPanel.hidden = true;
             noticesPanel.hidden = true;
             dangerPanel.hidden = true;
@@ -799,7 +782,6 @@
           signedInBox.hidden = false;
           topbarText.textContent = 'Signed in as ' + (me.displayName || me.email);
           topbarAuth.hidden = false;
-          requestsPanel.hidden = false;
           accessPanel.hidden = false;
           noticesPanel.hidden = false;
           dangerPanel.hidden = false;
@@ -1087,12 +1069,10 @@
           });
         });
 
-        // --- directory and requests ---------------------------------------
+        // --- directory ----------------------------------------------------
         var directorySearch = document.getElementById('directory-search');
         var directoryResults = document.getElementById('directory-results');
         var directoryStatus = document.getElementById('directory-status');
-        var requestsIncoming = document.getElementById('requests-incoming');
-        var requestsOutgoing = document.getElementById('requests-outgoing');
 
         function setDirectoryStatus(message, isError) {
           directoryStatus.textContent = message || '';
@@ -1127,7 +1107,7 @@
                   addFriendFromProfile(profile);
                   ask.textContent = 'Added';
                 } else {
-                  setDirectoryStatus('Request sent. It appears under Requests until they answer.', false);
+                  setDirectoryStatus('Request sent. It appears under Notices until they answer.', false);
                   ask.textContent = 'Requested';
                 }
               });
@@ -1194,58 +1174,13 @@
           if (event.key === 'Enter') { event.preventDefault(); search(); }
         });
 
-        function renderRequests(data) {
-          latestRequests = data;
-          requestsIncoming.innerHTML = '';
-          requestsOutgoing.innerHTML = '';
-
-          if (!data.incoming.length) {
-            requestsIncoming.appendChild(emptyHint('No one is waiting on you.'));
-          }
-          data.incoming.forEach(function (request) {
-            var line = el('div', { class: 'class-settings__friend-row' }, [
-              el('div', { class: 'class-settings__friend-info' }, [
-                el('strong', { text: request.displayName || request.profileId }),
-                el('span', { class: 'class-settings__friend-meta', text: request.status })
-              ])
-            ]);
-            if (request.status === 'pending') {
-              var accept = el('button', { type: 'button', class: 'primary', text: 'Accept' });
-              var decline = el('button', { type: 'button', class: 'secondary', text: 'Decline' });
-              accept.addEventListener('click', function () { decide(request.id, 'accept'); });
-              decline.addEventListener('click', function () { decide(request.id, 'decline'); });
-              line.appendChild(el('div', { class: 'class-settings__friend-actions' }, [accept, decline]));
-            }
-            requestsIncoming.appendChild(line);
-          });
-
-          if (!data.outgoing.length) {
-            requestsOutgoing.appendChild(emptyHint('You have not asked anyone.'));
-          }
-          data.outgoing.forEach(function (request) {
-            requestsOutgoing.appendChild(el('div', { class: 'class-settings__friend-row' }, [
-              el('div', { class: 'class-settings__friend-info' }, [
-                el('strong', { text: request.displayName || request.profileId }),
-                el('span', { class: 'class-settings__friend-meta', text: request.status })
-              ])
-            ]));
-          });
-        }
-
-        function decide(id, decision) {
-          A.decideRequest(id, decision).then(function (result) {
-            if (!result.ok) { setAccountStatus(friendlyError(result), 'error'); return; }
-            setAccountStatus(decision === 'accept' ? 'Access granted.' : 'Request declined.', 'success');
-            refreshRequests();
-            refreshGrants();
-          });
-        }
-
+        // Requests are answered from Notices now. This only keeps the list
+        // around so a request notice can map back to its request id.
         function refreshRequests() {
           if (!A.isSignedIn()) return;
           A.listRequests().then(function (result) {
             if (!result.ok) return;
-            renderRequests(result.data);
+            latestRequests = result.data;
           });
         }
 

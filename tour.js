@@ -85,15 +85,6 @@
       placement: 'top'
     },
     {
-      id: 'requests',
-      tab: 'friends',
-      target: 'requests-panel',
-      signedInOnly: true,
-      title: 'Requests, and access',
-      body: 'People waiting on you are listed here, and anyone who can see your schedule is under "Who can see your schedule". Revoking one takes their access away immediately and tells them.',
-      placement: 'top'
-    },
-    {
       id: 'notices',
       tab: 'notices',
       target: 'notices-panel',
