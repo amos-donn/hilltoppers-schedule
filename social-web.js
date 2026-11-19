@@ -5,9 +5,24 @@
   // A deterministic spring layout: disconnected groups have separate centers,
   // while linked people attract each other and nearby nodes repel. Dense sharing
   // circles settle together without claiming that a cluster is a friendship.
+  //
+  // Spacing is measured against the label under each circle, not only the
+  // circle: a 23-character name is wider than the icon it sits beneath, so a
+  // layout that keeps icons apart still stacks the names on top of each other
+  // and reads as one grey tangle.
+  function labelWidth(profile) {
+    var name = String(profile.displayName || profile.profileId || '');
+    return Math.min(23, name.length || 1) * 6;
+  }
+
   function layout(profiles, edges) {
     var nodes = profiles.map(function (profile) {
-      return { profileId: profile.profileId, displayName: profile.displayName, x: 0, y: 0 };
+      return {
+        profileId: profile.profileId,
+        displayName: profile.displayName,
+        nameWidth: labelWidth(profile),
+        x: 0, y: 0
+      };
     });
     var byId = new Map(nodes.map(function (node) { return [node.profileId, node]; }));
     var neighbors = new Map(nodes.map(function (node) { return [node.profileId, []]; }));
@@ -35,7 +50,7 @@
       groups.push(group);
     });
     groups.sort(function (a, b) { return b.length - a.length; });
-    var sizes = groups.map(function (group) { return Math.max(210, Math.sqrt(group.length) * 170); });
+    var sizes = groups.map(function (group) { return Math.max(240, Math.sqrt(group.length) * 150); });
     var columns = Math.max(1, Math.ceil(Math.sqrt(groups.length)));
     var rowY = 0;
     for (var start = 0; start < groups.length; start += columns) {
@@ -50,35 +65,35 @@
           var angle = i * 2.399963;
           // Spread further inside the group so labels and the lines between
           // people do not sit on top of each other.
-          var r = Math.sqrt(i) * 96;
+          var r = Math.sqrt(i) * Math.max(112, node.nameWidth * 0.8);
           node.x = cx + Math.cos(angle) * r;
           node.y = cy + Math.sin(angle) * r;
           node.cx = cx; node.cy = cy;
         });
-        columnX += radius * 2 + 170;
+        columnX += radius * 2 + 200;
       });
-      rowY += height + 170;
+      rowY += height + 200;
     }
     // Spatial buckets avoid an all-pairs simulation on a whole school's graph.
     for (var step = 0; step < 180; step++) {
       var buckets = new Map();
       nodes.forEach(function (node) {
-        node.fx = (node.cx - node.x) * 0.008;
-        node.fy = (node.cy - node.y) * 0.008;
-        var key = Math.floor(node.x / 275) + ',' + Math.floor(node.y / 275);
+        node.fx = (node.cx - node.x) * 0.006;
+        node.fy = (node.cy - node.y) * 0.006;
+        var key = Math.floor(node.x / 300) + ',' + Math.floor(node.y / 300);
         if (!buckets.has(key)) buckets.set(key, []);
         buckets.get(key).push(node);
       });
       nodes.forEach(function (node) {
-        var bx = Math.floor(node.x / 275), by = Math.floor(node.y / 275);
+        var bx = Math.floor(node.x / 300), by = Math.floor(node.y / 300);
         for (var gx = bx - 1; gx <= bx + 1; gx++) {
           for (var gy = by - 1; gy <= by + 1; gy++) {
             (buckets.get(gx + ',' + gy) || []).forEach(function (other) {
               if (node === other) return;
               var dx = node.x - other.x, dy = node.y - other.y;
               var distance = Math.max(1, Math.hypot(dx, dy));
-              if (distance > 275) return;
-              var force = Math.min(20, 3900 / (distance * distance));
+              if (distance > 300) return;
+              var force = Math.min(24, 7000 / (distance * distance));
               node.fx += dx / distance * force;
               node.fy += dy / distance * force;
             });
@@ -92,8 +107,8 @@
         // Longer lines than before, and noticeably longer when someone hangs
         // off a group by a single connection, so that person sits apart.
         var rest = (neighbors.get(edge.source).length === 1 || neighbors.get(edge.target).length === 1)
-          ? 250 : 205;
-        var force = (distance - rest) * 0.035;
+          ? 360 : 275;
+        var force = (distance - rest) * 0.032;
         a.fx += dx / distance * force; a.fy += dy / distance * force;
         b.fx -= dx / distance * force; b.fy -= dy / distance * force;
       });
@@ -165,21 +180,88 @@
         // people hang off the same friend.
         for (var i = 1; i < layer.length; i++) {
           var gap = layer[i].angle - layer[i - 1].angle;
-          var wanted = 2 * Math.asin(Math.min(1, 62 / (barrier + 45 + (hop - 1) * 88)));
+          var wanted = 2 * Math.asin(Math.min(1, 88 / (barrier + 60 + (hop - 1) * 100)));
           if (gap < wanted) layer[i].angle = layer[i - 1].angle + wanted;
         }
         layer.forEach(function (node, index) {
-          var r = barrier + 45 + (hop - 1) * 88 + (index % 2) * 34;
+          var r = barrier + 60 + (hop - 1) * 100 + (index % 2) * 36;
           node.x = cx + Math.cos(node.angle) * r;
           node.y = cy + Math.sin(node.angle) * r;
         });
       });
     });
+
+    // --- Room to breathe --------------------------------------------------
+    // The springs settle people by attraction, not by whether their names fit.
+    // This last pass pushes apart any two whose circle or label would touch, so
+    // a dense cluster reads as separate people instead of one grey tangle.
+    // Labels are at most 23 characters wide, so half-width is capped with them.
+    nodes.forEach(function (node) {
+      node.halfWidth = Math.max(40, node.nameWidth / 2 + 10);
+    });
+    for (var pass = 0; pass < 220; pass++) {
+      var cells = new Map();
+      nodes.forEach(function (node, index) {
+        var key = Math.floor(node.x / 320) + ',' + Math.floor(node.y / 320);
+        if (!cells.has(key)) cells.set(key, []);
+        cells.get(key).push(index);
+      });
+      var shifted = false;
+      nodes.forEach(function (node, index) {
+        var gx0 = Math.floor(node.x / 320), gy0 = Math.floor(node.y / 320);
+        for (var gx = gx0 - 1; gx <= gx0 + 1; gx++) {
+          for (var gy = gy0 - 1; gy <= gy0 + 1; gy++) {
+            (cells.get(gx + ',' + gy) || []).forEach(function (otherIndex) {
+              if (otherIndex <= index) return;
+              var other = nodes[otherIndex];
+              var minX = node.halfWidth + other.halfWidth + 18;
+              // Circle above, label below, plus a line of air between them.
+              var minY = 104;
+              var dx = other.x - node.x, dy = other.y - node.y;
+              if (Math.abs(dx) >= minX || Math.abs(dy) >= minY) return;
+              var pushX = Math.min(12, (minX - Math.abs(dx)) / 2);
+              var pushY = Math.min(12, (minY - Math.abs(dy)) / 2);
+              // Separate along whichever axis needs less travel, so names slide
+              // past each other instead of shoving the whole cluster sideways.
+              if (pushX < pushY) {
+                var sx = dx === 0 ? (index % 2 ? 1 : -1) : (dx < 0 ? -1 : 1);
+                node.x -= sx * pushX; other.x += sx * pushX;
+              } else {
+                var sy = dy === 0 ? (index % 2 ? 1 : -1) : (dy < 0 ? -1 : 1);
+                node.y -= sy * pushY; other.y += sy * pushY;
+              }
+              shifted = true;
+            });
+          }
+        }
+      });
+      if (!shifted) break;
+    }
     return nodes;
   }
 
+  /**
+   * Collapse directional grants into drawn connections: one line per pair.
+   *
+   * Two people who share with each other are a single connection with an
+   * arrowhead at each end. Drawing each grant separately puts a second,
+   * near-identical curve on the first one and turns a mutual pair into a
+   * scribble that hides the rest of the graph.
+   */
+  function links(edges) {
+    var byPair = new Map();
+    (edges || []).forEach(function (edge) {
+      if (!edge || edge.source === edge.target) return;
+      var key = edge.source < edge.target
+        ? edge.source + ':' + edge.target : edge.target + ':' + edge.source;
+      if (!byPair.has(key)) byPair.set(key, { source: edge.source, target: edge.target, mutual: false });
+      else byPair.get(key).mutual = true;
+    });
+    return Array.from(byPair.values());
+  }
+
   var canvas = document.getElementById('social-web-canvas');
-  if (!canvas) { window.HTSocialWeb = { layout: layout }; return; }
+  if (!canvas) { window.HTSocialWeb = { layout: layout, links: links }; return; }
   var svg = document.getElementById('social-web-svg');
   var scene = document.getElementById('social-web-scene');
   var status = document.getElementById('social-web-status');
@@ -267,7 +349,7 @@
       item.element.setAttribute('aria-pressed', item.id === selected ? 'true' : 'false');
     });
     edgeElements.forEach(function (item) {
-      var active = item.edge.source === selected || item.edge.target === selected;
+      var active = item.ids[0] === selected || item.ids[1] === selected;
       item.element.classList.toggle('is-active', !!selected && active);
       item.element.classList.toggle('is-muted', !!selected && !active);
     });
@@ -289,11 +371,10 @@
    * standing between the two people, so a connection flows around an icon and
    * its name instead of passing underneath them.
    */
-  function edgePath(a, b, blockers, reciprocal) {
+  function edgePath(a, b, blockers) {
     var dx = b.x - a.x, dy = b.y - a.y, distance = Math.max(1, Math.hypot(dx, dy));
     var ux = dx / distance, uy = dy / distance;
-    // Reciprocal grants curve on opposite sides, keeping both arrows visible.
-    var bend = reciprocal ? 34 : 0;
+    var bend = 0;
     var posSide = 0, negSide = 0;
     (blockers || []).forEach(function (other) {
       if (!other || other === a || other === b) return;
@@ -326,16 +407,21 @@
     positions = new Map(layout(data.nodes, data.edges).map(function (node) { return [node.profileId, node]; }));
     scene.replaceChildren(); nodeElements = []; edgeElements = [];
     picker.replaceChildren(new Option('Everyone', ''));
-    var pairs = new Set(data.edges.map(function (edge) { return edge.source + ':' + edge.target; }));
-    data.edges.forEach(function (edge) {
-      var a = positions.get(edge.source), b = positions.get(edge.target);
+    links(data.edges).forEach(function (link) {
+      var a = positions.get(link.source), b = positions.get(link.target);
       if (!a || !b || a === b) return;
-      var path = element('path', {
-        d: edgePath(a, b, Array.from(positions.values()), pairs.has(edge.target + ':' + edge.source)),
-        class: 'social-web__edge', 'marker-end': 'url(#social-web-arrow)'
-      });
-      path.appendChild(element('title', {}, label(edge.source) + ' shares their schedule with ' + label(edge.target)));
-      scene.appendChild(path); edgeElements.push({ edge: edge, element: path });
+      var attrs = {
+        d: edgePath(a, b, Array.from(positions.values())),
+        class: 'social-web__edge' + (link.mutual ? ' is-mutual' : ''),
+        'marker-end': 'url(#social-web-arrow)'
+      };
+      if (link.mutual) attrs['marker-start'] = 'url(#social-web-arrow)';
+      var path = element('path', attrs);
+      path.appendChild(element('title', {}, link.mutual
+        ? label(link.source) + ' and ' + label(link.target) + ' share their schedules with each other'
+        : label(link.source) + ' shares their schedule with ' + label(link.target)));
+      scene.appendChild(path);
+      edgeElements.push({ ids: [link.source, link.target], element: path });
     });
     data.nodes.forEach(function (profile) {
       var node = positions.get(profile.profileId);
@@ -359,7 +445,7 @@
       scene.appendChild(group); nodeElements.push({ id: node.profileId, element: group });
       picker.appendChild(new Option(name + (isMe ? ' (you)' : ''), node.profileId));
     });
-    count.textContent = data.nodes.length + ' people · ' + data.edges.length + ' connections';
+    count.textContent = data.nodes.length + ' people · ' + edgeElements.length + ' connections';
     fit(); select(selected);
   }
   async function refresh() {
@@ -458,5 +544,5 @@
     else return;
     event.preventDefault();
   });
-  window.HTSocialWeb = { setAccount: setAccount, refresh: refresh, layout: layout, edgePath: edgePath };
+  window.HTSocialWeb = { setAccount: setAccount, refresh: refresh, layout: layout, edgePath: edgePath, links: links };
 })();

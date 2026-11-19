@@ -13,6 +13,7 @@
 .social-web__canvas:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 #social-web-svg { display: block; width: 100%; height: 100%; color: #78936c; }
 .social-web__edge { fill: none; stroke: currentColor; stroke-width: 1.6; opacity: .55; }
+.social-web__edge.is-mutual { stroke-width: 2.2; opacity: .7; }
 .social-web__edge.is-active { stroke-width: 2.8; color: #325e3a; opacity: 1; }
 .social-web__node { cursor: pointer; outline: none; }
 .social-web__node circle { fill: #fbfcf8; stroke: #92a881; stroke-width: 2; }

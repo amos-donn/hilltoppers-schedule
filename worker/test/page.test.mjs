@@ -842,6 +842,13 @@ await test('the Social web includes everyone by default and supports selection, 
   // Restore Frank, as the helper above signed the shared jar into Erin.
   await signInAsShared('sub-page-frank', 'frank@example.org', 'Frank');
   await window.HTAccount.refresh();
+  // Frank shares with Erin as well, so the pair is mutual. That has to be one
+  // line with an arrowhead at each end, not two curves on top of each other.
+  // (The requests endpoint short-circuits when the other person already shares
+  // with you, so the reverse grant is written directly.)
+  db.prepare(`INSERT INTO grants (code_hash, owner_account_id, viewer_account_id, created_at)
+    VALUES (?, ?, ?, ?)`).run('mutual-test', await accountIdOf('sub-page-frank'),
+    await accountIdOf('sub-page-erin'), Math.floor(Date.now() / 1000));
   $('tab-social-web-btn').click();
   await settle();
   assert.equal($('panel-social-web').hidden, false);
@@ -850,10 +857,15 @@ await test('the Social web includes everyone by default and supports selection, 
   assert.equal($('social-web-workspace').hidden, false);
   assert.ok($('social-web-scene').querySelectorAll('.social-web__node').length >= 2,
     'everyone with an account is in the web, no opt-in');
-  const edge = [...$('social-web-scene').querySelectorAll('.social-web__edge')]
-    .find((e) => /Erin shares their schedule with Frank/.test(e.textContent));
-  assert.ok(edge, 'the Erin-to-Frank sharing edge is drawn');
-  assert.equal(edge.getAttribute('marker-end'), 'url(#social-web-arrow)');
+  const reciprocal = [...$('social-web-scene').querySelectorAll('.social-web__edge')]
+    .filter((e) => /Erin/.test(e.textContent) && /Frank/.test(e.textContent));
+  assert.equal(reciprocal.length, 1, 'a reciprocal pair is drawn once, not twice');
+  assert.equal(reciprocal[0].getAttribute('marker-end'), 'url(#social-web-arrow)');
+  assert.equal(reciprocal[0].getAttribute('marker-start'), 'url(#social-web-arrow)',
+    'the far end of a mutual connection has an arrowhead too');
+  assert.match(reciprocal[0].getAttribute('class'), /is-mutual/);
+  assert.match(reciprocal[0].textContent, /share their schedules with each other/,
+    'the hover text says the connection runs both ways');
   const me = $('social-web-scene').querySelector('.is-you');
   assert.ok(me, 'the signed-in account is in the graph');
   me.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
@@ -887,6 +899,18 @@ await test('the Social web includes everyone by default and supports selection, 
   $('social-web-account-link').click();
   await settle(2);
   assert.equal($('panel-account').hidden, false, 'profile link navigates to Account');
+});
+
+await test('a reciprocal share is one connection, and a one-way share stays one arrow', async () => {
+  const L = window.HTSocialWeb.links;
+  // JSON, because the array comes from the page's realm and deepEqual here is
+  // strict about prototypes.
+  assert.equal(JSON.stringify(L([{ source: 'a', target: 'b' }]).map((l) => [l.source, l.target, l.mutual])),
+    JSON.stringify([['a', 'b', false]]), 'one grant is one one-way line');
+  const both = L([{ source: 'b', target: 'a' }, { source: 'a', target: 'b' }]);
+  assert.equal(both.length, 1, 'a reciprocal pair is a single connection');
+  assert.equal(both[0].mutual, true, 'and it is marked for an arrowhead at each end');
+  assert.equal(L([{ source: 'a', target: 'a' }]).length, 0, 'a self-grant is not drawn');
 });
 
 await test('force layout gathers connected groups and is deterministic', async () => {
