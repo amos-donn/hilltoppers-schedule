@@ -108,7 +108,7 @@
       target: 'social-web-canvas',
       signedInOnly: true,
       title: 'The Social web',
-      body: 'Your school, connected. An arrow runs from the person sharing their schedule to the person who can see it. Connected circles gather together. Public profiles show a name; private ones show Anonymous.',
+      body: 'The Social web. An arrow runs from the person sharing their schedule to the person who can see it. Public profiles show a name; private ones show Anonymous.',
       placement: 'top'
     },
     {

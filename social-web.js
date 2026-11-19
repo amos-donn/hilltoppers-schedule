@@ -1,4 +1,5 @@
-/** Opt-in schedule-sharing map. No external libraries or third-party requests. */
+/** The Social web: a read-only map of who shares their schedule with whom.
+ *  No external libraries or third-party requests. */
 (function () {
   'use strict';
 
@@ -468,7 +469,7 @@
     render(result.data);
     workspace.hidden = !result.data.nodes.length;
     status.textContent = !result.data.nodes.length ? 'The web is waiting for its first people.'
-      : 'Everyone with an account is in the web. Only live sharing connections are shown.';
+      : 'Everyone with an account is in the web.';
   }
   function setAccount(me) {
     var changed = !account || !me || account.profileId !== me.profileId || account.displayName !== me.displayName;

@@ -1,7 +1,6 @@
 /* Social web: a quiet, sage connection atlas. */
 .social-web__heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
-.social-web__eyebrow { color: var(--accent); font-size: 10px; font-weight: 700; letter-spacing: .18em; }
-.social-web__heading h2 { margin-top: 8px; }
+.social-web__heading h2 { margin: 0; }
 .social-web__count { background: #e9efe4; color: #456344; border: 1px solid #d5dfce; border-radius: 999px; padding: 8px 12px; font-size: 12px; }
 .social-web a { color: var(--accent); font-size: 13px; }
 .social-web__toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 24px 0 12px; }
@@ -348,6 +347,10 @@ body, html {
 }
 
 .dashboard__header h1 { margin: 0; font-size: 25px; font-weight: 650; letter-spacing: -0.7px; }
+
+/* The Social web carries its name in the panel heading; the page title and the
+   rule under it would just say the same thing twice. */
+.dashboard__header.is-hidden { display: none; }
 .dashboard__header-actions { display: flex; align-items: center; gap: 12px; }
 
 .dashboard__panel { display: grid; gap: 20px; }

@@ -854,6 +854,9 @@ await test('the Social web includes everyone by default and supports selection, 
   assert.equal($('panel-social-web').hidden, false);
   assert.equal($('panel-account').hidden, true);
   assert.equal($('page-title').textContent, 'Social web');
+  assert.match($('page-header').className, /is-hidden/,
+    'the page title and its divider are dropped in favour of the panel heading');
+  assert.equal($('panel-social-web').querySelector('h2').textContent, 'The Social web');
   assert.equal($('social-web-workspace').hidden, false);
   assert.ok($('social-web-scene').querySelectorAll('.social-web__node').length >= 2,
     'everyone with an account is in the web, no opt-in');
@@ -899,6 +902,7 @@ await test('the Social web includes everyone by default and supports selection, 
   $('social-web-account-link').click();
   await settle(2);
   assert.equal($('panel-account').hidden, false, 'profile link navigates to Account');
+  assert.doesNotMatch($('page-header').className, /is-hidden/, 'other tabs keep their page title');
 });
 
 await test('a reciprocal share is one connection, and a one-way share stays one arrow', async () => {

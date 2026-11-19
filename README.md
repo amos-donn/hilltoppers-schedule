@@ -14,50 +14,62 @@ Two pages:
   At a narrow width the card fills the frame edge to edge, matching the
   extension's card at the same width (see *Sizing* below).
 - **`settings.html` — Class & Schedule Settings.** A dashboard, laid out like
-  the Hilltoppers extension's own settings: a sidebar of three tabs — Account,
-  Friends, and Notices — with one section shown at a time instead of one long
-  scroll. Each tab is in the URL (`settings.html#friends`), so a refresh returns
+  the Hilltoppers extension's own settings: a sidebar of four tabs — Account,
+  Friends, Notices, and Social web — with one section shown at a time instead of
+  one long scroll. Each tab is in the URL (`settings.html#friends`), so a refresh returns
   to it and Back steps between them. **Account** holds everything about you and
   your own schedule: signing in, your display name, profile ID and visibility,
   then time format, grade level, lunch, and your A–E courses with their
   alternating / free options, and finally the option to delete your account.
-  **Friends** lists the schedules shown on the card and who can see yours. Open
-  it from the gear on the card, or directly. Changes save to this browser and
+  **Friends** lists the schedules shown on the card and who can see yours.
+  **Notices** reports anything that changes your access, and **Social web** maps
+  who shares their schedule with whom. Open it from the gear on the card, or
+  directly. Changes save to this browser and
   the card picks them up; friends who share their schedule through the account
   appear on the card even inside the extension's iframe (see *Where the card's
   friends come from*).
 
 ## Sharing your schedule
 
-The card shows a friend's schedule, not your own. To put yourself on someone
-else's card, send them your link:
+A schedule reaches a card two ways: through an account, or through a link.
 
-1. On `settings.html`, enter your email (and an optional name) under **Send
-   Schedule**. The link is built as you type.
-2. **Copy link** copies it to your clipboard, and you send it however you like
-   (email, message, whatever).
-3. When they open the link, your schedule is added to their card and saved under
-   your email. It appears in their **Friends** list, where they can reorder or
-   remove it.
+**Through an account (the usual way).** Sign in, then give a classmate the
+profile ID shown on **Account** (for example `brave-heron-4821`). They paste it
+into **Friends → Add a friend** and either get access immediately — when your
+profile is public and auto-grant is on — or send a request that waits under
+**Notices**. You can take it back at **Account → Who can see your schedule**;
+revoking is immediate and the other student is told. A grant puts you on their
+card, including inside the extension's iframe, because the Worker holds it
+rather than their browser.
+
+**With a link.** In **Account → Who can see your schedule → Schedules you can
+see**, **View** opens that classmate's schedule on the card as a `#share=…`
+link. Whoever opens it gets the schedule added to their card under the sharer's
+profile ID, and can reorder or remove it in **Friends**. There is no longer a
+button that builds a link for your *own* schedule: with an account, the
+profile-ID flow above is how you share.
 
 The card's **Friends' Schedules** section shows every friend in the order set in
 Settings, each as its own card with the class they are in right now (for example
 `C Block · AP US History`). Tapping a friend's card expands their whole day as an
-accordion.
+accordion. Signed in, the primary card above that list is your own day.
 
 How it works, and its limits:
 
-- The link carries your display preferences in the URL **fragment** (`#share=…`),
-  so they never reach GitHub's servers or its logs. The fragment is cleared from
-  the address bar once it has been imported.
+- The link carries the schedule's display preferences in the URL **fragment**
+  (`#share=…`), so they never reach GitHub's servers or its logs. The fragment
+  is cleared from the address bar once it has been imported.
 - The recipient recomputes the live schedule from the same public data sources,
   so the schedule stays current rather than freezing a snapshot.
 - The link is the credential: anyone who has it can add that schedule. Do not
   post it publicly.
-- This is a static site with **no backend and no accounts**, so there is no
-  server-side email and no sync. Sharing is a link you copy and send yourself,
-  and friends are stored in each browser's `localStorage`. A friend added on one
-  device or browser will not appear on another.
+- Friends are matched by profile ID. A friend imported from a link that carries
+  an email address is a separate entry, even when it is the same student.
+- A link needs no account. Sharing is a link you copy and send yourself, and a
+  friend added from one lives in that browser's `localStorage`, so they do not
+  follow you to another device. Account friends are different: the Worker in
+  `worker/` stores them, so they appear wherever the signed-in student opens the
+  page. Either way the server never sends an email; you still send the link.
 
 
 ### Deploying a change
@@ -97,6 +109,8 @@ popup.css           the extension's popup.css, copied unchanged
 classSettings.css   the extension's classSettings.css, copied unchanged
 dashboard.css       the settings page's Hilltoppers shell: sidebar tabs, the
                     sage palette and custom dropdowns
+social-web.js       the Social web: its deterministic layout, the SVG map, and
+                    pan/zoom
 toppings-resize.js  the Topping spec's content-height helper, copied unchanged
 schedule/           the bell schedules, bundled (see below)
 icons/              the site's logo, favicons, and Apple touch icon
