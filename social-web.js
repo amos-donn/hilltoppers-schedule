@@ -274,6 +274,7 @@
   var graph = { nodes: [], edges: [] }, positions = new Map();
   var nodeElements = [], edgeElements = [], selected = '';
   var camera = { x: 0, y: 0, scale: 1 }, fitScale = 1;
+  var view = { w: 1000, h: 640 };
   var pointers = new Map(), gesture = null, moved = false, pressedNode = '';
 
   function element(tag, attrs, text) {
@@ -286,7 +287,23 @@
     scene.setAttribute('transform', 'translate(' + camera.x + ' ' + camera.y + ') scale(' + camera.scale + ')');
     document.getElementById('social-web-zoom').textContent = Math.round(camera.scale / fitScale * 100) + '%';
   }
+  // The canvas is the whole tab, so the drawing area follows its aspect ratio
+  // instead of letterboxing a fixed 1000x640 frame. jsdom reports a zero-size
+  // rect, in which case the default frame stays in place.
+  function syncView() {
+    var rect = svg && svg.getBoundingClientRect ? svg.getBoundingClientRect() : null;
+    if (rect && rect.width > 0 && rect.height > 0) {
+      view = {
+        w: 1000,
+        h: Math.max(360, Math.min(1800, Math.round(1000 * rect.height / rect.width)))
+      };
+    } else {
+      view = { w: 1000, h: 640 };
+    }
+    if (svg) svg.setAttribute('viewBox', '0 0 ' + view.w + ' ' + view.h);
+  }
   function fit() {
+    syncView();
     var nodes = Array.from(positions.values());
     if (!nodes.length) return;
     var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
@@ -294,12 +311,12 @@
       minX = Math.min(minX, node.x - 110); maxX = Math.max(maxX, node.x + 110);
       minY = Math.min(minY, node.y - 55); maxY = Math.max(maxY, node.y + 75);
     });
-    fitScale = Math.min(2, 920 / (maxX - minX), 560 / (maxY - minY));
-    camera = { scale: fitScale, x: 500 - (minX + maxX) / 2 * fitScale, y: 320 - (minY + maxY) / 2 * fitScale };
+    fitScale = Math.min(2, (view.w - 80) / (maxX - minX), (view.h - 80) / (maxY - minY));
+    camera = { scale: fitScale, x: view.w / 2 - (minX + maxX) / 2 * fitScale, y: view.h / 2 - (minY + maxY) / 2 * fitScale };
     applyCamera();
   }
   function zoom(factor, point) {
-    point = point || { x: 500, y: 320 };
+    point = point || { x: view.w / 2, y: view.h / 2 };
     var scale = Math.max(fitScale * 0.25, Math.min(fitScale * 12, camera.scale * factor));
     camera.x = point.x - (point.x - camera.x) * scale / camera.scale;
     camera.y = point.y - (point.y - camera.y) * scale / camera.scale;
@@ -308,10 +325,10 @@
   }
   function point(event) {
     var rect = svg.getBoundingClientRect();
-    var scale = Math.min(rect.width / 1000, rect.height / 640) || 1;
+    var scale = Math.min(rect.width / view.w, rect.height / view.h) || 1;
     return {
-      x: (event.clientX - rect.left - (rect.width - 1000 * scale) / 2) / scale,
-      y: (event.clientY - rect.top - (rect.height - 640 * scale) / 2) / scale
+      x: (event.clientX - rect.left - (rect.width - view.w * scale) / 2) / scale,
+      y: (event.clientY - rect.top - (rect.height - view.h * scale) / 2) / scale
     };
   }
   function label(id) {
@@ -355,7 +372,8 @@
       item.element.classList.toggle('is-muted', !!selected && !active);
     });
     details.replaceChildren();
-    if (!selected) { details.textContent = 'Select a person to explore their connections.'; return; }
+    if (!selected) { details.textContent = ''; details.hidden = true; return; }
+    details.hidden = false;
     var heading = document.createElement('strong');
     heading.textContent = label(selected) + (account && selected === account.profileId ? ' (you)' : '')
       + (showsProfileId(selected) ? ' · ' + selected : '');
@@ -459,7 +477,7 @@
     if (!result.ok) {
       workspace.hidden = true;
       scene.replaceChildren(); positions.clear(); graph = { nodes: [], edges: [] };
-      picker.replaceChildren(new Option('Everyone', '')); details.textContent = ''; selected = '';
+      picker.replaceChildren(new Option('Everyone', '')); details.textContent = ''; details.hidden = true; selected = '';
       count.textContent = 'Everyone';
       status.textContent = result.status === 404 ? 'Social web is not available on the server yet.' : 'Could not load the Social web. Try refreshing.';
       // Keep the Refresh control reachable without showing stale connections.
@@ -469,7 +487,7 @@
     render(result.data);
     workspace.hidden = !result.data.nodes.length;
     status.textContent = !result.data.nodes.length ? 'The web is waiting for its first people.'
-      : 'Everyone with an account is in the web.';
+      : '';
   }
   function setAccount(me) {
     var changed = !account || !me || account.profileId !== me.profileId || account.displayName !== me.displayName;
@@ -477,14 +495,14 @@
     if (!me) {
       generation++; workspace.hidden = true; graph = { nodes: [], edges: [] }; positions.clear();
       scene.replaceChildren(); picker.replaceChildren(new Option('Everyone', ''));
-      count.textContent = 'Everyone'; details.textContent = ''; selected = '';
+      count.textContent = 'Everyone'; details.textContent = ''; details.hidden = true; selected = '';
       status.textContent = 'Sign in from Account to explore the Social web.';
     } else if (changed) refresh();
   }
   picker.addEventListener('change', function () {
     select(picker.value);
     var node = positions.get(picker.value);
-    if (node) { camera.x = 500 - node.x * camera.scale; camera.y = 320 - node.y * camera.scale; applyCamera(); }
+    if (node) { camera.x = view.w / 2 - node.x * camera.scale; camera.y = view.h / 2 - node.y * camera.scale; applyCamera(); }
   });
   document.getElementById('social-web-zoom-in').addEventListener('click', function () { zoom(1.25); });
   document.getElementById('social-web-zoom-out').addEventListener('click', function () { zoom(0.8); });
@@ -545,5 +563,8 @@
     else return;
     event.preventDefault();
   });
+  // The map is sized to its tab, so a window resize needs a fresh fit rather
+  // than leaving the old camera framing a different aspect ratio.
+  window.addEventListener('resize', fit);
   window.HTSocialWeb = { setAccount: setAccount, refresh: refresh, layout: layout, edgePath: edgePath, links: links };
 })();

@@ -13,7 +13,7 @@
     <!-- The Hilltoppers dashboard shell: sidebar tabs, the sage palette,
          and the custom dropdowns. Loaded after classSettings.css, which it
          restyles. -->
-    <link rel="stylesheet" href="dashboard.css?v=20261119b" />
+    <link rel="stylesheet" href="dashboard.css?v=20261119c" />
   </head>
   <body>
     <div class="dashboard">
@@ -325,16 +325,17 @@
         </section>
         <section class="dashboard__panel" id="panel-social-web" role="tabpanel" aria-labelledby="tab-social-web-btn" tabindex="-1" hidden>
           <section class="class-settings__panel social-web">
-            <div class="social-web__heading">
-              <h2>The Social web</h2>
-              <span class="social-web__count" id="social-web-count">Everyone</span>
-            </div>
-            <p id="social-web-status" class="class-settings__hint" role="status" aria-live="polite">Sign in to explore the Social web.</p>
-            <a href="#account" id="social-web-account-link">Your profile controls who you show in Account</a>
-            <!-- data-tour-defer: the canvas below only appears once the graph
-                 loads. The tour should still point at it on a slow or empty
-                 connection, so this container is not read as "missing". -->
-            <div id="social-web-workspace" data-tour-defer hidden>
+            <!-- The map is the tab: the panel carries no card chrome and the
+                 canvas fills it, with every control and readout floating on
+                 top. data-tour-defer lets the tour point at a canvas that only
+                 appears once the graph loads. -->
+            <div id="social-web-workspace" class="social-web__workspace" data-tour-defer hidden>
+              <div class="social-web__canvas" id="social-web-canvas" tabindex="0" role="region" aria-label="Social web graph. Drag to pan, scroll or pinch to zoom. Use arrow keys to pan, plus and minus to zoom, and zero to fit.">
+                <svg id="social-web-svg" viewBox="0 0 1000 640" aria-label="Schedule-sharing connections">
+                  <defs><marker id="social-web-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor" /></marker></defs>
+                  <g id="social-web-scene"></g>
+                </svg>
+              </div>
               <div class="social-web__toolbar" role="group" aria-label="Graph controls">
                 <button type="button" class="secondary" id="social-web-zoom-out" aria-label="Zoom out">&minus;</button>
                 <output id="social-web-zoom" aria-label="Zoom level">100%</output>
@@ -343,16 +344,11 @@
                 <button type="button" class="secondary" id="social-web-refresh">Refresh</button>
                 <label class="social-web__find">Find a person <select id="social-web-person"><option value="">Everyone</option></select></label>
               </div>
-              <div class="social-web__canvas" id="social-web-canvas" tabindex="0" role="region" aria-label="Social web graph. Drag to pan, scroll or pinch to zoom. Use arrow keys to pan, plus and minus to zoom, and zero to fit." aria-describedby="social-web-help">
-                <svg id="social-web-svg" viewBox="0 0 1000 640" aria-label="Schedule-sharing connections">
-                  <defs><marker id="social-web-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor" /></marker></defs>
-                  <g id="social-web-scene"></g>
-                </svg>
-                <span class="social-web__legend" aria-hidden="true">Sharer &rarr; recipient &middot; two arrowheads = both share</span>
-              </div>
-              <p class="class-settings__hint" id="social-web-help">Drag to explore &middot; scroll or pinch to zoom &middot; select a person to trace their connections. Keyboard: arrows to pan, +/&minus; to zoom, 0 to fit.</p>
-              <div class="social-web__details" id="social-web-details" role="status" aria-live="polite">Select a person to explore their connections.</div>
+              <span class="social-web__count" id="social-web-count">Everyone</span>
+              <span class="social-web__legend" aria-hidden="true">Sharer &rarr; recipient &middot; two arrowheads = both share</span>
+              <div class="social-web__details" id="social-web-details" role="status" aria-live="polite" hidden></div>
             </div>
+            <p id="social-web-status" class="social-web__status" role="status" aria-live="polite">Sign in to explore the Social web.</p>
           </section>
         </section>
       </main>
@@ -361,7 +357,7 @@
     <script src="schedule-core.js?v=20260928h"></script>
     <script src="auth.js?v=20260930a"></script>
     <script src="account.js?v=20261001a"></script>
-    <script src="social-web.js?v=20261119b"></script>
+    <script src="social-web.js?v=20261119c"></script>
     <script src="tour.js?v=20261119b"></script>
     <script>
       (function () {
@@ -1515,6 +1511,9 @@
           // The Social web names itself in its own heading, so the page title and
           // its divider would only repeat it above the map.
           pageHeader.classList.toggle('is-hidden', name === 'social-web');
+          // The map fills the window rather than sitting in a card, so the
+          // content column drops its padding and the page stops scrolling.
+          document.body.classList.toggle('social-web-open', name === 'social-web');
           // Reset only restores the class and schedule settings, so it belongs
           // to the section that holds them rather than to every section.
           resetButton.hidden = name !== 'account';

@@ -862,8 +862,8 @@ await test('the Social web includes everyone by default and supports selection, 
   assert.equal($('panel-account').hidden, true);
   assert.equal($('page-title').textContent, 'Social web');
   assert.match($('page-header').className, /is-hidden/,
-    'the page title and its divider are dropped in favour of the panel heading');
-  assert.equal($('panel-social-web').querySelector('h2').textContent, 'The Social web');
+    'the page title and its divider are given up to the full-tab map');
+  assert.equal($('panel-social-web').querySelector('h2'), null, 'the map carries no heading of its own');
   assert.equal($('social-web-workspace').hidden, false);
   assert.ok($('social-web-scene').querySelectorAll('.social-web__node').length >= 2,
     'everyone with an account is in the web, no opt-in');
@@ -880,7 +880,11 @@ await test('the Social web includes everyone by default and supports selection, 
   assert.ok(me, 'the signed-in account is in the graph');
   me.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
   assert.equal(me.getAttribute('aria-pressed'), 'true');
+  assert.equal($('social-web-details').hidden, false, 'selecting a person brings the info pill up');
   assert.match($('social-web-details').textContent, /Can see: Erin/);
+  me.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+  assert.equal($('social-web-details').hidden, true, 'deselecting takes the pill away again');
+  assert.equal($('social-web-details').textContent, '', 'and it leaves nothing behind');
   const original = $('social-web-scene').getAttribute('transform');
   $('social-web-zoom-in').click();
   assert.notEqual($('social-web-scene').getAttribute('transform'), original);
@@ -906,9 +910,9 @@ await test('the Social web includes everyone by default and supports selection, 
     await reloaded.settle();
     assert.equal(reloaded.errors.length, 0);
   } finally { reloaded.dom.window.close(); }
-  $('social-web-account-link').click();
+  $('tab-account-btn').click();
   await settle(2);
-  assert.equal($('panel-account').hidden, false, 'profile link navigates to Account');
+  assert.equal($('panel-account').hidden, false, 'the Account tab still works');
   assert.doesNotMatch($('page-header').className, /is-hidden/, 'other tabs keep their page title');
 });
 
