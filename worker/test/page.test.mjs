@@ -991,6 +991,14 @@ await test('edges flow around the icons between them instead of under them', asy
     assert.equal(straight[i], 0, 'an unobstructed edge stays on the line between them');
   }
 
+  // 70 out is past both the icon and the name under it, so it is not in the way.
+  const near = { x: 120, y: -70 };
+  const passing = window.HTSocialWeb.edgePath(a, b, [a, b, near], false)
+    .match(/-?\d+(?:\.\d+)?/g).map(Number);
+  for (let i = 1; i < passing.length; i += 2) {
+    assert.equal(passing[i], 0, 'a person the edge merely passes near does not bend it');
+  }
+
   // M tip, L end of the start stub, two cubics, L end of the end stub.
   const n = window.HTSocialWeb.edgePath(a, b, [a, b, blocker], false)
     .match(/-?\d+(?:\.\d+)?/g).map(Number);
@@ -1012,13 +1020,19 @@ await test('edges flow around the icons between them instead of under them', asy
       closest = Math.min(closest, Math.hypot(s.x - blocker.x, s.y - blocker.y));
     }
   }
-  assert.ok(Math.abs(point(8).y) > 40, 'the middle of the line bends clear of the blocking icon');
-  // The icon is 24 across, so 30 still passes outside it rather than under it.
-  assert.ok(closest > 30, 'the drawn line keeps clear of the icon along its whole length');
+  assert.ok(Math.abs(point(8).y) > 24,
+    'the middle of the line bends out of the icon it would have crossed');
+  assert.ok(closest > 24, 'the drawn line keeps outside the icon along its whole length');
+
+  // A name lying across the line bends it exactly as an icon does.
+  const onName = { x: 120, y: -40, nameWidth: 96 };
+  const named = window.HTSocialWeb.edgePath(a, b, [a, b, onName], false)
+    .match(/-?\d+(?:\.\d+)?/g).map(Number);
+  assert.ok(Math.abs(named[9]) > 20, 'a name across the line bends it too');
 });
 
 await test('an edge stops the same distance from every person and aims at them', async () => {
-  // The tip is a fixed 40 from the centre and the last leg is radial, so a bend
+  // The tip is a fixed 38 from the centre and the last leg is radial, so a bend
   // in the middle cannot leave the arrowhead pointing past its person.
   const a = { x: 0, y: 0 };
   const b = { x: 300, y: 120 };
@@ -1027,10 +1041,10 @@ await test('an edge stops the same distance from every person and aims at them',
   const start = { x: n[0], y: n[1] };
   const beforeEnd = { x: n[14], y: n[15] };
   const end = { x: n[16], y: n[17] };
-  assert.ok(Math.abs(Math.hypot(start.x - a.x, start.y - a.y) - 40) < 1e-9,
-    'the tip starts 40 from the first person');
-  assert.ok(Math.abs(Math.hypot(end.x - b.x, end.y - b.y) - 40) < 1e-9,
-    'and ends 40 from the second, whatever the distance between them');
+  assert.ok(Math.abs(Math.hypot(start.x - a.x, start.y - a.y) - 38) < 1e-9,
+    'the tip starts 38 from the first person');
+  assert.ok(Math.abs(Math.hypot(end.x - b.x, end.y - b.y) - 38) < 1e-9,
+    'and ends 38 from the second, whatever the distance between them');
   const cross = (end.x - beforeEnd.x) * (b.y - end.y) - (end.y - beforeEnd.y) * (b.x - end.x);
   assert.ok(Math.abs(cross) < 1e-9, 'the leg into the circle is aimed at its centre');
 });

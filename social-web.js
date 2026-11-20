@@ -385,11 +385,53 @@
       var p = document.createElement('p'); p.textContent = text; details.appendChild(p);
     });
   }
+  function cubicPoint(p0, p1, p2, p3, t) {
+    var u = 1 - t;
+    return {
+      x: u * u * u * p0.x + 3 * u * u * t * p1.x + 3 * u * t * t * p2.x + t * t * t * p3.x,
+      y: u * u * u * p0.y + 3 * u * u * t * p1.y + 3 * u * t * t * p2.y + t * t * t * p3.y
+    };
+  }
+
+  function segmentHitsCircle(from, to, center, radius) {
+    var dx = to.x - from.x, dy = to.y - from.y;
+    var length2 = dx * dx + dy * dy || 1;
+    var t = Math.max(0, Math.min(1, ((center.x - from.x) * dx + (center.y - from.y) * dy) / length2));
+    return Math.hypot(from.x + dx * t - center.x, from.y + dy * t - center.y) < radius;
+  }
+
+  // Liang-Barsky: does the segment touch the box at all?
+  function segmentHitsBox(from, to, box) {
+    var dx = to.x - from.x, dy = to.y - from.y;
+    var edges = [-dx, dx, -dy, dy];
+    var bounds = [from.x - box.left, box.right - from.x, from.y - box.top, box.bottom - from.y];
+    var enter = 0, exit = 1;
+    for (var i = 0; i < 4; i++) {
+      if (!edges[i]) { if (bounds[i] < 0) return false; continue; }
+      var t = bounds[i] / edges[i];
+      if (edges[i] < 0) {
+        if (t > exit) return false;
+        if (t > enter) enter = t;
+      } else {
+        if (t < enter) return false;
+        if (t < exit) exit = t;
+      }
+    }
+    return true;
+  }
+
+  // What a line must not cross: the icon circle and the name printed under it.
+  var ICON_RADIUS = 26;
+  function labelBox(node) {
+    var half = Math.max(12, (node.nameWidth || 60) / 2);
+    return { left: node.x - half, right: node.x + half, top: node.y + 33, bottom: node.y + 49 };
+  }
+
   // The arrowhead's tip sits this far from a person's centre, and the line
   // runs straight at the centre for the last stretch before it. Both are fixed
   // so every head looks the same distance from the person and points at them,
   // however much the middle of the line had to bend.
-  var EDGE_GAP = 40;
+  var EDGE_GAP = 38;
   var EDGE_STUB = 12;
 
   /**
@@ -400,29 +442,6 @@
   function edgePath(a, b, blockers) {
     var dx = b.x - a.x, dy = b.y - a.y, distance = Math.max(1, Math.hypot(dx, dy));
     var ux = dx / distance, uy = dy / distance;
-    var bend = 0;
-    var posSide = 0, negSide = 0;
-    (blockers || []).forEach(function (other) {
-      if (!other || other === a || other === b) return;
-      var along = ((other.x - a.x) * ux + (other.y - a.y) * uy) / distance;
-      // Near the endpoints the stubs already clear the node.
-      if (along <= 0.1 || along >= 0.9) return;
-      var px = a.x + ux * along * distance, py = a.y + uy * along * distance;
-      var overlap = 58 - Math.hypot(other.x - px, other.y - py);
-      if (overlap <= 0) return;
-      if ((other.x - px) * -uy + (other.y - py) * ux >= 0) posSide += overlap;
-      else negSide += overlap;
-    });
-    if (posSide || negSide) {
-      // Bend away from the busier side. This is the widest the curve gets, so
-      // it is the full clearance the obstacles need, not half of it.
-      var away = posSide >= negSide ? -1 : 1;
-      var worse = Math.max(posSide, negSide);
-      var better = Math.min(posSide, negSide);
-      // A shallow, wide bow: enough to step around whoever is in the way, not
-      // enough to read as a deliberate curve of its own.
-      bend = away * Math.min(90, Math.max(30, worse - better / 2));
-    }
     // Two people closer than two gaps cannot both keep it; short edges give up
     // a little distance rather than crossing each other.
     var gap = Math.min(EDGE_GAP, distance / 2 - 6);
@@ -431,10 +450,78 @@
     var ex = b.x - ux * gap, ey = b.y - uy * gap;
     var s2x = sx + ux * stub, s2y = sy + uy * stub;
     var e2x = ex - ux * stub, e2y = ey - uy * stub;
-    var mx = (a.x + b.x) / 2 - uy * bend, my = (a.y + b.y) / 2 + ux * bend;
     // Control reach along the chord. It makes the curve leave and rejoin the
     // chord flat, so the stubs join without a kink.
     var k = Math.max(20, Math.min(90, distance * 0.25));
+
+    // Only someone the straight line would actually run through -- an icon or
+    // the name under it -- is worth bending for. Merely passing near leaves
+    // the edge straight, which is most of them.
+    var crossed = [];
+    (blockers || []).forEach(function (other) {
+      if (!other || other === a || other === b) return;
+      var along = ((other.x - a.x) * ux + (other.y - a.y) * uy) / distance;
+      // The stubs are straight, so nothing sitting behind them can be dodged.
+      if (along * distance < gap + stub + 6) return;
+      if ((1 - along) * distance < gap + stub + 6) return;
+      var start = { x: a.x, y: a.y }, end = { x: b.x, y: b.y };
+      if (segmentHitsCircle(start, end, other, ICON_RADIUS)
+        || segmentHitsBox(start, end, labelBox(other))) {
+        crossed.push(other);
+      }
+    });
+
+    var bend = 0;
+    var mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+    if (crossed.length) {
+      // Move away from the busier side and take the shallowest bow that
+      // actually clears every icon and name on the way.
+      var side = 0;
+      crossed.forEach(function (other) {
+        side += (other.x - a.x) * -uy + (other.y - a.y) * ux;
+      });
+      var away = side >= 0 ? -1 : 1;
+      var steps = [12, 18, 26, 36, 48, 62, 78, 96, 116];
+      function curvePoints(bendValue) {
+        var cx = (a.x + b.x) / 2 - uy * bendValue;
+        var cy = (a.y + b.y) / 2 + ux * bendValue;
+        var pts = [{ x: sx, y: sy }, { x: s2x, y: s2y }], i, t;
+        for (i = 1; i <= 12; i++) {
+          t = i / 12;
+          pts.push(cubicPoint({ x: s2x, y: s2y }, { x: s2x + ux * k, y: s2y + uy * k },
+            { x: cx - ux * k, y: cy - uy * k }, { x: cx, y: cy }, t));
+        }
+        for (i = 1; i <= 12; i++) {
+          t = i / 12;
+          pts.push(cubicPoint({ x: cx, y: cy }, { x: cx + ux * k, y: cy + uy * k },
+            { x: e2x - ux * k, y: e2y - uy * k }, { x: e2x, y: e2y }, t));
+        }
+        pts.push({ x: ex, y: ey });
+        return pts;
+      }
+      function clears(bendValue) {
+        var pts = curvePoints(bendValue);
+        for (var i = 0; i < crossed.length; i++) {
+          var other = crossed[i], box = labelBox(other);
+          for (var j = 1; j < pts.length; j++) {
+            if (segmentHitsCircle(pts[j - 1], pts[j], other, ICON_RADIUS)) return false;
+            if (segmentHitsBox(pts[j - 1], pts[j], box)) return false;
+          }
+        }
+        return true;
+      }
+      [away, -away].forEach(function (dir) {
+        if (bend) return;
+        for (var i = 0; i < steps.length; i++) {
+          if (clears(dir * steps[i])) { bend = dir * steps[i]; return; }
+        }
+      });
+      // Nothing cleared in either direction: bow as far as allowed rather than
+      // run straight through someone.
+      if (!bend) bend = away * steps[steps.length - 1];
+      mx = (a.x + b.x) / 2 - uy * bend;
+      my = (a.y + b.y) / 2 + ux * bend;
+    }
     return 'M' + sx + ',' + sy
       + ' L' + s2x + ',' + s2y
       + ' C' + (s2x + ux * k) + ',' + (s2y + uy * k)
