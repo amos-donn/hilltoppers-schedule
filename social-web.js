@@ -389,8 +389,8 @@
   // runs straight at the centre for the last stretch before it. Both are fixed
   // so every head looks the same distance from the person and points at them,
   // however much the middle of the line had to bend.
-  var EDGE_GAP = 44;
-  var EDGE_STUB = 14;
+  var EDGE_GAP = 40;
+  var EDGE_STUB = 12;
 
   /**
    * The `d` of one edge's path. Only the middle bends around anyone standing
@@ -419,9 +419,9 @@
       var away = posSide >= negSide ? -1 : 1;
       var worse = Math.max(posSide, negSide);
       var better = Math.min(posSide, negSide);
-      // This shape only reaches its full bend at the midpoint, so it needs a
-      // deeper apex than the old quadratic to keep the same clearance.
-      bend = away * Math.min(140, Math.max(55, 1.6 * (worse - better / 2)));
+      // A shallow, wide bow: enough to step around whoever is in the way, not
+      // enough to read as a deliberate curve of its own.
+      bend = away * Math.min(90, Math.max(30, worse - better / 2));
     }
     // Two people closer than two gaps cannot both keep it; short edges give up
     // a little distance rather than crossing each other.

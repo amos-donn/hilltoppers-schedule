@@ -1018,7 +1018,7 @@ await test('edges flow around the icons between them instead of under them', asy
 });
 
 await test('an edge stops the same distance from every person and aims at them', async () => {
-  // The tip is a fixed 44 from the centre and the last leg is radial, so a bend
+  // The tip is a fixed 40 from the centre and the last leg is radial, so a bend
   // in the middle cannot leave the arrowhead pointing past its person.
   const a = { x: 0, y: 0 };
   const b = { x: 300, y: 120 };
@@ -1027,10 +1027,10 @@ await test('an edge stops the same distance from every person and aims at them',
   const start = { x: n[0], y: n[1] };
   const beforeEnd = { x: n[14], y: n[15] };
   const end = { x: n[16], y: n[17] };
-  assert.ok(Math.abs(Math.hypot(start.x - a.x, start.y - a.y) - 44) < 1e-9,
-    'the tip starts 44 from the first person');
-  assert.ok(Math.abs(Math.hypot(end.x - b.x, end.y - b.y) - 44) < 1e-9,
-    'and ends 44 from the second, whatever the distance between them');
+  assert.ok(Math.abs(Math.hypot(start.x - a.x, start.y - a.y) - 40) < 1e-9,
+    'the tip starts 40 from the first person');
+  assert.ok(Math.abs(Math.hypot(end.x - b.x, end.y - b.y) - 40) < 1e-9,
+    'and ends 40 from the second, whatever the distance between them');
   const cross = (end.x - beforeEnd.x) * (b.y - end.y) - (end.y - beforeEnd.y) * (b.x - end.x);
   assert.ok(Math.abs(cross) < 1e-9, 'the leg into the circle is aimed at its centre');
 });
