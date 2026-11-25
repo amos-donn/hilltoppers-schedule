@@ -115,6 +115,22 @@ await test('the sidebar matches the reference dashboard width', () => {
   assert.match(shell, /grid-template-columns:\s*232px\b/, 'the sidebar column is 232px');
 });
 
+await test('the dark theme follows the system and keeps the reference colours', () => {
+  // The three colours the dark page is built on came from the reference: the
+  // page on the darker green-black, the sidebar and cards on the lighter one, a
+  // selected tab filled with the wash and reading in the mint.
+  const css = readFileSync(repoPath('dashboard.css'), 'utf8');
+  const dark = css.match(/@media \(prefers-color-scheme: dark\) \{[\s\S]*?\n\}/);
+  assert.ok(dark, 'dashboard.css carries a dark theme');
+  assert.match(dark[0], /--bg:\s*#141a17/, 'the page sits on the darker of the two');
+  assert.match(dark[0], /--surface:\s*#18201b/, 'cards and the sidebar use the other');
+  assert.match(dark[0], /\.dashboard__indicator\s*\{\s*background:\s*#304b38/, 'a selected tab is filled with the wash');
+  assert.match(dark[0], /\.dashboard__tab\[aria-selected='true'\]\s*\{\s*color:\s*#91c6a0/, 'and reads in the mint');
+  // Nothing may leak: the light palette is declared outside the query only.
+  const light = css.slice(0, css.indexOf('@media (prefers-color-scheme: dark)'));
+  assert.ok(!/--bg:\s*#141a17/.test(light), 'the light theme keeps its own palette');
+});
+
 await test('the CSS change carries a new cache-busting version', () => {
   // dashboard.css is served with a ?v= token; without a bump a returning
   // browser keeps the old rules and the brand renders with the stale layout.

@@ -1143,3 +1143,170 @@ body.social-web-open .dashboard { height: 100dvh; }
 @media (max-width: 900px) {
   body.social-web-open .dashboard { grid-template-rows: auto minmax(0, 1fr); }
 }
+
+/* --- dark theme ----------------------------------------------------------
+ *
+ * The page follows the system's dark setting. The three colours that set the
+ * tone came from the reference: the page sits on #141a17, the sidebar and every
+ * card on #18201b, a selected tab is filled with #304b38 and reads in #91c6a0.
+ * Everything else is derived from those: surfaces step up in lightness as they
+ * come forward, the accent is the same mint as the selected tab, and the sage
+ * that the light theme uses for buttons becomes the fill of a button with the
+ * mint as its text, so the two themes read as the same product.
+ *
+ * Most of the extension's own file (classSettings.css) already speaks in
+ * custom properties, so re-declaring the palette carries the panels, tables,
+ * fields and friend rows with it. The rules below only name what was written
+ * in literals: the shell, the buttons, the search card and the map.
+ */
+
+@media (prefers-color-scheme: dark) {
+  :root:root {
+    color-scheme: dark;
+    --bg: #141a17;
+    --surface: #18201b;
+    --surface-muted: #1f2822;
+    --text: #e3ebe4;
+    --muted: #98a89d;
+    --border: #2a342c;
+    --accent: #91c6a0;
+    --accent-muted: #22322a;
+    --danger: #e0a094;
+  }
+
+  body, html { background: var(--bg); color: var(--text); }
+
+  /* The light theme pins every control to the light scheme so a dark OS cannot
+     repaint a field the page already drew; here that pin flips. */
+  .dashboard input,
+  .dashboard select,
+  .dashboard textarea,
+  .dashboard button { color-scheme: dark; }
+
+  /* --- sidebar ---------------------------------------------------------- */
+
+  .dashboard__sidebar { background: #18201b; }
+  .dashboard__tab { color: #98a89d; }
+  .dashboard__tab:hover { background: #212b24; color: var(--text); }
+  .dashboard__tab[aria-selected='true'] { color: #91c6a0; }
+  .dashboard__indicator { background: #304b38; }
+  .dashboard__avatar { background: #243128; color: #91c6a0; }
+  .dashboard__account-row button.tertiary { color: #98a89d; }
+  .dashboard__account-row button.tertiary:hover { color: var(--text); }
+
+  /* --- buttons ---------------------------------------------------------- */
+
+  .dashboard button.primary { background: #304b38; border-color: #3d5c46; color: #91c6a0; }
+  .dashboard button.primary:not(:disabled):hover {
+    background: #37553f;
+    border-color: #456a4f;
+    box-shadow: 0 6px 14px rgba(0, 0, 0, 0.3);
+  }
+  .dashboard button.secondary { background: #202a24; border-color: #2f3b32; color: #cfe0d3; }
+  .dashboard button.secondary:not(:disabled):hover { background: #27332b; border-color: #3a4a3d; }
+  .dashboard button.tertiary { color: #91c6a0; }
+  .dashboard button.tertiary:not(:disabled):hover { background: #22302a; color: #a8d7b5; }
+  .dashboard button.danger { background: #332220; border-color: #4a2f2b; color: #e5a79c; }
+  .dashboard button.danger:not(:disabled):hover { background: #3d2723; border-color: #5b3a34; color: #f0b6a9; }
+
+  /* --- fields ----------------------------------------------------------- */
+
+  .dashboard select {
+    border-color: var(--border);
+    background-color: var(--surface-muted);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 256 256' fill='%2398a89d'%3E%3Cpath d='M213.66,101.66l-80,80a8,8,0,0,1-11.32,0l-80-80A8,8,0,0,1,53.66,90.34L128,164.69l74.34-74.35a8,8,0,0,1,11.32,11.32Z'/%3E%3C/svg%3E");
+    color: var(--text);
+  }
+  .dashboard select:hover { background-color: #26312a; border-color: #38463b; }
+  .dashboard select option { background: #18201b; color: var(--text); }
+  .dashboard input[type='text'],
+  .dashboard input[type='email'],
+  .dashboard input[type='password'] { background: var(--surface-muted); color: var(--text); }
+  .dashboard input[type='checkbox'] { accent-color: #91c6a0; }
+
+  .class-settings__hint--error { color: #f0908a; }
+  .class-settings__hint--warning { color: #e0b070; }
+  .class-settings__badge { background: rgba(224, 176, 112, 0.16); color: #e0b070; }
+  .class-settings__badge--pending { background: rgba(96, 165, 250, 0.18); color: #8ec2f8; }
+  .class-settings__panel,
+  .class-settings__account { box-shadow: 0 8px 18px rgba(0, 0, 0, 0.36); }
+
+  /* --- the expanding search --------------------------------------------- */
+
+  .search-card__toggle { background: #18201b; border-color: #2f3b32; color: #b7d9c1; }
+  .search-card__toggle:hover { background: #212b24; border-color: #3a4a3d; }
+  .search-card__panel {
+    background: #1a231d;
+    border-color: #2f3b32;
+    box-shadow: 0 20px 44px rgba(0, 0, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.4);
+  }
+  .search-card__panel:focus-within {
+    border-color: #3f5c49;
+    box-shadow: 0 20px 44px rgba(0, 0, 0, 0.55), 0 0 0 3px rgba(145, 198, 160, 0.22);
+  }
+  .search-card__icon { color: #83a88c; }
+  /* The dark field surface above would draw a box inside the card; the search
+     field is part of the card, not an input sitting on one. */
+  .dashboard .search-card__input,
+  .dashboard .search-card__input[type='text'],
+  .dashboard .search-card__input[type='search'] { background: transparent; color: var(--text); }
+  .search-card__input::placeholder { color: #7c8c81; }
+  .search-card__go { background: #22302a; border-color: #2f3b32; color: #a8d7b5; }
+  .search-card__go:hover { background: #283a2f; }
+  .search-card__list { border-top-color: #26302a; }
+  .search-card__option { color: #dbe6dd; }
+  .search-card__option:hover,
+  .search-card__option:focus-visible { background: #222e26; }
+  .search-card__option[aria-selected='true'] { background: #304b38; }
+  .search-card__empty { color: #8b9a90; }
+
+  /* --- the Social web --------------------------------------------------- */
+
+  .social-web,
+  .social-web__canvas {
+    background-color: #121814;
+    background-image: radial-gradient(#26312a 1px, transparent 1px);
+  }
+  #social-web-svg { color: #5f7b64; }
+  .social-web__edge.is-active { color: #91c6a0; }
+  .social-web__node circle { fill: #1b241e; stroke: #55705a; }
+  .social-web__node.is-you circle { fill: #2a3d2e; stroke: #91c6a0; }
+  .social-web__node.is-selected circle,
+  .social-web__node:focus-visible circle { fill: #91c6a0; stroke: #c6e3cd; }
+  .social-web__initials { fill: #d6e6da; }
+  .social-web__node.is-selected .social-web__initials,
+  .social-web__node:focus-visible .social-web__initials { fill: #14201a; }
+  .social-web__label { fill: #cfdccf; stroke: #121814; }
+  .social-web__toolbar { background: rgba(24, 32, 27, 0.93); border-color: #2f3b32; }
+  .social-web__count { background: #1d2a22; border-color: #2f3b32; color: #a8d7b5; box-shadow: none; }
+  .social-web__details {
+    background: rgba(26, 35, 29, 0.95);
+    border-color: #2f3b32;
+    color: #d6e3d8;
+    box-shadow: 0 8px 18px rgba(0, 0, 0, 0.42);
+  }
+  .social-web__grip { background: #1f2a23; border-bottom-color: #2b362e; color: #6e8274; }
+  .social-web__grip:active { color: #a8d7b5; }
+  .social-web__pill--giving { background: #304b38; color: #a8d7b5; }
+  .social-web__pill--receiving { background: rgba(56, 150, 220, 0.18); color: #8ec9f0; }
+  .social-web__person { background: #222e26; border-color: #303c33; color: #cfe0d3; }
+  .social-web__person:hover { background: #283830; border-color: #3a4a3d; }
+  .social-web__status { background: rgba(24, 32, 27, 0.93); border-color: #2f3b32; color: #a8d7b5; }
+
+  /* --- waiting for the session ----------------------------------------- */
+
+  .skeleton { background: #243027; }
+  .skeleton::after,
+  body.is-booting .social-web__status:empty::after {
+    background: linear-gradient(90deg, transparent, rgba(145, 198, 160, 0.14), transparent);
+  }
+  body.is-booting .social-web__status:empty { background: #243027; border-color: #2a342c; }
+
+  /* --- the tour --------------------------------------------------------- */
+
+  .tour__card { box-shadow: 0 18px 40px rgba(0, 0, 0, 0.5); }
+  .tour__back:hover:not(:disabled) { background: #27332b; border-color: #3a4a3d; color: #a8d7b5; }
+  .tour__next { background: #304b38; border-color: #3d5c46; color: #91c6a0; }
+  .tour__next:hover { background: #37553f; border-color: #456a4f; }
+  .tour__card button:focus-visible { outline-color: #91c6a0; }
+}
