@@ -942,12 +942,24 @@ await test('the Social web includes everyone by default and supports selection, 
   assert.equal(blocks.length, 2, 'the pill has two sections');
   assert.match(blocks[0].querySelector('.social-web__pill').textContent, /^Shares with$/,
     'the Shares with pill heads the section it belongs to');
-  assert.match(blocks[0].querySelector('p').textContent, /Erin/, 'and the list under it is inside that section');
-  assert.equal(blocks[1].querySelector('p').textContent.includes(':'), false,
-    'no colon is left in the text');
+  const people = [...blocks[0].querySelectorAll('.social-web__person')].map((chip) => chip.textContent);
+  assert.ok(people.includes('Erin'), 'the people are pills inside the section they belong to');
+  assert.equal(blocks[0].textContent.includes(':'), false, 'no colon is left in the text');
   me.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
   assert.equal($('social-web-details').hidden, true, 'deselecting takes the pill away again');
   assert.equal($('social-web-details').textContent, '', 'and it leaves nothing behind');
+
+  // Everyone in those lists is a pill you can click through, so the web can be
+  // walked from the card instead of hunting for a circle on the map.
+  me.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+  const erinChip = [...$('social-web-details').querySelectorAll('.social-web__person')]
+    .find((chip) => chip.textContent === 'Erin');
+  assert.ok(erinChip, 'a person in the list is a pill');
+  erinChip.click();
+  assert.match($('social-web-details').querySelector('strong').textContent, /Erin/,
+    'clicking one opens their card');
+  const picked = $('social-web-scene').querySelector('.social-web__node.is-selected');
+  assert.ok(picked.getAttribute('aria-label').includes('Erin'), 'and selects them on the map');
   const original = $('social-web-scene').getAttribute('transform');
   $('social-web-zoom-in').click();
   await nextFrame();

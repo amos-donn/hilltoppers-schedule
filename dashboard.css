@@ -49,6 +49,24 @@ body.social-web-open #panel-social-web:not([hidden]) { display: block; height: 1
 .social-web__pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: .01em; }
 .social-web__pill--giving { background: #e2ebdc; color: #38533f; }
 .social-web__pill--receiving { background: rgba(29, 155, 240, .14); color: #0f5c93; }
+/* Everyone in those lists is a pill too, and a button: clicking one opens that
+   person's card and lights up their connections on the map. */
+.social-web__people { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.social-web__person {
+  padding: 3px 10px;
+  border: 1px solid #dde3d8;
+  border-radius: 999px;
+  background: #eef1eb;
+  color: #33473a;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.5;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+.social-web__person:hover { background: #e5eadf; border-color: #ccd5c3; }
+.social-web__person:focus-visible { outline: 3px solid #78a88c; outline-offset: 2px; }
 .social-web__details[hidden] { display: none; }
 .social-web__status { position: absolute; top: 50%; left: 50%; z-index: 3; max-width: calc(100% - 48px); margin: 0; padding: 10px 16px; border-radius: 999px; background: #ffffffd9; border: 1px solid #d8e0d0; color: #456344; font-size: 13px; text-align: center; transform: translate(-50%, -50%); }
 .social-web__status:empty { display: none; }
@@ -166,7 +184,8 @@ body, html {
    rounded, green, and lighter on hover. */
 .dashboard button.primary,
 .dashboard button.secondary,
-.dashboard button.tertiary {
+.dashboard button.tertiary,
+.dashboard button.danger {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -215,6 +234,20 @@ body, html {
 .dashboard button.tertiary:not(:disabled):hover {
   background: #e7eee0;
   color: #345840;
+}
+
+/* Deleting an account cannot be undone, so it is the one red control on the
+   page rather than another sage button that reads like the rest. */
+.dashboard button.danger {
+  background: #fbeceb;
+  border-color: #eccbc7;
+  color: #9c3f33;
+}
+
+.dashboard button.danger:not(:disabled):hover {
+  background: #f7dcd8;
+  border-color: #dfb0aa;
+  color: #8a3327;
 }
 
 .dashboard button.primary:disabled,
@@ -408,14 +441,15 @@ body, html {
   outline: none;
 }
 
+/* The title sits above the cards without a rule between them: the heading is
+   already the page's own label, and the line only added a second edge to the
+   first card. */
 .dashboard__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding-bottom: 18px;
   margin-bottom: 24px;
-  border-bottom: 1px solid var(--border);
 }
 
 .dashboard__header h1 { margin: 0; font-size: 25px; font-weight: 650; letter-spacing: -0.7px; }

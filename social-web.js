@@ -445,19 +445,42 @@
     heading.textContent = label(selected) + (account && selected === account.profileId ? ' (you)' : '')
       + (showsProfileId(selected) ? ' · ' + selected : '');
     details.appendChild(heading);
-    var giving = graph.edges.filter(function (edge) { return edge.source === selected; }).map(function (edge) { return label(edge.target); });
-    var receiving = graph.edges.filter(function (edge) { return edge.target === selected; }).map(function (edge) { return label(edge.source); });
+    var giving = graph.edges.filter(function (edge) { return edge.source === selected; })
+      .map(function (edge) { return { id: edge.target, name: label(edge.target) }; });
+    var receiving = graph.edges.filter(function (edge) { return edge.target === selected; })
+      .map(function (edge) { return { id: edge.source, name: label(edge.source) }; });
     // Two sections, each introduced by a pill above the list it describes, so
     // the box reads as "this is who they share with" and "this is who they can
-    // see" instead of two lines of running text.
+    // see" instead of two lines of running text. Everyone in those lists is a
+    // pill of their own that opens their card, so the web can be walked from
+    // here instead of hunting for their circle on a crowded map.
     [ ['Shares with', 'giving', giving], ['Can see', 'receiving', receiving] ].forEach(function (section) {
       var block = document.createElement('section');
       block.className = 'social-web__details-block';
       var pill = document.createElement('span');
       pill.className = 'social-web__pill social-web__pill--' + section[1];
       pill.textContent = section[0];
-      var list = document.createElement('p');
-      list.textContent = section[2].join(', ') || 'No visible connections';
+      var list = document.createElement('div');
+      list.className = 'social-web__people';
+      if (!section[2].length) {
+        var none = document.createElement('p');
+        none.textContent = 'No visible connections';
+        list.appendChild(none);
+      }
+      section[2].forEach(function (person) {
+        var chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'social-web__person';
+        chip.textContent = person.name;
+        chip.addEventListener('click', function () {
+          select(person.id);
+          // The list is rebuilt for the new person, so the chip that was
+          // clicked is gone; without this a keyboard would drop back to the
+          // top of the page instead of staying with the card it just opened.
+          if (details.focus) details.focus();
+        });
+        list.appendChild(chip);
+      });
       block.appendChild(pill);
       block.appendChild(document.createTextNode(' '));
       block.appendChild(list);
