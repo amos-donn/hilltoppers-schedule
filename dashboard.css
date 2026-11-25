@@ -39,7 +39,14 @@ body.social-web-open #panel-social-web:not([hidden]) { display: block; height: 1
 .social-web__node.is-selected .social-web__initials, .social-web__node:focus-visible .social-web__initials { fill: white; }
 .social-web__label { fill: #344a34; font-size: 12px; text-anchor: middle; paint-order: stroke; stroke: #f3f6ed; stroke-width: 5px; stroke-linejoin: round; }
 .social-web__node.is-muted, .social-web__edge.is-muted { opacity: .16; }
-.social-web__details { position: absolute; left: 50%; bottom: 16px; z-index: 3; max-width: min(560px, calc(100% - 32px)); padding: 12px 16px; border-radius: 12px; background: #f3f6edf2; border: 1px solid #d8e0d0; color: #456344; font-size: 13px; overflow-wrap: anywhere; box-shadow: 0 8px 18px rgba(15, 17, 21, .08); transform: translateX(-50%); }
+.social-web__details { position: absolute; left: 50%; bottom: 16px; z-index: 3; max-width: min(560px, calc(100% - 32px)); padding: 12px 16px; border-radius: 12px; background: #f3f6edf2; border: 1px solid #d8e0d0; color: #456344; font-size: 13px; overflow-wrap: anywhere; box-shadow: 0 8px 18px rgba(15, 17, 21, .08); transform: translateX(calc(-50% + var(--details-x, 0px))) translateY(var(--details-y, 0px)); }
+/* The strip along the top of the card is its handle: a white bar with the six
+   dots, so the card can be pulled off the part of the map it is covering. The
+   place it is put is kept in the two custom properties above, which is why it
+   holds from one person to the next. */
+.social-web__grip { display: flex; align-items: center; justify-content: center; margin: -12px -16px 8px; padding: 7px 0; border-radius: 11px 11px 0 0; border-bottom: 1px solid #e6ece0; background: #ffffff; color: #9dad96; cursor: grab; touch-action: none; user-select: none; }
+.social-web__grip:active { cursor: grabbing; color: #6f8a63; }
+.social-web__grip svg { display: block; width: 18px; height: 10px; fill: currentColor; }
 .social-web__details p { margin: 6px 0 0; line-height: 1.5; }
 /* The heading of each little section in the info pill. Two colours, because the
    two lists answer different questions: what this person hands out, and what

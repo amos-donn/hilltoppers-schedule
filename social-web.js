@@ -274,6 +274,8 @@
   var findEmpty = document.getElementById('social-web-find-empty');
   var peopleList = document.getElementById('social-web-people-list');
   var details = document.getElementById('social-web-details');
+  var detailsBody = document.getElementById('social-web-details-body');
+  var grip = document.getElementById('social-web-grip');
   var count = document.getElementById('social-web-count');
   var account = null, generation = 0;
   var graph = { nodes: [], edges: [] }, positions = new Map();
@@ -353,6 +355,7 @@
     if (svg) svg.setAttribute('viewBox', '0 0 ' + view.w + ' ' + view.h);
   }
   function fit() {
+    cameraTween++;
     syncView();
     var nodes = Array.from(positions.values());
     if (!nodes.length) return;
@@ -365,7 +368,81 @@
     camera = { scale: fitScale, x: view.w / 2 - (minX + maxX) / 2 * fitScale, y: view.h / 2 - (minY + maxY) / 2 * fitScale };
     applyCamera();
   }
+  /**
+   * The group a person belongs to: everyone reachable from them through the
+   * connections, on either side of the share. Picking a name from the search
+   * should show that person's corner of the web, so the camera fits these
+   * bounds instead of leaving the whole map on screen.
+   */
+  function groupOf(id) {
+    var members = new Set([id]);
+    var added = true;
+    while (added) {
+      added = false;
+      graph.edges.forEach(function (edge) {
+        if (members.has(edge.source) && !members.has(edge.target)) { members.add(edge.target); added = true; }
+        if (members.has(edge.target) && !members.has(edge.source)) { members.add(edge.source); added = true; }
+      });
+    }
+    return members;
+  }
+
+  /**
+   * One tween covers both axes and the zoom, so the view glides to its new
+   * place instead of jumping. A gesture, a zoom or Fit web cancels it by
+   * taking the next token: whatever the reader does next wins.
+   */
+  var cameraTween = 0;
+
+  function animateCamera(target) {
+    var token = ++cameraTween;
+    var reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduced || !window.requestAnimationFrame) {
+      camera = { x: target.x, y: target.y, scale: target.scale };
+      applyCamera();
+      return;
+    }
+    var start = { x: camera.x, y: camera.y, scale: camera.scale };
+    var begun = Date.now();
+    var duration = 320;
+    function step() {
+      if (token !== cameraTween) return;
+      var t = Math.min(1, (Date.now() - begun) / duration);
+      var eased = 1 - Math.pow(1 - t, 3);
+      camera = {
+        x: start.x + (target.x - start.x) * eased,
+        y: start.y + (target.y - start.y) * eased,
+        scale: start.scale + (target.scale - start.scale) * eased
+      };
+      applyCamera();
+      if (t < 1) frame(step);
+    }
+    frame(step);
+  }
+
+  function fitGroup(id) {
+    syncView();
+    var nodes = Array.from(groupOf(id)).map(function (member) { return positions.get(member); })
+      .filter(Boolean);
+    if (!nodes.length) return;
+    var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    nodes.forEach(function (node) {
+      minX = Math.min(minX, node.x - 110); maxX = Math.max(maxX, node.x + 110);
+      minY = Math.min(minY, node.y - 55); maxY = Math.max(maxY, node.y + 75);
+    });
+    var pad = 60;
+    var scale = Math.min(fitScale * 12, Math.max(fitScale * 0.25,
+      Math.min((view.w - pad * 2) / Math.max(1, maxX - minX),
+        (view.h - pad * 2) / Math.max(1, maxY - minY))));
+    animateCamera({
+      scale: scale,
+      x: view.w / 2 - (minX + maxX) / 2 * scale,
+      y: view.h / 2 - (minY + maxY) / 2 * scale
+    });
+  }
+
   function zoom(factor, point) {
+    cameraTween++;
     point = point || { x: view.w / 2, y: view.h / 2 };
     var scale = Math.max(fitScale * 0.25, Math.min(fitScale * 12, camera.scale * factor));
     camera.x = point.x - (point.x - camera.x) * scale / camera.scale;
@@ -443,13 +520,13 @@
         item.muted = isMuted;
       }
     });
-    details.replaceChildren();
-    if (!selected) { details.textContent = ''; details.hidden = true; return; }
+    detailsBody.replaceChildren();
+    if (!selected) { detailsBody.textContent = ''; details.hidden = true; return; }
     details.hidden = false;
     var heading = document.createElement('strong');
     heading.textContent = label(selected) + (account && selected === account.profileId ? ' (you)' : '')
       + (showsProfileId(selected) ? ' · ' + selected : '');
-    details.appendChild(heading);
+    detailsBody.appendChild(heading);
     var giving = graph.edges.filter(function (edge) { return edge.source === selected; })
       .map(function (edge) { return { id: edge.target, name: label(edge.target) }; });
     var receiving = graph.edges.filter(function (edge) { return edge.target === selected; })
@@ -489,7 +566,7 @@
       block.appendChild(pill);
       block.appendChild(document.createTextNode(' '));
       block.appendChild(list);
-      details.appendChild(block);
+      detailsBody.appendChild(block);
     });
   }
   function cubicPoint(p0, p1, p2, p3, t) {
@@ -694,14 +771,6 @@
     if (peopleList) peopleList.hidden = shown === 0;
   }
 
-  function centreOn(id) {
-    var node = positions.get(id);
-    if (!node) return;
-    camera.x = view.w / 2 - node.x * camera.scale;
-    camera.y = view.h / 2 - node.y * camera.scale;
-    applyCamera();
-  }
-
   function openFind() {
     if (!findCard || findCard.classList.contains('is-open')) return;
     findCard.classList.add('is-open');
@@ -721,7 +790,9 @@
 
   function choosePerson(id) {
     select(selected === id ? '' : id);
-    if (selected) centreOn(selected);
+    // A name picked from the search is usually someone somewhere else on the
+    // map, so the view goes to their group rather than staying where it was.
+    if (selected) fitGroup(selected);
     closeFind();
     if (findToggle) findToggle.focus();
   }
@@ -783,7 +854,7 @@
     if (!result.ok) {
       workspace.hidden = true;
       scene.replaceChildren(); positions.clear(); graph = { nodes: [], edges: [] };
-      clearPeople(); closeFind(); details.textContent = ''; details.hidden = true; selected = '';
+      clearPeople(); closeFind(); detailsBody.textContent = ''; details.hidden = true; selected = '';
       count.textContent = ''; count.hidden = true;
       status.textContent = result.status === 404 ? 'Social web is not available on the server yet.' : 'Could not load the Social web. Try refreshing.';
       // Keep the Refresh control reachable without showing stale connections.
@@ -801,7 +872,7 @@
     if (!me) {
       generation++; workspace.hidden = true; graph = { nodes: [], edges: [] }; positions.clear();
       scene.replaceChildren(); clearPeople(); closeFind();
-      count.textContent = ''; count.hidden = true; details.textContent = ''; details.hidden = true; selected = '';
+      count.textContent = ''; count.hidden = true; detailsBody.textContent = ''; details.hidden = true; selected = '';
       status.textContent = 'Sign in from Account to explore the Social web.';
     } else if (changed) refresh();
   }
@@ -828,6 +899,58 @@
       if (findCard.classList.contains('is-open') && !findCard.contains(event.target)) closeFind();
     });
   }
+  // --- Moving the info card ------------------------------------------------
+  //
+  // The card used to sit in one place at the bottom of the map, over whatever
+  // happened to be there. It has a grip now: pulled by the strip at its top it
+  // stays where it is put -- person after person, since only the contents of
+  // the card are rebuilt on a selection -- until the page is left.
+  var detailsOffset = { x: 0, y: 0 };
+
+  function placeDetails(clamp) {
+    details.style.setProperty('--details-x', detailsOffset.x + 'px');
+    details.style.setProperty('--details-y', detailsOffset.y + 'px');
+    if (!clamp || !workspace || !details.getBoundingClientRect) return;
+    // Keep a dragged card inside the map it belongs to, so it cannot be lost
+    // off the edge of the workspace.
+    var edge = workspace.getBoundingClientRect();
+    var box = details.getBoundingClientRect();
+    var dx = 0, dy = 0;
+    if (box.left < edge.left) dx = edge.left - box.left;
+    if (box.right > edge.right) dx = edge.right - box.right;
+    if (box.top < edge.top) dy = edge.top - box.top;
+    if (box.bottom > edge.bottom) dy = edge.bottom - box.bottom;
+    if (!dx && !dy) return;
+    detailsOffset.x += dx;
+    detailsOffset.y += dy;
+    details.style.setProperty('--details-x', detailsOffset.x + 'px');
+    details.style.setProperty('--details-y', detailsOffset.y + 'px');
+  }
+
+  if (grip && details) {
+    grip.addEventListener('pointerdown', function (event) {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      var start = { x: event.clientX, y: event.clientY, ox: detailsOffset.x, oy: detailsOffset.y };
+      if (grip.setPointerCapture && event.pointerId !== undefined) {
+        try { grip.setPointerCapture(event.pointerId); } catch (error) { /* no capture here */ }
+      }
+      function move(moveEvent) {
+        detailsOffset.x = start.ox + (moveEvent.clientX - start.x);
+        detailsOffset.y = start.oy + (moveEvent.clientY - start.y);
+        placeDetails(true);
+      }
+      function stop() {
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', stop);
+        window.removeEventListener('pointercancel', stop);
+      }
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', stop);
+      window.addEventListener('pointercancel', stop);
+    });
+  }
+
   document.getElementById('social-web-zoom-in').addEventListener('click', function () { zoom(1.25); });
   document.getElementById('social-web-zoom-out').addEventListener('click', function () { zoom(0.8); });
   document.getElementById('social-web-fit').addEventListener('click', fit);
@@ -838,6 +961,7 @@
     zoom(Math.exp(-Math.max(-100, Math.min(100, event.deltaY)) * 0.003), point(event));
   }, { passive: false });
   function startGesture() {
+    cameraTween++;
     var list = Array.from(pointers.values());
     gesture = list.length > 1 ? {
       center: { x: (list[0].x + list[1].x) / 2, y: (list[0].y + list[1].y) / 2 },

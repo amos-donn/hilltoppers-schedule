@@ -948,7 +948,8 @@ await test('the Social web includes everyone by default and supports selection, 
   assert.equal(blocks[0].textContent.includes(':'), false, 'no colon is left in the text');
   me.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
   assert.equal($('social-web-details').hidden, true, 'deselecting takes the pill away again');
-  assert.equal($('social-web-details').textContent, '', 'and it leaves nothing behind');
+  // The card keeps its grip and the markup around it, so compare the text.
+  assert.equal($('social-web-details').textContent.trim(), '', 'and it leaves nothing behind');
 
   // Everyone in those lists is a pill you can click through, so the web can be
   // walked from the card instead of hunting for a circle on the map.
@@ -1061,6 +1062,64 @@ await test('the Social web finds a person through its own search card', async ()
   assert.equal($('social-web-find-panel').hidden, true, 'picking a person closes the card');
   assert.match($('social-web-details').querySelector('strong').textContent, new RegExp(who),
     'and opens their card on the map');
+});
+
+await test('picking a name from the search fits that person\'s group', async () => {
+  const transform = () => $('social-web-scene').getAttribute('transform');
+  $('social-web-fit').click();
+  await nextFrame();
+  await nextFrame();
+  const wholeWeb = transform();
+
+  $('social-web-find-toggle').click();
+  const pick = [...$('social-web-people-list').querySelectorAll('.search-card__option')]
+    .find((row) => row.getAttribute('aria-selected') !== 'true');
+  assert.ok(pick, 'someone is left to pick');
+  const picked = pick.getAttribute('data-profile-id');
+  pick.click();
+  // The camera glides to the group rather than jumping, so give the tween time.
+  await new Promise((resolve) => setTimeout(resolve, 420));
+  await nextFrame();
+  const fitted = transform();
+  assert.notEqual(fitted, wholeWeb, 'the view moves to the group it was asked for');
+
+  // Where that person ends up on the map: the node's own place in the scene,
+  // through the camera. The whole point is that they are on screen afterwards.
+  const [ , tx, ty, scale ] = /translate\(([-\d.]+) ([-\d.]+)\) scale\(([-\d.]+)\)/.exec(fitted) || [];
+  const node = $('social-web-scene').querySelector('.social-web__node[data-profile-id="' + picked + '"]');
+  const [ , nx, ny ] = /translate\(([-\d.]+) ([-\d.]+)\)/.exec(node.getAttribute('transform')) || [];
+  const screenX = Number(nx) * Number(scale) + Number(tx);
+  const screenY = Number(ny) * Number(scale) + Number(ty);
+  assert.ok(screenX > 0 && screenX < 1000, 'the person fit into the view across');
+  assert.ok(screenY > 0 && screenY < 640, 'and down');
+});
+
+await test('the info card is dragged by its grip and stays where it is put', async () => {
+  const details = $('social-web-details');
+  const grip = details.querySelector('.social-web__grip');
+  assert.ok(grip, 'the card carries a grip');
+  assert.equal(grip.querySelectorAll('circle').length, 6, 'with six dots');
+  assert.ok($('social-web-details-body'), 'and its contents sit below the strip');
+
+  const send = (target, type, x, y) => {
+    const event = new window.MouseEvent(type, { clientX: x, clientY: y, button: 0, bubbles: true });
+    Object.defineProperty(event, 'pointerId', { value: 7 });
+    target.dispatchEvent(event);
+  };
+  send(grip, 'pointerdown', 100, 100);
+  send(window, 'pointermove', 160, 70);
+  send(window, 'pointerup', 160, 70);
+  assert.equal(details.style.getPropertyValue('--details-x'), '60px');
+  assert.equal(details.style.getPropertyValue('--details-y'), '-30px');
+
+  // A new person rebuilds the card's contents, not its place.
+  $('social-web-find-toggle').click();
+  const other = [...$('social-web-people-list').querySelectorAll('.search-card__option')]
+    .filter((row) => row.getAttribute('aria-selected') !== 'true')[0];
+  if (other) other.click();
+  assert.equal(details.style.getPropertyValue('--details-x'), '60px',
+    'the place holds from one person to the next');
+  assert.equal(details.style.getPropertyValue('--details-y'), '-30px');
 });
 
 await test('a reciprocal share is one connection, and a one-way share stays one arrow', async () => {
