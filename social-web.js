@@ -384,19 +384,23 @@
   /**
    * Is this person showing their ID in the graph?
    *
-   * A private profile appears as "Anonymous". Printing its profile ID next to
-   * that would hand over the one thing anonymity was for: the ID is a bearer
-   * handle, so anyone reading it could go and request their schedule. Showing
-   * a name is fine -- that is what the student chose -- but the ID is not, so a
-   * private profile shows neither.
+   * A profile ID is a bearer handle: whoever reads it can ask the server for
+   * that person's schedule. So it is printed only when the person has actually
+   * shared their schedule with you, which is the one case where the ID is the
+   * thing the share is for, plus on your own entry, which is yours to see.
    *
-   * Your own ID is always yours to see, and public profiles already publish it.
+   * A profile that chose "Anonymous" keeps its ID to itself even then: hiding
+   * it is what that choice was about, and a share does not undo it. A name is
+   * still fine to show -- that is what the student chose to display.
    */
   function showsProfileId(id) {
     var node = positions.get(id);
     if (!node) return false;
     if (account && id === account.profileId) return true;
-    return node.displayName !== 'Anonymous';
+    if (node.displayName === 'Anonymous' || !account) return false;
+    return graph.edges.some(function (edge) {
+      return edge.source === id && edge.target === account.profileId;
+    });
   }
   function select(id) {
     selected = positions.has(id) ? id : '';
@@ -443,9 +447,21 @@
     details.appendChild(heading);
     var giving = graph.edges.filter(function (edge) { return edge.source === selected; }).map(function (edge) { return label(edge.target); });
     var receiving = graph.edges.filter(function (edge) { return edge.target === selected; }).map(function (edge) { return label(edge.source); });
-    [ 'Shares with: ' + (giving.join(', ') || 'No visible connections'),
-      'Can see: ' + (receiving.join(', ') || 'No visible connections') ].forEach(function (text) {
-      var p = document.createElement('p'); p.textContent = text; details.appendChild(p);
+    // Two sections, each introduced by a pill above the list it describes, so
+    // the box reads as "this is who they share with" and "this is who they can
+    // see" instead of two lines of running text.
+    [ ['Shares with', 'giving', giving], ['Can see', 'receiving', receiving] ].forEach(function (section) {
+      var block = document.createElement('section');
+      block.className = 'social-web__details-block';
+      var pill = document.createElement('span');
+      pill.className = 'social-web__pill social-web__pill--' + section[1];
+      pill.textContent = section[0];
+      var list = document.createElement('p');
+      list.textContent = section[2].join(', ') || 'No visible connections';
+      block.appendChild(pill);
+      block.appendChild(document.createTextNode(' '));
+      block.appendChild(list);
+      details.appendChild(block);
     });
   }
   function cubicPoint(p0, p1, p2, p3, t) {

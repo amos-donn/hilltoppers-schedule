@@ -862,8 +862,19 @@ await test('a private profile in the Social web shows neither name nor ID', asyn
 
   const openGroup = $('social-web-scene').querySelector('[data-profile-id="' + openProfile + '"]');
   assert.ok(openGroup, 'the public profile is drawn');
-  assert.ok(openGroup.getAttribute('aria-label').includes(openProfile),
-    'a public profile still publishes its ID');
+  // An ID fetches that person's schedule, so being public is no longer enough
+  // to print it: only an actual share is.
+  assert.equal(openGroup.getAttribute('aria-label').includes(openProfile), false,
+    'a profile that has not shared with you does not publish its ID');
+
+  db.prepare(`INSERT INTO grants (code_hash, owner_account_id, viewer_account_id, created_at)
+    VALUES (?, ?, ?, ?)`).run('id-visibility', await accountIdOf('sub-page-open'),
+    await accountIdOf('sub-page-viewer'), Math.floor(Date.now() / 1000));
+  $('social-web-refresh').click();
+  await settle();
+  const sharing = $('social-web-scene').querySelector('[data-profile-id="' + openProfile + '"]');
+  assert.ok(sharing.getAttribute('aria-label').includes(openProfile),
+    'someone who shares with you does publish their ID');
 });
 
 await test('the Social web includes everyone by default and supports selection, pan and zoom', async () => {
@@ -904,7 +915,18 @@ await test('the Social web includes everyone by default and supports selection, 
   me.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
   assert.equal(me.getAttribute('aria-pressed'), 'true');
   assert.equal($('social-web-details').hidden, false, 'selecting a person brings the info pill up');
-  assert.match($('social-web-details').textContent, /Can see: Erin/);
+  assert.match($('social-web-details').textContent, /Can see\s+Erin/,
+    'the list of who they can see follows its heading, with no colon');
+  const pills = [...$('social-web-details').querySelectorAll('.social-web__pill')]
+    .map((pill) => pill.textContent);
+  assert.deepEqual(pills, ['Shares with', 'Can see'], 'each list is headed by its own pill');
+  const blocks = [...$('social-web-details').querySelectorAll('.social-web__details-block')];
+  assert.equal(blocks.length, 2, 'the pill has two sections');
+  assert.match(blocks[0].querySelector('.social-web__pill').textContent, /^Shares with$/,
+    'the Shares with pill heads the section it belongs to');
+  assert.match(blocks[0].querySelector('p').textContent, /Erin/, 'and the list under it is inside that section');
+  assert.equal(blocks[1].querySelector('p').textContent.includes(':'), false,
+    'no colon is left in the text');
   me.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
   assert.equal($('social-web-details').hidden, true, 'deselecting takes the pill away again');
   assert.equal($('social-web-details').textContent, '', 'and it leaves nothing behind');
