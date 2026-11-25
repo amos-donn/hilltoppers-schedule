@@ -6,7 +6,11 @@ body.social-web-open #panel-social-web:not([hidden]) { display: block; height: 1
 .social-web { position: relative; height: 100%; padding: 0; border: 0; border-radius: 0; background-color: #f3f6ed; background-image: radial-gradient(#d4ddc9 1px, transparent 1px); background-size: 22px 22px; box-shadow: none; }
 .social-web__workspace { position: absolute; inset: 0; }
 .social-web__count { position: absolute; top: 16px; right: 16px; z-index: 3; background: #e9efe4; color: #456344; border: 1px solid #d5dfce; border-radius: 999px; padding: 8px 12px; font-size: 12px; box-shadow: 0 2px 8px rgba(15, 17, 21, .06); }
-.social-web__toolbar { position: absolute; top: 16px; left: 16px; z-index: 3; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; max-width: calc(100% - 32px); margin: 0; padding: 8px; border: 1px solid #d8e0d0; border-radius: 12px; background: #ffffffd9; backdrop-filter: blur(6px); }
+/* No backdrop blur on the floating panels: they sit over a map that is moving,
+   so the browser would have to re-blur the redrawn map underneath them on every
+   frame of a drag. Both backgrounds are almost opaque anyway, so the blur cost
+   bought nothing visible. */
+.social-web__toolbar { position: absolute; top: 16px; left: 16px; z-index: 3; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; max-width: calc(100% - 32px); margin: 0; padding: 8px; border: 1px solid #d8e0d0; border-radius: 12px; background: #ffffffd9; }
 .social-web__toolbar output { min-width: 45px; text-align: center; color: var(--muted); font-size: 12px; }
 .social-web__find { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-left: auto; color: var(--muted); font-size: 12px; }
 .social-web__find select { max-width: 220px; padding: 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); }
@@ -14,6 +18,12 @@ body.social-web-open #panel-social-web:not([hidden]) { display: block; height: 1
 .social-web__canvas:active { cursor: grabbing; }
 .social-web__canvas:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 #social-web-svg { display: block; width: 100%; height: 100%; color: #78936c; }
+/* A drag or a zoom gives the scene its own layer for as long as the gesture
+   runs, so the browser moves the map it has already drawn instead of
+   re-drawing every line, arrowhead and name for each step. The class comes off
+   again shortly after the last move, which re-draws the map sharply at the
+   new zoom and leaves no oversized texture behind. */
+#social-web-svg.is-moving #social-web-scene { will-change: transform; }
 /* Opacity sits on the stroke, not the element: element opacity also fades the
    arrowheads, which are a marker painted with the path. The heads are blue and
    fully opaque, so the line is the only part that recedes. */
@@ -28,7 +38,7 @@ body.social-web-open #panel-social-web:not([hidden]) { display: block; height: 1
 .social-web__node.is-selected .social-web__initials, .social-web__node:focus-visible .social-web__initials { fill: white; }
 .social-web__label { fill: #344a34; font-size: 12px; text-anchor: middle; paint-order: stroke; stroke: #f3f6ed; stroke-width: 5px; stroke-linejoin: round; }
 .social-web__node.is-muted, .social-web__edge.is-muted { opacity: .16; }
-.social-web__details { position: absolute; left: 50%; bottom: 16px; z-index: 3; max-width: min(560px, calc(100% - 32px)); padding: 12px 16px; border-radius: 12px; background: #f3f6edf2; border: 1px solid #d8e0d0; color: #456344; font-size: 13px; overflow-wrap: anywhere; box-shadow: 0 8px 18px rgba(15, 17, 21, .08); backdrop-filter: blur(6px); transform: translateX(-50%); }
+.social-web__details { position: absolute; left: 50%; bottom: 16px; z-index: 3; max-width: min(560px, calc(100% - 32px)); padding: 12px 16px; border-radius: 12px; background: #f3f6edf2; border: 1px solid #d8e0d0; color: #456344; font-size: 13px; overflow-wrap: anywhere; box-shadow: 0 8px 18px rgba(15, 17, 21, .08); transform: translateX(-50%); }
 .social-web__details p { margin: 6px 0 0; line-height: 1.5; }
 .social-web__details[hidden] { display: none; }
 .social-web__status { position: absolute; top: 50%; left: 50%; z-index: 3; max-width: calc(100% - 48px); margin: 0; padding: 10px 16px; border-radius: 999px; background: #ffffffd9; border: 1px solid #d8e0d0; color: #456344; font-size: 13px; text-align: center; transform: translate(-50%, -50%); }

@@ -283,14 +283,59 @@
     if (text !== undefined) node.textContent = text;
     return node;
   }
-  function applyCamera() {
+  // --- Drawing the map -----------------------------------------------------
+  //
+  // A pointer move is not a frame. A trackpad or a high-polling mouse reports
+  // several moves per frame, and this used to write the transform, re-read the
+  // layout and reprint the zoom readout for every one of them -- more redraws
+  // of the whole map than the browser can keep up with. The camera is written
+  // once per animation frame now, with wherever the gesture ended up.
+  var zoomOutput = document.getElementById('social-web-zoom');
+  var canvasRect = null, cameraFrame = 0, cameraPending = false, stillTimer = 0;
+
+  function frame(callback) {
+    return window.requestAnimationFrame ? window.requestAnimationFrame(callback)
+      : window.setTimeout(callback, 16);
+  }
+  // Measuring the SVG is layout work, so it is done once per layout instead of
+  // once per move. syncView() and a window resize forget the measurement.
+  function canvasBox() {
+    if (!canvasRect) canvasRect = svg.getBoundingClientRect();
+    return canvasRect;
+  }
+  function forgetBox() { canvasRect = null; }
+
+  function paintCamera() {
+    cameraFrame = 0;
+    if (!cameraPending) return;
+    cameraPending = false;
     scene.setAttribute('transform', 'translate(' + camera.x + ' ' + camera.y + ') scale(' + camera.scale + ')');
-    document.getElementById('social-web-zoom').textContent = Math.round(camera.scale / fitScale * 100) + '%';
+    var percent = Math.round(camera.scale / fitScale * 100) + '%';
+    if (zoomOutput.textContent !== percent) zoomOutput.textContent = percent;
+  }
+  function applyCamera() {
+    cameraPending = true;
+    if (!cameraFrame) cameraFrame = frame(paintCamera);
+  }
+
+  // While a gesture is running the scene is promoted to its own layer, so the
+  // browser moves the map it has already drawn instead of re-drawing every
+  // line, arrowhead and name for each step. Letting go of that layer shortly
+  // after the last move is what makes the map crisp again at the new zoom.
+  var MOVE_IDLE_MS = 160;
+  function moving() {
+    svg.classList.add('is-moving');
+    clearTimeout(stillTimer);
+    stillTimer = setTimeout(function () {
+      stillTimer = 0;
+      svg.classList.remove('is-moving');
+    }, MOVE_IDLE_MS);
   }
   // The canvas is the whole tab, so the drawing area follows its aspect ratio
   // instead of letterboxing a fixed 1000x640 frame. jsdom reports a zero-size
   // rect, in which case the default frame stays in place.
   function syncView() {
+    forgetBox();
     var rect = svg && svg.getBoundingClientRect ? svg.getBoundingClientRect() : null;
     if (rect && rect.width > 0 && rect.height > 0) {
       view = {
@@ -324,7 +369,7 @@
     applyCamera();
   }
   function point(event) {
-    var rect = svg.getBoundingClientRect();
+    var rect = canvasBox();
     var scale = Math.min(rect.width / view.w, rect.height / view.h) || 1;
     return {
       x: (event.clientX - rect.left - (rect.width - view.w * scale) / 2) / scale,
@@ -361,15 +406,33 @@
       if (edge.source === selected) connected.add(edge.target);
       if (edge.target === selected) connected.add(edge.source);
     });
+    // Only touch what actually changes. A click used to rewrite a class and
+    // aria-pressed on every person and every line, which on a school-sized web
+    // is thousands of writes and a full re-style for one selection.
     nodeElements.forEach(function (item) {
-      item.element.classList.toggle('is-selected', item.id === selected);
-      item.element.classList.toggle('is-muted', !!selected && !connected.has(item.id));
-      item.element.setAttribute('aria-pressed', item.id === selected ? 'true' : 'false');
+      var isSelected = item.id === selected;
+      var isMuted = !!selected && !connected.has(item.id);
+      if (item.selected !== isSelected) {
+        item.element.classList.toggle('is-selected', isSelected);
+        item.element.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
+        item.selected = isSelected;
+      }
+      if (item.muted !== isMuted) {
+        item.element.classList.toggle('is-muted', isMuted);
+        item.muted = isMuted;
+      }
     });
     edgeElements.forEach(function (item) {
-      var active = item.ids[0] === selected || item.ids[1] === selected;
-      item.element.classList.toggle('is-active', !!selected && active);
-      item.element.classList.toggle('is-muted', !!selected && !active);
+      var isActive = !!selected && (item.ids[0] === selected || item.ids[1] === selected);
+      var isMuted = !!selected && !isActive;
+      if (item.active !== isActive) {
+        item.element.classList.toggle('is-active', isActive);
+        item.active = isActive;
+      }
+      if (item.muted !== isMuted) {
+        item.element.classList.toggle('is-muted', isMuted);
+        item.muted = isMuted;
+      }
     });
     details.replaceChildren();
     if (!selected) { details.textContent = ''; details.hidden = true; return; }
@@ -621,7 +684,9 @@
   document.getElementById('social-web-fit').addEventListener('click', fit);
   document.getElementById('social-web-refresh').addEventListener('click', refresh);
   canvas.addEventListener('wheel', function (event) {
-    event.preventDefault(); zoom(Math.exp(-Math.max(-100, Math.min(100, event.deltaY)) * 0.003), point(event));
+    event.preventDefault();
+    moving();
+    zoom(Math.exp(-Math.max(-100, Math.min(100, event.deltaY)) * 0.003), point(event));
   }, { passive: false });
   function startGesture() {
     var list = Array.from(pointers.values());
@@ -633,6 +698,7 @@
   }
   canvas.addEventListener('pointerdown', function (event) {
     if (event.button !== 0) return;
+    moving();
     var target = event.target.closest('[data-profile-id]');
     if (!pointers.size) { moved = false; pressedNode = target ? target.getAttribute('data-profile-id') : ''; }
     else { moved = true; pressedNode = ''; }
@@ -642,6 +708,7 @@
   canvas.addEventListener('pointermove', function (event) {
     if (!pointers.has(event.pointerId) || !gesture) return;
     pointers.set(event.pointerId, point(event));
+    moving();
     var list = Array.from(pointers.values());
     if (list.length > 1 && gesture.center) {
       moved = true;
@@ -673,10 +740,11 @@
     else if (event.key === '-') zoom(0.8);
     else if (event.key === '0') fit();
     else return;
+    moving();
     event.preventDefault();
   });
   // The map is sized to its tab, so a window resize needs a fresh fit rather
   // than leaving the old camera framing a different aspect ratio.
-  window.addEventListener('resize', fit);
+  window.addEventListener('resize', function () { forgetBox(); fit(); });
   window.HTSocialWeb = { setAccount: setAccount, refresh: refresh, layout: layout, edgePath: edgePath, links: links };
 })();

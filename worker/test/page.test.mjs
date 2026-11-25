@@ -99,6 +99,11 @@ const { window, errors } = page;
 const $ = page.$;
 const settle = page.settle;
 
+// The map's camera is written once per animation frame rather than once per
+// pointer event, so anything that moves it has to let a frame pass before the
+// transform can be read back.
+const nextFrame = () => new Promise((resolve) => window.requestAnimationFrame(() => resolve()));
+
 // Sign in as someone else, leaving the jar set to them; signInAsShared also
 // returns their session cookie so a test can act as them for one call.
 const signInAs = signInAsShared;
@@ -905,22 +910,29 @@ await test('the Social web includes everyone by default and supports selection, 
   assert.equal($('social-web-details').textContent, '', 'and it leaves nothing behind');
   const original = $('social-web-scene').getAttribute('transform');
   $('social-web-zoom-in').click();
+  await nextFrame();
   assert.notEqual($('social-web-scene').getAttribute('transform'), original);
   $('social-web-fit').click();
+  await nextFrame();
   assert.equal($('social-web-scene').getAttribute('transform'), original);
   $('social-web-canvas').dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+  await nextFrame();
   assert.notEqual($('social-web-scene').getAttribute('transform'), original, 'keyboard pans');
   $('social-web-fit').click();
+  await nextFrame();
   const pointer = (type, x, y, id = 1) => {
     const event = new window.MouseEvent(type, { clientX: x, clientY: y, button: 0, bubbles: true });
     Object.defineProperty(event, 'pointerId', { value: id });
     $('social-web-canvas').dispatchEvent(event);
   };
   pointer('pointerdown', 0, 0); pointer('pointermove', 70, 30); pointer('pointerup', 70, 30);
+  await nextFrame();
   assert.notEqual($('social-web-scene').getAttribute('transform'), original, 'drag pans');
   $('social-web-fit').click();
+  await nextFrame();
   pointer('pointerdown', 100, 100, 1); pointer('pointerdown', 200, 100, 2);
   pointer('pointermove', 300, 100, 2);
+  await nextFrame();
   assert.notEqual($('social-web-zoom').textContent, '100%', 'pinch zooms');
   pointer('pointerup', 100, 100, 1); pointer('pointerup', 300, 100, 2);
   const reloaded = mountPage();
