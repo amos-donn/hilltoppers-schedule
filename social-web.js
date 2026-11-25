@@ -494,7 +494,7 @@
   // runs straight at the centre for the last stretch before it. Both are fixed
   // so every head looks the same distance from the person and points at them,
   // however much the middle of the line had to bend.
-  var EDGE_GAP = 38;
+  var EDGE_GAP = 29;
   var EDGE_STUB = 12;
 
   /**

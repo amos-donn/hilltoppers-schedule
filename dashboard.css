@@ -27,8 +27,10 @@ body.social-web-open #panel-social-web:not([hidden]) { display: block; height: 1
 /* Opacity sits on the stroke, not the element: element opacity also fades the
    arrowheads, which are a marker painted with the path. The heads are blue and
    fully opaque, so the line is the only part that recedes. */
-.social-web__edge { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-opacity: .55; }
-.social-web__edge.is-mutual { stroke-width: 2.2; stroke-opacity: .7; }
+/* Every connection is drawn the same weight and the same tone. A mutual share
+   is already told apart by having an arrowhead at both ends, and a heavier line
+   for it made the same map look like two different kinds of line. */
+.social-web__edge { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-opacity: .6; }
 .social-web__edge.is-active { stroke-width: 2.8; color: #325e3a; stroke-opacity: 1; }
 .social-web__node { cursor: pointer; outline: none; }
 .social-web__node circle { fill: #fbfcf8; stroke: #92a881; stroke-width: 2; }
