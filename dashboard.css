@@ -52,6 +52,43 @@ body.social-web-open #panel-social-web:not([hidden]) { display: block; height: 1
 .social-web__details[hidden] { display: none; }
 .social-web__status { position: absolute; top: 50%; left: 50%; z-index: 3; max-width: calc(100% - 48px); margin: 0; padding: 10px 16px; border-radius: 999px; background: #ffffffd9; border: 1px solid #d8e0d0; color: #456344; font-size: 13px; text-align: center; transform: translate(-50%, -50%); }
 .social-web__status:empty { display: none; }
+
+/* --- while the session is being checked -------------------------------- */
+
+/* Nothing here may claim you are signed out before the page has asked. The
+   account check is one round trip, and on a cold load it lands after the first
+   paint: without this a signed-in visitor read "not signed in" and the map's
+   "sign in to explore" for that moment, and then watched both be taken back.
+   The page therefore starts as the shape of what is coming, and takes on the
+   real state -- signed in or signed out -- once there is an answer. */
+
+.skeleton { position: relative; display: block; overflow: hidden; border-radius: 7px; background: #e9efe4; height: 10px; }
+.skeleton::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .8), transparent); transform: translateX(-100%); animation: skeleton-sweep 1.3s ease-in-out infinite; }
+.skeleton--line { margin: 6px 0; }
+.skeleton--block { height: 46px; margin: 12px 0; }
+.skeleton--w70 { width: 70%; }
+.skeleton--w65 { width: 65%; }
+.skeleton--w55 { width: 55%; }
+.skeleton--w45 { width: 45%; }
+.skeleton--w40 { width: 40%; }
+.skeleton--w35 { width: 35%; }
+@keyframes skeleton-sweep { to { transform: translateX(100%); } }
+@media (prefers-reduced-motion: reduce) { .skeleton::after { animation: none; } }
+
+.visually-hidden { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+
+/* The sidebar's account line, and the sign-out button, wait for the answer. */
+.account-skeleton { display: none; margin-top: 6px; min-width: 150px; }
+body.is-booting .account-skeleton { display: block; }
+body.is-booting #topbar-text { display: none; }
+
+/* The Account panel's card: centred bars the size of the fields they stand in. */
+#account-loading .skeleton { max-width: 420px; margin: 10px auto; }
+
+/* The map's status is a pill once there is something to say; until then it is
+   the pill's own shape, waiting. */
+body.is-booting .social-web__status:empty { display: block; box-sizing: border-box; width: 190px; height: 38px; padding: 0; overflow: hidden; border: 1px solid #e2e8dd; background: #e9efe4; }
+body.is-booting .social-web__status:empty::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .8), transparent); transform: translateX(-100%); animation: skeleton-sweep 1.3s ease-in-out infinite; }
 @media (max-width: 900px) {
   .social-web__toolbar { right: 16px; }
   .social-web__count { top: 78px; }

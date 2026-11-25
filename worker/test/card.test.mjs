@@ -196,6 +196,27 @@ await test('not embedded, the card does not ask the Worker for friends', async (
 // ---------------------------------------------------------------------------
 // Embedded as a Topping: friends must come from the Worker.
 // ---------------------------------------------------------------------------
+await test('the card loads as a skeleton before it says there is nobody', async () => {
+  // A signed-in browser gets its friends from the account, one request away. The
+  // card used to paint "Get a life." for that moment and then replace it, which
+  // reads as the page being wrong about you.
+  setCookieJar('');
+  const page = mountPage({ frame: true });
+  try {
+    assert.doesNotMatch(page.text(), /Get a life/,
+      'no verdict is painted before the answer is in');
+    assert.ok(page.window.document.querySelector('.card-skeleton'),
+      'a card-shaped skeleton stands in for it');
+    assert.match(page.text(), /Loading your friends/, 'and says what it is doing, for a screen reader');
+
+    await page.settle();
+    assert.equal(page.window.document.querySelector('.card-skeleton'), null, 'the skeleton is gone');
+    assert.match(page.text(), /Get a life/, 'truly signed out, the empty state does appear');
+  } finally {
+    page.window.close();
+  }
+});
+
 await test('embedded with no session, the card offers sign-in', async () => {
   setCookieJar('');
   const page = mountPage({ frame: true });
@@ -203,6 +224,8 @@ await test('embedded with no session, the card offers sign-in', async () => {
   page.pokeRefresh();
   await page.settle();
   assert.equal(page.errors.length, 0, page.errors.join(' | '));
+  assert.equal(page.window.document.querySelector('.card-skeleton'), null,
+    'the skeleton gave way to the real card');
   assert.match(page.text(), /Sign in to view friends!/, 'the empty card explains how to get friends');
   const mark = page.window.document.querySelector('.empty-action .empty-action__logo');
   assert.ok(mark, 'and carries the Hilltoppers mark');

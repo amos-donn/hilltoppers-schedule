@@ -111,6 +111,32 @@
       }
       .empty-action button:hover { background: #f1f5f2; border-color: #c6d2c2; }
       .empty-action .empty-action__logo { width: 18px; height: 18px; flex: none; display: block; border-radius: 5px; }
+
+      /* The card's loading state. A signed-in browser gets its friends from the
+         account, one request away, so the card starts as this shape instead of
+         as "Get a life." -- a verdict it has not earned yet. */
+      .card-skeleton .status-heading-row { align-items: center; }
+      .skeleton-rows { display: grid; gap: 8px; margin-top: 14px; }
+      .skeleton {
+        position: relative; display: block; overflow: hidden;
+        border-radius: 7px; background: #eef2ea; height: 12px;
+      }
+      .skeleton::after {
+        content: ""; position: absolute; inset: 0;
+        background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .8), transparent);
+        transform: translateX(-100%); animation: skeleton-sweep 1.3s ease-in-out infinite;
+      }
+      .skeleton--circle { width: 18px; height: 18px; border-radius: 50%; }
+      .skeleton--w90 { width: 90%; }
+      .skeleton--w65 { width: 65%; }
+      .skeleton--w45 { width: 45%; }
+      .skeleton--w40 { width: 40%; }
+      .visually-hidden {
+        position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+        overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0;
+      }
+      @keyframes skeleton-sweep { to { transform: translateX(100%); } }
+      @media (prefers-reduced-motion: reduce) { .skeleton::after { animation: none; } }
     </style>
   </head>
   <body>
@@ -126,7 +152,7 @@
     <script src="schedule-core.js?v=20260928h"></script>
     <script src="account.js?v=20260930a"></script>
     <script src="schedule-friends.js?v=20260928h"></script>
-    <script src="schedule-card.js?v=20261007a"></script>
+    <script src="schedule-card.js?v=20261125a"></script>
     <script src="toppings-resize.js?v=20260928h" defer></script>
     <script>
       (function () {
@@ -186,6 +212,8 @@
           friends: friends,
           selectedFriend: selectedFriend,
           self: self,
+          // The account check below decides whether there is anyone to show.
+          loading: true,
           emptyActionHtml: function () { return signInPrompt; },
           onEmptyAction: function () {
             // Signing in happens on the settings page, and this page is inside
@@ -198,6 +226,17 @@
             window.open('settings.html', '_blank', 'noopener');
           }
         });
+
+        // One request decides whether this card has anyone to show, so it starts
+        // as a skeleton and settles exactly once: when the answer arrives, when
+        // it fails, or after a few seconds if it hangs.
+        var settled = false;
+        function settle() {
+          if (settled) return;
+          settled = true;
+          card.update({ loading: false });
+        }
+        setTimeout(settle, 4000);
 
         window.addEventListener('hashchange', function () {
           if (importShare()) {
@@ -243,7 +282,7 @@
             card.update({ schedule: { dateKey: '', blocks: [], dayType: null, details: null, networkFailed: true } });
           });
 
-          refreshAccountFriends().catch(function () { /* the card still shows local friends */ });
+          refreshAccountFriends().then(settle, settle);
         }
 
         // Same cadence as the popup: the countdown ticks once a second. Only the

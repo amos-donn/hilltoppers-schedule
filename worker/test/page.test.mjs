@@ -137,6 +137,24 @@ await test('the page loads without throwing', async () => {
   assert.ok(window.HT, 'schedule-core loaded');
   assert.ok(window.HTAccount, 'account client loaded');
   assert.equal($('account-loading').hidden, true, 'the sign-in check finished');
+  assert.equal(window.document.body.classList.contains('is-booting'), false,
+    'the loading state is over once the session has answered');
+});
+
+await test('the page never claims you are signed out before it has asked', async () => {
+  // This is the markup a browser paints first, one round trip before /api/me
+  // answers. It may not already say "not signed in", and it may not already
+  // offer to sign out, or a signed-in visitor watches both be taken back.
+  assert.match(html, /<body class="is-booting">/, 'the page starts in its loading state');
+  assert.match(html, /id="topbar-auth" hidden>Sign out/, 'the sign-out button waits for the answer');
+  assert.match(html, /<p class="dashboard__account-note" id="topbar-text"><\/p>/,
+    'the sidebar account line is empty until it is known');
+  assert.match(html, /<p id="social-web-status"[^>]*><\/p>/,
+    'the map does not guess "sign in" at a signed-in visitor either');
+  assert.doesNotMatch(html, /Sign in to explore the Social web/, 'that sentence is no longer markup');
+  assert.match(html, /class="skeleton skeleton--line/, 'skeleton bars stand in for the account card');
+  assert.match(html, /<span class="visually-hidden">Checking sign-in<\/span>/,
+    'the loading state still says what it is doing, for a screen reader');
 });
 
 await test('every id in the page is unique', async () => {

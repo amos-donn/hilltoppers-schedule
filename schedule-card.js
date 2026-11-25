@@ -81,6 +81,10 @@
       // in which case the primary card falls back to the selected friend.
       self: opts.self || null,
       selectedFriend: opts.selectedFriend || '',
+      // True until the page knows whether there is an account to wait for. The
+      // empty state is a verdict, and a verdict cannot be drawn before the
+      // question has been asked.
+      loading: Boolean(opts.loading),
       now: opts.now || new Date(),
       scheduleExpanded: Boolean(opts.scheduleExpanded),
       expandedBlockId: null,
@@ -432,6 +436,7 @@
     }
 
     function renderEmpty() {
+      if (state.loading) return renderSkeleton();
       var action = null;
       if (emptyActionHtml) {
         var html = typeof emptyActionHtml === 'function' ? emptyActionHtml() : emptyActionHtml;
@@ -455,6 +460,28 @@
             el('p', { text: 'Open settings to add one.' })
           ]),
           action
+        ])
+      ]);
+    }
+
+    /**
+     * The card's shape while its contents are on the way: same heading row, same
+     * rhythm, no words. It stands where "Get a life." used to appear for the
+     * half second before an account's friends arrived.
+     */
+    function renderSkeleton() {
+      return el('main', { class: 'popup card-skeleton', 'aria-busy': 'true' }, [
+        el('section', { class: 'status' }, [
+          el('div', { class: 'status-heading-row' }, [
+            el('span', { class: 'skeleton skeleton--line skeleton--w40' }),
+            el('span', { class: 'skeleton skeleton--circle' })
+          ]),
+          el('div', { class: 'skeleton-rows' }, [
+            el('span', { class: 'skeleton skeleton--line skeleton--w90' }),
+            el('span', { class: 'skeleton skeleton--line skeleton--w65' }),
+            el('span', { class: 'skeleton skeleton--line skeleton--w45' })
+          ]),
+          el('p', { class: 'visually-hidden', text: 'Loading your friends' })
         ])
       ]);
     }

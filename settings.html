@@ -13,9 +13,13 @@
     <!-- The Hilltoppers dashboard shell: sidebar tabs, the sage palette,
          and the custom dropdowns. Loaded after classSettings.css, which it
          restyles. -->
-    <link rel="stylesheet" href="dashboard.css?v=20261125c" />
+    <link rel="stylesheet" href="dashboard.css?v=20261125d" />
   </head>
-  <body>
+  <!-- The page starts as a skeleton and is told which state it is in once the
+       session check answers. Without this class it would paint "not signed in"
+       for the moment the account request is in flight, even for a signed-in
+       visitor, and then snatch it back. -->
+  <body class="is-booting">
     <div class="dashboard">
       <aside class="dashboard__sidebar" aria-label="Settings sections">
         <div class="dashboard__brand">
@@ -54,9 +58,14 @@
               <span class="dashboard__avatar" id="topbar-avatar" aria-hidden="true">
                 <svg viewBox="0 0 256 256" fill="currentColor"><path d="M230.92,212c-15.23-26.33-38.7-45.21-66.09-54.16a72,72,0,1,0-73.66,0C63.78,166.78,40.31,185.66,25.08,212a8,8,0,1,0,13.85,8c18.84-32.56,52.14-52,89.07-52s70.23,19.44,89.07,52a8,8,0,1,0,13.85-8ZM72,96a56,56,0,1,1,56,56A56.06,56.06,0,0,1,72,96Z"/></svg>
               </span>
-              <button type="button" class="tertiary" id="topbar-auth">Sign out</button>
+              <button type="button" class="tertiary" id="topbar-auth" hidden>Sign out</button>
             </div>
-            <p class="dashboard__account-note" id="topbar-text">Not signed in. Settings are saved in this browser.</p>
+            <!-- Filled by the account render: signed-out text, or who you are. -->
+            <p class="dashboard__account-note" id="topbar-text"></p>
+            <div class="account-skeleton" id="topbar-skeleton" aria-hidden="true">
+              <span class="skeleton skeleton--line skeleton--w70"></span>
+              <span class="skeleton skeleton--line skeleton--w45"></span>
+            </div>
           </div>
         </div>
       </aside>
@@ -76,7 +85,14 @@
           <p class="class-settings__hint class-settings__hint--intro">
             Your account, and how your schedule appears on the card.
           </p>
-          <p class="class-settings__loading" id="account-loading">Checking sign-in&hellip;</p>
+          <div class="class-settings__loading" id="account-loading">
+            <span class="skeleton skeleton--line skeleton--w40"></span>
+            <span class="skeleton skeleton--line skeleton--w65"></span>
+            <span class="skeleton skeleton--block"></span>
+            <span class="skeleton skeleton--line skeleton--w55"></span>
+            <span class="skeleton skeleton--line skeleton--w35"></span>
+            <span class="visually-hidden">Checking sign-in</span>
+          </div>
           <p class="class-settings__account-status class-settings__account-status--success" id="auth-status" hidden></p>
           <div id="account-signed-out" hidden>
             <p class="class-settings__hint class-settings__hint--intro">
@@ -348,7 +364,10 @@
               <span class="social-web__count" id="social-web-count">Everyone</span>
               <div class="social-web__details" id="social-web-details" role="status" aria-live="polite" hidden></div>
             </div>
-            <p id="social-web-status" class="social-web__status" role="status" aria-live="polite">Sign in to explore the Social web.</p>
+            <!-- Empty until the session is known: the page shows a skeleton
+                 pill here rather than guessing "sign in" at a signed-in
+                 visitor. -->
+            <p id="social-web-status" class="social-web__status" role="status" aria-live="polite"></p>
           </section>
         </section>
       </main>
@@ -764,6 +783,9 @@
         function renderAccount(me) {
           if (window.HTSocialWeb) window.HTSocialWeb.setAccount(me);
           accountLoading.hidden = true;
+          // The session has answered: the page can say what it is instead of
+          // showing the shape of it.
+          document.body.classList.remove('is-booting');
           if (!me) {
             signedOutBox.hidden = false;
             signedInBox.hidden = true;
