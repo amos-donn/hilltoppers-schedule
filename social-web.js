@@ -267,12 +267,17 @@
   var scene = document.getElementById('social-web-scene');
   var status = document.getElementById('social-web-status');
   var workspace = document.getElementById('social-web-workspace');
-  var picker = document.getElementById('social-web-person');
+  var findCard = document.getElementById('social-web-find');
+  var findToggle = document.getElementById('social-web-find-toggle');
+  var findPanel = document.getElementById('social-web-find-panel');
+  var findInput = document.getElementById('social-web-find-input');
+  var findEmpty = document.getElementById('social-web-find-empty');
+  var peopleList = document.getElementById('social-web-people-list');
   var details = document.getElementById('social-web-details');
   var count = document.getElementById('social-web-count');
   var account = null, generation = 0;
   var graph = { nodes: [], edges: [] }, positions = new Map();
-  var nodeElements = [], edgeElements = [], selected = '';
+  var nodeElements = [], edgeElements = [], peopleRows = [], selected = '';
   var camera = { x: 0, y: 0, scale: 1 }, fitScale = 1;
   var view = { w: 1000, h: 640 };
   var pointers = new Map(), gesture = null, moved = false, pressedNode = '';
@@ -404,7 +409,7 @@
   }
   function select(id) {
     selected = positions.has(id) ? id : '';
-    picker.value = selected;
+    markSelectedRow();
     var connected = new Set([selected]);
     graph.edges.forEach(function (edge) {
       if (edge.source === selected) connected.add(edge.target);
@@ -635,11 +640,97 @@
       + ' L' + ex + ',' + ey;
   }
 
+  // --- The people search ---------------------------------------------------
+  //
+  // This was a <select> that named the current pick and listed everyone under
+  // it. It is now the search card the toolbar shows: a pill reading "Search"
+  // that opens into a floating card with a field and the same people under it,
+  // so a name can be typed instead of scrolled for. Nothing in it names a
+  // person or says "everyone", and the pill keeps its place while the card is
+  // open so the controls beside it do not jump.
+
+  function clearPeople() {
+    peopleRows = [];
+    if (peopleList) peopleList.replaceChildren();
+    if (findInput) findInput.value = '';
+  }
+
+  function markSelectedRow() {
+    peopleRows.forEach(function (row) {
+      if (row.id === selected) row.element.setAttribute('aria-selected', 'true');
+      else row.element.removeAttribute('aria-selected');
+    });
+  }
+
+  function addPersonRow(profile) {
+    if (!peopleList) return;
+    var isMe = account && account.profileId === profile.profileId;
+    var row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'search-card__option';
+    row.setAttribute('role', 'option');
+    row.setAttribute('data-profile-id', profile.profileId);
+    row.textContent = label(profile.profileId) + (isMe ? ' (you)' : '');
+    row.addEventListener('click', function () { choosePerson(profile.profileId); });
+    peopleList.appendChild(row);
+    peopleRows.push({ id: profile.profileId, name: row.textContent.toLowerCase(), element: row });
+  }
+
+  function visibleRows() {
+    return peopleRows.filter(function (row) { return !row.element.hidden; });
+  }
+
+  function filterPeople() {
+    var query = findInput ? findInput.value.trim().toLowerCase() : '';
+    var shown = 0;
+    peopleRows.forEach(function (row) {
+      var match = !query || row.name.indexOf(query) !== -1;
+      row.element.hidden = !match;
+      if (match) shown++;
+    });
+    if (findEmpty) findEmpty.hidden = shown > 0 || !query;
+    // An empty list still draws its border and padding, so hide it outright
+    // when nothing is left to show.
+    if (peopleList) peopleList.hidden = shown === 0;
+  }
+
+  function centreOn(id) {
+    var node = positions.get(id);
+    if (!node) return;
+    camera.x = view.w / 2 - node.x * camera.scale;
+    camera.y = view.h / 2 - node.y * camera.scale;
+    applyCamera();
+  }
+
+  function openFind() {
+    if (!findCard || findCard.classList.contains('is-open')) return;
+    findCard.classList.add('is-open');
+    findToggle.setAttribute('aria-expanded', 'true');
+    findPanel.hidden = false;
+    findInput.value = '';
+    filterPeople();
+    findInput.focus();
+  }
+
+  function closeFind() {
+    if (!findCard || !findCard.classList.contains('is-open')) return;
+    findCard.classList.remove('is-open');
+    findToggle.setAttribute('aria-expanded', 'false');
+    findPanel.hidden = true;
+  }
+
+  function choosePerson(id) {
+    select(selected === id ? '' : id);
+    if (selected) centreOn(selected);
+    closeFind();
+    if (findToggle) findToggle.focus();
+  }
+
   function render(data) {
     graph = data;
     positions = new Map(layout(data.nodes, data.edges).map(function (node) { return [node.profileId, node]; }));
     scene.replaceChildren(); nodeElements = []; edgeElements = [];
-    picker.replaceChildren(new Option('Everyone', ''));
+    clearPeople();
     links(data.edges).forEach(function (link) {
       var a = positions.get(link.source), b = positions.get(link.target);
       if (!a || !b || a === b) return;
@@ -676,9 +767,10 @@
         if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); select(node.profileId); }
       });
       scene.appendChild(group); nodeElements.push({ id: node.profileId, element: group });
-      picker.appendChild(new Option(name + (isMe ? ' (you)' : ''), node.profileId));
+      addPersonRow(node);
     });
     count.textContent = data.nodes.length + ' people · ' + edgeElements.length + ' connections';
+    count.hidden = false;
     fit(); select(selected);
   }
   async function refresh() {
@@ -691,8 +783,8 @@
     if (!result.ok) {
       workspace.hidden = true;
       scene.replaceChildren(); positions.clear(); graph = { nodes: [], edges: [] };
-      picker.replaceChildren(new Option('Everyone', '')); details.textContent = ''; details.hidden = true; selected = '';
-      count.textContent = 'Everyone';
+      clearPeople(); closeFind(); details.textContent = ''; details.hidden = true; selected = '';
+      count.textContent = ''; count.hidden = true;
       status.textContent = result.status === 404 ? 'Social web is not available on the server yet.' : 'Could not load the Social web. Try refreshing.';
       // Keep the Refresh control reachable without showing stale connections.
       workspace.hidden = false;
@@ -708,16 +800,34 @@
     account = me;
     if (!me) {
       generation++; workspace.hidden = true; graph = { nodes: [], edges: [] }; positions.clear();
-      scene.replaceChildren(); picker.replaceChildren(new Option('Everyone', ''));
-      count.textContent = 'Everyone'; details.textContent = ''; details.hidden = true; selected = '';
+      scene.replaceChildren(); clearPeople(); closeFind();
+      count.textContent = ''; count.hidden = true; details.textContent = ''; details.hidden = true; selected = '';
       status.textContent = 'Sign in from Account to explore the Social web.';
     } else if (changed) refresh();
   }
-  picker.addEventListener('change', function () {
-    select(picker.value);
-    var node = positions.get(picker.value);
-    if (node) { camera.x = view.w / 2 - node.x * camera.scale; camera.y = view.h / 2 - node.y * camera.scale; applyCamera(); }
-  });
+  if (findCard) {
+    findToggle.addEventListener('click', function () {
+      if (findCard.classList.contains('is-open')) closeFind(); else openFind();
+    });
+    findInput.addEventListener('input', filterPeople);
+    findInput.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeFind();
+        findToggle.focus();
+      } else if (event.key === 'Enter') {
+        // The first match is the one a typed search is about most of the time.
+        var first = visibleRows()[0];
+        if (!first) return;
+        event.preventDefault();
+        choosePerson(first.id);
+      }
+    });
+    // The card floats over the map, so a press anywhere else puts it away.
+    document.addEventListener('pointerdown', function (event) {
+      if (findCard.classList.contains('is-open') && !findCard.contains(event.target)) closeFind();
+    });
+  }
   document.getElementById('social-web-zoom-in').addEventListener('click', function () { zoom(1.25); });
   document.getElementById('social-web-zoom-out').addEventListener('click', function () { zoom(0.8); });
   document.getElementById('social-web-fit').addEventListener('click', fit);

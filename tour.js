@@ -79,7 +79,7 @@
     {
       id: 'add-friend',
       tab: 'friends',
-      target: 'directory-search',
+      target: 'friends-search-card',
       title: 'Adding someone',
       body: 'Search public profiles by name, or paste a profile ID someone gave you. Ask for their schedule, then add them once they accept.',
       placement: 'top'

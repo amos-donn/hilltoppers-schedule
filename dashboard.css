@@ -13,7 +13,6 @@ body.social-web-open #panel-social-web:not([hidden]) { display: block; height: 1
 .social-web__toolbar { position: absolute; top: 16px; left: 16px; z-index: 3; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; max-width: calc(100% - 32px); margin: 0; padding: 8px; border: 1px solid #d8e0d0; border-radius: 12px; background: #ffffffd9; }
 .social-web__toolbar output { min-width: 45px; text-align: center; color: var(--muted); font-size: 12px; }
 .social-web__find { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-left: auto; color: var(--muted); font-size: 12px; }
-.social-web__find select { max-width: 220px; padding: 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); }
 .social-web__canvas { position: absolute; inset: 0; overflow: hidden; background-color: #f3f6ed; background-image: radial-gradient(#d4ddc9 1px, transparent 1px); background-size: 22px 22px; cursor: grab; touch-action: none; user-select: none; }
 .social-web__canvas:active { cursor: grabbing; }
 .social-web__canvas:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
@@ -111,7 +110,147 @@ body.is-booting .social-web__status:empty::after { content: ""; position: absolu
   .social-web__toolbar { right: 16px; }
   .social-web__count { top: 78px; }
 }
-@media (max-width: 600px) { .social-web__find { width: 100%; margin: 0; } .social-web__find select { flex: 1; min-width: 0; } }
+@media (max-width: 600px) { .social-web__find { width: 100%; margin: 0; } .social-web__find .search-card__toggle { width: 100%; justify-content: center; } }
+
+/* --- The expanding search ------------------------------------------------
+ *
+ * A search that opens the way a search engine's does: a pill reading "Search"
+ * becomes a floating card, its label becomes a field, and the list slides out
+ * under it. The pill keeps its place while the card is up (visibility, not
+ * display), so the controls beside it do not jump sideways as it opens. */
+
+.search-card { position: relative; }
+
+.search-card__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 15px;
+  border: 1px solid #d8e0d0;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #456344;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.search-card__toggle:hover { background: #f3f7ee; border-color: #c9d5c0; }
+.search-card.is-open .search-card__toggle { visibility: hidden; }
+
+.search-card__panel {
+  position: absolute;
+  top: -10px;
+  right: -10px;
+  z-index: 6;
+  width: min(320px, calc(100vw - 48px));
+  padding: 6px;
+  border: 1px solid #dde4d6;
+  border-radius: 16px;
+  background: #ffffff;
+  box-shadow: 0 20px 44px rgba(24, 38, 22, 0.18), 0 2px 6px rgba(24, 38, 22, 0.07);
+  animation: search-card-open 0.16s ease-out;
+}
+
+@keyframes search-card-open {
+  from { opacity: 0; transform: translateY(-8px) scale(0.97); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) { .search-card__panel { animation: none; } }
+
+.search-card__field { display: flex; align-items: center; gap: 8px; padding: 8px 10px; }
+
+.search-card__icon {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  color: #6f8a63;
+}
+
+.search-card__input {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  outline: none;
+}
+
+.search-card__input::placeholder { color: #93a48a; }
+
+/* The field has no box of its own: the whole card is the control, so the focus
+   ring goes on the card rather than a rectangle inside it. */
+.dashboard .search-card__input:focus,
+.dashboard .search-card__input:focus-visible { outline: none; }
+
+.search-card__panel:focus-within {
+  border-color: #c2d2b8;
+  box-shadow: 0 20px 44px rgba(24, 38, 22, 0.2), 0 0 0 3px rgba(120, 168, 140, 0.18);
+}
+.search-card__input::-webkit-search-cancel-button { cursor: pointer; }
+
+.search-card__go {
+  flex: none;
+  padding: 6px 11px;
+  border: 1px solid #d8e0d0;
+  border-radius: 8px;
+  background: #f4f7ef;
+  color: #456344;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.search-card__go:hover { background: #e9f0e1; }
+
+.search-card__list {
+  max-height: 264px;
+  margin-top: 2px;
+  padding-top: 4px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-top: 1px solid #eef1ea;
+}
+
+.search-card__list:empty { display: none; }
+
+.search-card__option {
+  display: block;
+  width: 100%;
+  padding: 9px 11px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: #2c3d25;
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.search-card__option:hover,
+.search-card__option:focus-visible { background: #f2f6ec; outline: none; }
+.search-card__option[aria-selected='true'] { background: #e6eddd; font-weight: 600; }
+.search-card__option[hidden] { display: none; }
+
+.search-card__empty { margin: 0; padding: 8px 11px 10px; color: #7b8d73; font-size: 13px; }
+.search-card__panel .class-settings__hint { margin: 0; padding: 4px 11px 8px; }
+
+/* The friends page has no map to float over, so the same card opens in place
+   and covers the list it searches. */
+#friends-search-card .search-card__panel { top: -8px; left: -8px; right: auto; width: min(520px, calc(100vw - 48px)); }
 
 /*
  * The settings page shell, matching daniezl/Hilltoppers.

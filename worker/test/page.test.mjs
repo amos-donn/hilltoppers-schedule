@@ -999,6 +999,70 @@ await test('the Social web includes everyone by default and supports selection, 
   assert.doesNotMatch($('page-header').className, /is-hidden/, 'other tabs keep their page title');
 });
 
+await test('the friends search is a card at the top of the page', async () => {
+  $('tab-friends-btn').click();
+  await settle(2);
+  const panel = $('panel-friends').querySelector('.class-settings__panel');
+  assert.equal(panel.firstElementChild.id, 'friends-search-card',
+    'the search sits above the list it searches');
+  assert.equal(panel.querySelector('h3'), null, 'the "Add a friend" heading it replaced is gone');
+  assert.ok(panel.querySelector('#directory-results'), 'the results list came with it');
+
+  const toggle = $('friends-search-toggle');
+  assert.equal(toggle.textContent.trim(), 'Search', 'the closed card says only "Search"');
+  // Start from the closed state so the toggle is what opens it.
+  if ($('friends-search-card').classList.contains('is-open')) toggle.click();
+  assert.equal($('friends-search-panel').hidden, true);
+  toggle.click();
+  assert.equal($('friends-search-panel').hidden, false, 'clicking opens the card');
+  assert.equal(toggle.getAttribute('aria-expanded'), 'true');
+  $('directory-search').dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  assert.equal($('friends-search-panel').hidden, true, 'Escape puts it away');
+  assert.equal(toggle.getAttribute('aria-expanded'), 'false');
+});
+
+await test('the Social web finds a person through its own search card', async () => {
+  // The toolbar used to carry a <select> that listed everyone and named the
+  // current pick. It is a search now: a pill that says only "Search" and opens
+  // a card with the same people under a field.
+  $('tab-social-web-btn').click();
+  await settle(2);
+  assert.equal($('social-web-person'), null, 'the select is gone');
+  const toggle = $('social-web-find-toggle');
+  assert.equal(toggle.textContent.trim(), 'Search', 'the pill does not name the pick');
+  assert.equal($('social-web-find-panel').hidden, true);
+
+  toggle.click();
+  assert.equal($('social-web-find-panel').hidden, false, 'the pill opens the card');
+  assert.equal(toggle.getAttribute('aria-expanded'), 'true');
+  const rows = () => [...$('social-web-people-list').querySelectorAll('.search-card__option')];
+  assert.ok(rows().length >= 2, 'the card lists everyone in the web');
+  assert.equal(rows().some((row) => /everyone/i.test(row.textContent)), false, 'without an "Everyone" row');
+
+  const input = $('social-web-find-input');
+  const type = (value) => {
+    input.value = value;
+    input.dispatchEvent(new window.Event('input', { bubbles: true }));
+  };
+  type('eri');
+  assert.deepEqual(rows().filter((row) => !row.hidden).map((row) => row.textContent),
+    ['Erin'], 'typing narrows the list to the match');
+  type('nobody');
+  assert.equal(rows().every((row) => row.hidden), true);
+  assert.equal($('social-web-find-empty').hidden, false, 'and says so when nobody matches');
+  type('erin');
+  assert.equal($('social-web-find-empty').hidden, true);
+  // Picking a row toggles, so pick someone who is not already selected.
+  type('');
+  const pick = rows().find((row) => row.getAttribute('aria-selected') !== 'true');
+  assert.ok(pick, 'someone is left to pick');
+  const who = pick.textContent.replace(/\s*\(you\)$/, '');
+  pick.click();
+  assert.equal($('social-web-find-panel').hidden, true, 'picking a person closes the card');
+  assert.match($('social-web-details').querySelector('strong').textContent, new RegExp(who),
+    'and opens their card on the map');
+});
+
 await test('a reciprocal share is one connection, and a one-way share stays one arrow', async () => {
   const L = window.HTSocialWeb.links;
   // JSON, because the array comes from the page's realm and deepEqual here is
@@ -1273,7 +1337,7 @@ await test('no step card covers the control it is pointing at', async () => {
     const base = sidebar();
     return { left: 14, top: base.top, width: 204, height: 44, right: 218, bottom: base.top + 44 };
   };
-  t.$('directory-search').getBoundingClientRect = () => ({ left: 20, top: 300, width: 200, height: 40, right: 220, bottom: 340 });
+  t.$('friends-search-card').getBoundingClientRect = () => ({ left: 20, top: 300, width: 200, height: 40, right: 220, bottom: 340 });
 
   await signInAs('sub-tour-overlap', 'overlap@example.org', 'Overlap');
   await t.window.HTAccount.refresh();
@@ -1443,8 +1507,8 @@ await test('a step that switches tab moves the page to it first', async () => {
   await t.settle();
   t.window.HTTour.start();
 
-  // Step 6 points at the directory search, which lives in the Friends panel.
-  const step = t.window.HTTour.steps().find((s) => s.target === 'directory-search');
+  // Step 6 points at the search card, which lives in the Friends panel.
+  const step = t.window.HTTour.steps().find((s) => s.target === 'friends-search-card');
   const index = t.window.HTTour.steps().indexOf(step);
   for (let i = 0; i < index; i++) t.$('tour-next').click();
 
