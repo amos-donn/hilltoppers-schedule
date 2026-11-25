@@ -615,7 +615,7 @@ await test('account labels sit above their fields, not beside them', async () =>
   const stacked = $('account-signed-in').querySelector('.class-settings__fields--stacked');
   assert.ok(stacked, 'the identity fields use the stacked layout');
   const labels = [...stacked.querySelectorAll('label')].map((l) => l.textContent.trim());
-  assert.deepEqual(labels, ['Display name', 'Your profile ID', 'Who can find you']);
+  assert.deepEqual(labels, ['Display name', 'Your profile ID', 'Visibility']);
 });
 
 await test('selecting a tab shows its panel and updates the title', async () => {
@@ -749,6 +749,7 @@ await test('the sidebar sign-out returns the page to the signed-out state', asyn
   assert.equal($('account-signed-out').hidden, false);
   assert.equal($('account-signed-in').hidden, true);
   assert.equal(window.HTAccount.isSignedIn(), false);
+  assert.equal($('notices-seen').hidden, true, 'with no notices there is nothing to mark read');
 });
 
 await test('a friend added from the directory carries real course data for the card', async () => {

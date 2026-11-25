@@ -51,7 +51,7 @@
       tab: 'account',
       target: 'visibility',
       signedInOnly: true,
-      title: 'Who can find you',
+      title: 'Visibility',
       body: 'Public means anyone can search your name and find your ID. Private means only people you give your ID to can reach you. Either way you stay in charge.',
       placement: 'top'
     },

@@ -82,9 +82,6 @@
         <section class="dashboard__panel" id="panel-account" role="tabpanel" aria-labelledby="tab-account-btn" tabindex="-1">
         <section class="class-settings__panel" id="account-panel">
           <h2>Account</h2>
-          <p class="class-settings__hint class-settings__hint--intro">
-            Your account, and how your schedule appears on the card.
-          </p>
           <div class="class-settings__loading" id="account-loading">
             <span class="skeleton skeleton--line skeleton--w40"></span>
             <span class="skeleton skeleton--line skeleton--w65"></span>
@@ -95,24 +92,13 @@
           </div>
           <p class="class-settings__account-status class-settings__account-status--success" id="auth-status" hidden></p>
           <div id="account-signed-out" hidden>
-            <p class="class-settings__hint class-settings__hint--intro">
-              Sign in with your Hilltoppers account to keep your schedule,
-              friends, and settings on your account instead of only in this
-              browser. Your profile ID is how other students reach your schedule
-              &mdash; you choose whether it is discoverable, and you can take
-              access away at any time.
-            </p>
+            <p class="class-settings__hint class-settings__hint--intro">Log in to sync your schedule data.</p>
             <div class="class-settings__oauth-buttons">
               <button type="button" class="primary class-settings__ht-button" id="signin-open">
                 <svg viewBox="0 0 256 256" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24ZM128,216a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm40-88a40,40,0,1,1-40-40A40,40,0,0,1,168,128Z"/></svg>
                 Sign in with Hilltoppers
               </button>
             </div>
-            <p class="class-settings__hint">
-              Hilltoppers handles the account, so the same email and password
-              you use there work here. Nothing extra to remember, and we never
-              see your password.
-            </p>
             <p class="class-settings__account-status" id="signin-open-status" hidden></p>
           </div>
 
@@ -194,7 +180,7 @@
                   </div>
                 </div>
                 <div class="class-settings__field">
-                  <label for="visibility">Who can find you</label>
+                  <label for="visibility">Visibility</label>
                   <select id="visibility">
                     <option value="private">Private &mdash; only people I give my ID to</option>
                     <option value="public" selected>Public &mdash; discoverable by search (default)</option>
@@ -211,12 +197,6 @@
                 straight away. Either way, you can revoke anyone's access
                 afterwards.
               </p>
-              <p class="class-settings__hint">
-                You are automatically part of the Social web. Public profiles show their
-                display name; private profiles show Anonymous. The web shows your
-                profile ID and schedule-sharing connections to signed-in students,
-                never your classes or email, and does not grant schedule access.
-              </p>
               <div class="class-settings__share-actions">
                 <button type="button" class="secondary" id="tour-replay">Replay the tour</button>
               </div>
@@ -231,10 +211,6 @@
         </section>
 
         <section class="class-settings__panel" id="schedule-panel">
-          <h2>Your schedule</h2>
-          <p class="class-settings__hint class-settings__hint--intro">
-            How your schedule is shown on the card.
-          </p>
           <div class="class-settings__fields">
             <div class="class-settings__field">
               <label for="time-format">Time format</label>
@@ -290,11 +266,6 @@
         <section class="dashboard__panel" id="panel-friends" role="tabpanel" aria-labelledby="tab-friends-btn" tabindex="-1" hidden>
         <section class="class-settings__panel">
           <h2>Friends</h2>
-          <p class="class-settings__hint class-settings__hint--intro">
-            Shown on the card in this order, top to bottom. Drag a friend by the
-            grip to reorder, or use the arrow keys on the grip. The card never
-            shows your own schedule.
-          </p>
           <div id="friend-rows" class="class-settings__friend-list"></div>
 
           <div class="class-settings__subsection">
@@ -377,7 +348,7 @@
     <script src="auth.js?v=20260930a"></script>
     <script src="account.js?v=20261001a"></script>
     <script src="social-web.js?v=20261125e"></script>
-    <script src="tour.js?v=20261119b"></script>
+    <script src="tour.js?v=20261125a"></script>
     <script>
       (function () {
         'use strict';
@@ -764,6 +735,7 @@
         var topbarAuth = document.getElementById('topbar-auth');
         var noticesTabBadge = document.getElementById('notices-tab-badge');
         var noticesPendingBadge = document.getElementById('notices-pending-badge');
+        var noticesSeenButton = document.getElementById('notices-seen');
         var displayName = document.getElementById('display-name');
         var profileIdInput = document.getElementById('profile-id');
         var visibility = document.getElementById('visibility');
@@ -1463,6 +1435,8 @@
             entries.push({ at: request.createdAt || 0, outgoing: request });
           });
           entries.sort(function (a, b) { return b.at - a.at; });
+          // With nothing to read there is nothing to mark read.
+          noticesSeenButton.hidden = notices.length === 0;
 
           if (!entries.length) {
             noticeList.appendChild(emptyHint('Nothing new.'));
