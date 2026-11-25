@@ -1224,6 +1224,10 @@ body.social-web-open .dashboard { height: 100dvh; }
   .dashboard input[type='password'] { background: var(--surface-muted); color: var(--text); }
   .dashboard input[type='checkbox'] { accent-color: #91c6a0; }
 
+  /* The reorder grip's dots read in the same mint as a selected tab. */
+  .class-settings__grip { color: #91c6a0; }
+  .class-settings__grip:active { color: #a8d7b5; }
+
   .class-settings__hint--error { color: #f0908a; }
   .class-settings__hint--warning { color: #e0b070; }
   .class-settings__badge { background: rgba(224, 176, 112, 0.16); color: #e0b070; }
