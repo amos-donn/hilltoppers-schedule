@@ -148,7 +148,10 @@
   // A bell beside the gear: the same notices the settings page lists, without
   // leaving the card. The dot is for anything unread; opening the card marks
   // them read, the way opening the Notices tab does on the settings page.
-  var BELL_SVG = '<svg aria-hidden="true" width="18" height="18" viewBox="0 0 256 256" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M220.8 169.6a8 8 0 0 1-8 6.4H43.2a8 8 0 0 1-6.4-12.8l17.6-23.5V104a73.6 73.6 0 0 1 147.2 0v35.7l17.6 23.5a8 8 0 0 1 1.6 6.4ZM160 200h-64a32 32 0 0 0 64 0Z"/></svg>';
+  // The fill is set on the icon itself, not inherited from the button: the
+  // card is embedded in a host page whose stylesheet can arrive after this one,
+  // and the bell has to read green there too.
+  var BELL_SVG = '<svg aria-hidden="true" width="18" height="18" viewBox="0 0 256 256" fill="#2f6b3f" xmlns="http://www.w3.org/2000/svg"><path d="M220.8 169.6a8 8 0 0 1-8 6.4H43.2a8 8 0 0 1-6.4-12.8l17.6-23.5V104a73.6 73.6 0 0 1 147.2 0v35.7l17.6 23.5a8 8 0 0 1 1.6 6.4ZM160 200h-64a32 32 0 0 0 64 0Z"/></svg>';
 
   // The notices bell holds exactly what the Notices tab on the settings page
   // holds: this account's notices, newest first, and the requests it is still
@@ -187,6 +190,9 @@
 
     var notices = [];
     var requests = { incoming: [], outgoing: [] };
+    // Whose schedules this account can see, and who can see its own. A request
+    // row's own status is not the answer to "do I have this person's schedule?".
+    var grants = { viewers: [], viewing: [] };
     // An opened row stays open across a repaint, so acting on it does not pull
     // the buttons out from under the pointer.
     var open = {};
@@ -203,28 +209,36 @@
      * say in a sentence are kept, so a row written by an older build cannot come
      * back into the list after a deploy.
      */
-    function fetchAll() {
+    function fetchAll(withGrants) {
       var A = window.HTAccount;
       if (!A || typeof A.listNotices !== 'function') return Promise.resolve(false);
       var calls = [A.listNotices()];
       calls.push(typeof A.listRequests === 'function' ? A.listRequests() : Promise.resolve({ ok: false }));
+      // Grants are only needed to draw pills, and the dot read on load must not
+      // cost a second request just to know whether anything is unread.
+      if (withGrants) {
+        calls.push(typeof A.listGrants === 'function' ? A.listGrants() : Promise.resolve({ ok: false }));
+      }
       return Promise.all(calls).then(function (results) {
         if (!results[0] || !results[0].ok) return false;
         notices = N.renderable(results[0].data.notices);
         requests = results[1] && results[1].ok ? results[1].data : { incoming: [], outgoing: [] };
+        if (withGrants) {
+          grants = results[2] && results[2].ok ? results[2].data : { viewers: [], viewing: [] };
+        }
         return true;
       }, function () { return false; });
     }
 
     // The red dot is for unread notices only. A request the account sent is
     // waiting on someone else, not something to read, so it does not mark the
-    // bell; the row itself still says Pending when the list is open.
+    // bell; its row still says Pending or Granted when the list is open.
     function paintDot() {
       dot.hidden = N.unread(notices) === 0;
     }
 
     function refresh() {
-      return fetchAll().then(function () { paint(); paintDot(); });
+      return fetchAll(true).then(function () { paint(); paintDot(); });
     }
 
     function clear(notice) {
@@ -290,7 +304,7 @@
     }
 
     function noticeRow(notice) {
-      var chip = N.status(notice, requests);
+      var chip = N.status(notice, requests, grants);
       var row = el('p', {
         class: 'notices-card__row' + (notice.seen ? '' : ' is-new') + (open[notice.id] ? ' is-open' : ''),
         role: 'button', tabindex: '0',
@@ -327,13 +341,14 @@
       }
       entries.forEach(function (entry) {
         if (entry.outgoing) {
+          var asked = N.askedStatus(entry.outgoing, grants);
           list.appendChild(el('p', { class: 'notices-card__row notices-card__row--asked' }, [
             el('span', {
               class: 'notices-card__text',
               text: 'You asked ' + (entry.outgoing.displayName || entry.outgoing.profileId)
                 + ' for their schedule.'
             }),
-            badge('Pending', 'pending')
+            asked ? badge(asked.text, asked.modifier) : null
           ]));
           return;
         }
@@ -386,7 +401,7 @@
       if (event.key === 'Escape') close();
     });
     // One quiet read on load, for the dot only.
-    fetchAll().then(paintDot);
+    fetchAll(false).then(paintDot);
     return wrapper;
   }
 

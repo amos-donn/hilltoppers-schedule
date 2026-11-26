@@ -74,20 +74,72 @@
     })[0] || null;
   }
 
-  /** Requests still waiting, whether on this student or on someone else. */
-  function pending(requests) {
-    var incoming = (requests && requests.incoming) || [];
-    var outgoing = (requests && requests.outgoing) || [];
-    return incoming.concat(outgoing).filter(function (request) {
-      return request.status === 'pending';
+  /**
+   * Requests still waiting, whether on this student or on someone else. A row
+   * whose access already exists is not waiting for anything, whatever it says.
+   */
+  function pending(requests, grants) {
+    var incoming = ((requests && requests.incoming) || []).filter(function (request) {
+      return request.status === 'pending' && !hasGrant(request.profileId, grants, 'viewers');
     });
+    var outgoing = ((requests && requests.outgoing) || []).filter(function (request) {
+      return request.status === 'pending' && !hasGrant(request.profileId, grants, 'viewing');
+    });
+    return incoming.concat(outgoing);
+  }
+
+  /** The pill an outgoing "you asked" row carries. Access is the truth here too. */
+  function askedStatus(request, grants) {
+    if (hasGrant(request.profileId, grants, 'viewing')) {
+      return { text: 'Granted', modifier: 'granted' };
+    }
+    if (request.status === 'pending') return { text: 'Pending', modifier: 'pending' };
+    return null;
+  }
+
+  /**
+   * True for a notice about a friend request. Only these rows carry a pill: the
+   * pill reports the state of the ask, and an access notice is about access,
+   * not an ask, so it stays a plain sentence even when the person it names
+   * happens to have a request in flight.
+   */
+  function isRequest(notice) {
+    return /^request\./.test(String((notice && notice.kind) || ''));
+  }
+
+  /**
+   * Profile IDs on one side of the sharing graph: `viewing` is whose schedules
+   * this account can see, `viewers` is who can see this account's. A live grant
+   * is the answer to an ask; a request row is only what was asked for, and it
+   * keeps its old status when access arrives some other way (an auto-grant
+   * switched on later, or an accept in another tab).
+   */
+  function grantIds(grants, side) {
+    return ((grants && grants[side]) || []).map(function (grant) {
+      return grant.profileId;
+    }).filter(Boolean);
+  }
+
+  function hasGrant(profileId, grants, side) {
+    return Boolean(profileId) && grantIds(grants, side).indexOf(profileId) >= 0;
+  }
+
+  /** The side of the graph a request notice is about: mine, or theirs. */
+  function requestSide(notice) {
+    return notice.kind === 'request.received' ? 'viewers' : 'viewing';
   }
 
   /**
    * The pill a row carries, if any. It follows the request behind it, so an ask
-   * that has been answered stops saying Pending and says what it became.
+   * that has been answered stops saying Pending and says what it became -- and
+   * a live grant wins over a request row that was never updated.
    */
-  function status(notice, requests) {
+  function status(notice, requests, grants) {
+    if (!isRequest(notice)) return null;
+    var profileId = notice.actorProfileId || (notice.payload && notice.payload.profileId);
+    if (hasGrant(profileId, grants, requestSide(notice))) {
+      return { text: 'Granted', modifier: 'granted' };
+    }
     var request = requestFor(notice, requests);
     if (!request) return null;
     if (request.status === 'pending') return { text: 'Pending', modifier: 'pending' };
@@ -129,6 +181,8 @@
     renderable: renderable,
     requestFor: requestFor,
     pending: pending,
+    isRequest: isRequest,
+    askedStatus: askedStatus,
     status: status,
     entries: entries,
     unread: unread

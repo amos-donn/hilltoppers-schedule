@@ -799,6 +799,86 @@ await test('a request row stops saying Pending and says Granted once access exis
   assert.match(panel().textContent, /Granted/, 'and says Granted');
 });
 
+await test('only a friend-request row carries a state pill', async () => {
+  // The pill reports the ask behind the row. An access notice names the same
+  // person but is not an ask, so a request in flight must not paint it.
+  const page = mountPage({});
+  await page.settle();
+  const w = page.window;
+  const N = w.HTNotices;
+  const requests = {
+    incoming: [{ id: 9, status: 'pending', profileId: 'calm-otter-4321', displayName: 'Calm Otter', createdAt: 30 }],
+    outgoing: [],
+  };
+  const base = { actorName: 'Calm Otter', actorProfileId: 'calm-otter-4321', createdAt: 30, seen: true };
+
+  ['access.restore', 'access.granted', 'access.revoked'].forEach((kind) => {
+    assert.equal(N.status({ ...base, kind }, requests), null, kind + ' carries no pill');
+  });
+
+  // The rows that are the ask still report its state.
+  assert.equal(N.status({ ...base, kind: 'request.received' }, requests).text, 'Pending');
+  requests.incoming[0].status = 'accepted';
+  assert.equal(N.status({ ...base, kind: 'request.received' }, requests).text, 'Granted');
+  requests.incoming[0].status = 'declined';
+  assert.equal(N.status({ ...base, kind: 'request.received' }, requests).text, 'Declined');
+
+  // A live grant is the answer even when the request row was never updated --
+  // an auto-grant switched on after the ask, or a decision made elsewhere.
+  const grants = {
+    viewers: [{ profileId: 'calm-otter-4321' }],
+    viewing: [{ profileId: 'brave-lynx-7777' }],
+  };
+  const waiting = {
+    incoming: [{ id: 9, status: 'pending', profileId: 'calm-otter-4321' }],
+    outgoing: [{ id: 11, status: 'pending', profileId: 'brave-lynx-7777' }],
+  };
+  assert.equal(N.status({ ...base, kind: 'request.received' }, waiting, grants).text, 'Granted',
+    'a grant on my side answers an incoming ask');
+  assert.equal(N.askedStatus(waiting.outgoing[0], grants).text, 'Granted',
+    'a schedule I can see answers my own ask');
+  assert.equal(N.pending(waiting, grants).length, 0, 'neither is still waiting');
+
+  // And in the panel the restore offer keeps its sentence, with no chip.
+  w.HTAccount.listNotices = async () => ({
+    ok: true,
+    data: { notices: [{ ...base, id: 4, kind: 'access.restore', payload: { profileId: 'calm-otter-4321' } }] },
+  });
+  w.HTAccount.listRequests = async () => ({ ok: true, data: requests });
+  w.document.querySelector('.notices-button').click();
+  await wait(60);
+  const panel = w.document.querySelector('.notices-card');
+  assert.match(panel.textContent, /Restore it\?/, 'the restore offer still reads');
+  assert.doesNotMatch(panel.textContent, /Pending|Granted|Declined/, 'with no pill of any kind');
+});
+
+await test('an ask whose access already exists reads Granted, not Pending', async () => {
+  // The request row keeps saying pending when access arrives another way: an
+  // auto-grant switched on later, or a decision made in another tab. The grant
+  // is the answer, so the row must report it.
+  const page = mountPage({});
+  await page.settle();
+  const w = page.window;
+  w.HTAccount.listNotices = async () => ({ ok: true, data: { notices: [] } });
+  w.HTAccount.listRequests = async () => ({
+    ok: true,
+    data: {
+      incoming: [],
+      outgoing: [{ id: 11, status: 'pending', profileId: 'brave-lynx-7777', displayName: 'Brave Lynx', createdAt: 20 }],
+    },
+  });
+  w.HTAccount.listGrants = async () => ({
+    ok: true,
+    data: { viewers: [], viewing: [{ id: 1, profileId: 'brave-lynx-7777', displayName: 'Brave Lynx' }] },
+  });
+
+  w.document.querySelector('.notices-button').click();
+  await wait(60);
+  const panel = w.document.querySelector('.notices-card').textContent;
+  assert.match(panel, /Granted/, 'a schedule this account can see reads Granted');
+  assert.doesNotMatch(panel, /Pending/, 'and stops saying Pending');
+});
+
 console.log(results.join('\n'));
 console.log(`\n${passed} passed, ${results.length - passed} failed`);
 process.exit(results.length - passed ? 1 : 0);

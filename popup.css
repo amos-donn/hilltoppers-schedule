@@ -1710,6 +1710,10 @@ header {
 .notices-button,
 .notices-button:hover { position: relative; color: #2f6b3f; }
 
+/* The icon itself, not only the inherited colour: the card is embedded in a
+   host page whose stylesheet can arrive after this one. */
+.notices-button svg { fill: #2f6b3f; }
+
 .notices-dot {
   position: absolute;
   top: 3px;

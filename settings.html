@@ -366,7 +366,7 @@
       </main>
     </div>
 
-    <script src="notices-core.js?v=20261126a"></script>
+    <script src="notices-core.js?v=20261126b"></script>
     <script src="schedule-core.js?v=20260928h"></script>
     <script src="auth.js?v=20260930a"></script>
     <script src="account.js?v=20261126d"></script>
@@ -1339,11 +1339,15 @@
           if (!A.isSignedIn()) return;
           A.listGrants().then(function (result) {
             if (!result.ok) return;
+            latestGrants = result.data;
             // A grant is the permission; the card's friend list is derived from
             // it. Merging here means someone whose request was accepted appears
             // on the card without having to come back and add them by hand.
             adoptGrantedFriends(result.data.viewing || []);
             renderGrants(result.data);
+            // The pills and the Pending count read grants too, so a row whose
+            // access arrived later stops saying Pending when this lands.
+            renderNotices();
           });
         }
 
@@ -1389,6 +1393,9 @@
 
         var latestNotices = [];
         var latestRequests = { incoming: [], outgoing: [] };
+        // Whose schedules this account can see, and who can see its own. The
+        // grant is the answer to an ask; a request row is only the ask.
+        var latestGrants = { viewers: [], viewing: [] };
         // Open rows survive a re-render, so acting on one does not collapse it.
         var expandedNotices = {};
 
@@ -1468,12 +1475,6 @@
           return actions;
         }
 
-        function pendingBadge() {
-          return el('span', {
-            class: 'class-settings__badge class-settings__badge--pending', text: 'Pending'
-          });
-        }
-
         /** The request's own state, so an answered ask stops saying Pending. */
         function statusBadge(chip) {
           return el('span', {
@@ -1485,7 +1486,7 @@
           // The same rows, in the same order, as the card's bell.
           var notices = N.renderable(latestNotices);
           noticeList.innerHTML = '';
-          var pending = N.pending(latestRequests);
+          var pending = N.pending(latestRequests, latestGrants);
           var unseen = N.unread(notices);
           // The tab is always visible, so an unseen notice needs a marker there
           // too or a signed-in student would never know to open it.
@@ -1509,6 +1510,7 @@
           entries.forEach(function (entry) {
             if (entry.outgoing) {
               var asked = entry.outgoing;
+              var askedChip = N.askedStatus(asked, latestGrants);
               noticeList.appendChild(el('div', {
                 class: 'class-settings__friend-row class-settings__notice'
               }, [
@@ -1522,7 +1524,7 @@
                     text: new Date(asked.createdAt * 1000).toLocaleString()
                   })
                 ]),
-                pendingBadge()
+                askedChip ? statusBadge(askedChip) : null
               ]));
               return;
             }
@@ -1532,7 +1534,7 @@
             // The pill follows the request: Pending until it is answered, then
             // Granted or Declined, so a row stops claiming to be waiting once
             // the access it asked for exists.
-            var chip = N.status(notice, latestRequests);
+            var chip = N.status(notice, latestRequests, latestGrants);
             var row = el('div', {
               class: 'class-settings__friend-row class-settings__notice'
                 + (open ? ' class-settings__notice--open' : ''),
