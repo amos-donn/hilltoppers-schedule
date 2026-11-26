@@ -312,11 +312,18 @@ await test('the visibility toggle writes through to the account', async () => {
   assert.equal(await plainFieldOf('sub-page-alice', 'is_public'), 1);
 });
 
-await test('the auto-grant toggle writes through to the account', async () => {
+await test('the auto-grant toggle writes through to the account, both ways', async () => {
+  // The checkbox shows the account rather than the markup, and a new account
+  // approves nothing on its own.
+  assert.equal($('auto-grant').checked, false, 'a new account starts with it off');
+  $('auto-grant').checked = true;
+  $('auto-grant').dispatchEvent(new window.Event('change'));
+  await settle();
+  assert.equal(await plainFieldOf('sub-page-alice', 'auto_grant'), 1, 'on is saved');
   $('auto-grant').checked = false;
   $('auto-grant').dispatchEvent(new window.Event('change'));
   await settle();
-  assert.equal(await plainFieldOf('sub-page-alice', 'auto_grant'), 0);
+  assert.equal(await plainFieldOf('sub-page-alice', 'auto_grant'), 0, 'off is saved');
 });
 
 await test('editing a course name saves locally and to the account', async () => {

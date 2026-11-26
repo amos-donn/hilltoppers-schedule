@@ -540,6 +540,38 @@ await test('auto-grant gives access immediately for a public profile', async () 
   assert.ok(!schedule.text.includes('@x.org'), 'the schedule payload must not include an email address');
 });
 
+await test('approve-automatically off is the default, and a request then waits', async () => {
+  // The switch decides the whole path for a public profile: off (the default)
+  // parks the ask for the owner to answer, on grants it on the spot.
+  const owner = await signIn(env, { sub: 'sub-switch-owner', email: 'switch-owner@x.org', name: 'Switch Owner' });
+  const ownerMe = (await call(env, '/api/me', { cookie: owner })).body;
+  assert.equal(ownerMe.isPublic, true, 'the profile is findable');
+  assert.equal(ownerMe.autoGrant, false, 'a fresh account approves nothing on its own');
+
+  const asker = await signIn(env, { sub: 'sub-switch-asker', email: 'switch-asker@x.org', name: 'Switch Asker' });
+  let ask = await call(env, '/api/requests', {
+    method: 'POST',
+    cookie: asker,
+    body: { profileId: ownerMe.profileId },
+  });
+  assert.equal(ask.body.status, 'pending', 'so the request waits for the owner');
+
+  const waiting = await call(env, '/api/requests', { cookie: owner });
+  assert.equal(waiting.body.incoming.filter((r) => r.status === 'pending').length, 1,
+    'and lands where the owner can decide it');
+  const blocked = await call(env, `/api/schedule/${ownerMe.profileId}`, { cookie: asker });
+  assert.equal(blocked.status, 403, 'granting nothing until it is answered');
+
+  await call(env, '/api/me', { cookie: owner, method: 'PATCH', body: { autoGrant: true } });
+  const second = await signIn(env, { sub: 'sub-switch-asker2', email: 'switch-asker2@x.org', name: 'Switch Asker Two' });
+  ask = await call(env, '/api/requests', {
+    method: 'POST',
+    cookie: second,
+    body: { profileId: ownerMe.profileId },
+  });
+  assert.equal(ask.body.status, 'granted', 'turning the switch on grants at once');
+});
+
 await test('a private profile is reachable by ID when already known', async () => {
   const me = await call(env, '/api/me', { cookie: env.bob.cookie });
   assert.equal(me.body.isPublic, false);

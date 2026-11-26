@@ -947,6 +947,7 @@ async function handleFirebaseSignIn(request, env) {
       ...encryptedColumns,
       ...indexColumns,
       ...ACCOUNT_FIELD_NAMES.map((f) => f),
+      'auto_grant',
       'is_public',
       'social_web_opt_in',
       'created_at',
@@ -960,6 +961,7 @@ async function handleFirebaseSignIn(request, env) {
         ...encryptedColumns.map((c) => encrypted[c]),
         ...indexColumns.map((c) => encrypted[c]),
         ...ACCOUNT_FIELD_NAMES.map((f) => legacyPlaceholderFor(f)),
+        0, // Approve-automatically starts off, whatever the table's old default was.
         1, // Public by default, including on databases with the old defaults.
         1, // Everyone is in the Social web now; opt-in is removed.
         ts,
