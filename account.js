@@ -146,8 +146,12 @@
     return api('/api/requests/' + encodeURIComponent(id), { method: 'POST', body: { decision: decision } });
   }
 
-  function restoreGrants() {
-    return api('/api/grants/restore', { method: 'POST' });
+  /** Restore revoked access: one person when a profile ID is given, else all. */
+  function restoreGrants(profileId) {
+    return api('/api/grants/restore', {
+      method: 'POST',
+      body: profileId ? { profileId: profileId } : undefined
+    });
   }
 
   function listGrants() {

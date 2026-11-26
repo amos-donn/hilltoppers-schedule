@@ -1421,11 +1421,18 @@ async function handleListGrants(env, account) {
  * whose schedule it is, so nobody has to be asked to run SQL. The viewer is
  * told the same way a grant always tells them.
  */
-async function handleRestoreGrants(env, account) {
+async function handleRestoreGrants(request, env, account) {
+  // A body naming one person restores just that grant, so the notice offering
+  // the undo for somebody does exactly that and nothing else. No body means
+  // everyone this account revoked, which is what the older callers ask for.
+  const body = await request.json().catch(() => ({}));
+  const only = body && body.profileId ? await lookupAccountByProfileId(env, body.profileId) : null;
   const { results } = await env.DB.prepare(
-    'SELECT id, viewer_account_id FROM grants WHERE owner_account_id = ? AND revoked_at IS NOT NULL'
+    `SELECT id, viewer_account_id FROM grants
+      WHERE owner_account_id = ? AND revoked_at IS NOT NULL
+        ${only ? 'AND viewer_account_id = ?' : ''}`
   )
-    .bind(account.id)
+    .bind(...(only ? [account.id, only.id] : [account.id]))
     .all();
   let restored = 0;
   const ts = nowSeconds();
@@ -1546,7 +1553,10 @@ async function adminRoute(request, env, path, method) {
            ON CONFLICT (from_account_id, to_account_id)
            DO UPDATE SET status = 'pending', created_at = excluded.created_at, decided_at = NULL`
         ).bind(grant.viewerAccountId, grant.ownerAccountId, ts).run();
-        await notify(env, grant.ownerAccountId, 'request.received', { profileId: grant.viewer });
+        // The owner is told with a notice that offers the undo, not with a
+        // request they never made: one row, one action, and it clears like any
+        // other notice.
+        await notify(env, grant.ownerAccountId, 'access.restore', { profileId: grant.viewer });
 
         const done = await env.DB.prepare(
           'UPDATE grants SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL'
@@ -1580,6 +1590,7 @@ async function adminRoute(request, env, path, method) {
 const NOTICE_KINDS = new Set([
   'access.revoked',
   'access.granted',
+  'access.restore',
   'request.received',
   'request.accepted',
   'request.declined',
@@ -1744,7 +1755,7 @@ export default {
  * /api/version in a browser is how a deploy is confirmed to have landed,
  * instead of guessed at from the page's behaviour.
  */
-const WORKER_BUILD = '2026-11-26-k';
+const WORKER_BUILD = '2026-11-26-n';
 
 async function route(request, env, url, path, method) {
   if (path === '/api/version' && method === 'GET') {
@@ -1790,7 +1801,7 @@ async function route(request, env, url, path, method) {
   }
 
   if (path === '/api/grants' && method === 'GET') return handleListGrants(env, account);
-  if (path === '/api/grants/restore' && method === 'POST') return handleRestoreGrants(env, account);
+  if (path === '/api/grants/restore' && method === 'POST') return handleRestoreGrants(request, env, account);
   const revokeMatch = path.match(/^\/api\/grants\/(\d+)$/);
   if (revokeMatch && method === 'DELETE') {
     return handleRevokeGrant(env, account, Number(revokeMatch[1]));

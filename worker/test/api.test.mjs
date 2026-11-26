@@ -674,6 +674,57 @@ await test('the auto-grant repair revokes only grants no one approved', async ()
 
   const again = await admin();
   assert.equal(again.body.grants.length, 0, 'a second run finds nothing left to do');
+
+  // The undo is a notice like any other: it lists, and clearing it sticks.
+  const ownerNotices = await call(repairEnv, '/api/notices', { cookie: autoOwner.cookie });
+  const restoreNotice = ownerNotices.body.notices.find((n) => n.kind === 'access.restore');
+  assert.ok(restoreNotice, 'the owner is offered the undo as a real notice');
+  assert.equal(restoreNotice.actorProfileId, asker.profileId, 'and it names the person');
+  const cleared = await call(repairEnv, `/api/notices/${restoreNotice.id}`, {
+    method: 'DELETE', cookie: autoOwner.cookie,
+  });
+  assert.equal(cleared.status, 200);
+  const afterClear = await call(repairEnv, '/api/notices', { cookie: autoOwner.cookie });
+  assert.equal(afterClear.body.notices.some((n) => n.kind === 'access.restore'), false,
+    'a cleared restore notice stays cleared');
+});
+
+await test('restoring from a notice brings back only the person it names', async () => {
+  // One notice per severed grant means a click can be about one person, so the
+  // restore it triggers has to be about that person too.
+  const oneEnv = makeEnv();
+  oneEnv.ADMIN_TOKEN = 'test-admin-token';
+  const admin = (method = 'GET', body, suffix = '') => call(oneEnv, '/api/admin/auto-grants' + suffix, {
+    method, body, headers: { Authorization: 'Bearer test-admin-token' },
+  });
+
+  const owner = await signIn(oneEnv, { sub: 'one-owner', email: 'one-owner@x.org', name: 'One Owner' });
+  const me = (await call(oneEnv, '/api/me', { cookie: owner })).body;
+  await call(oneEnv, '/api/me', { cookie: owner, method: 'PATCH', body: { autoGrant: true } });
+
+  const viewerA = await signIn(oneEnv, { sub: 'one-a', email: 'one-a@x.org', name: 'Viewer A' });
+  const viewerB = await signIn(oneEnv, { sub: 'one-b', email: 'one-b@x.org', name: 'Viewer B' });
+  const aProfile = (await call(oneEnv, '/api/me', { cookie: viewerA })).body.profileId;
+  for (const cookie of [viewerA, viewerB]) {
+    const ask = await call(oneEnv, '/api/requests', {
+      method: 'POST', cookie, body: { profileId: me.profileId },
+    });
+    assert.equal(ask.body.status, 'granted', 'auto-grant accepted the ask');
+  }
+
+  assert.equal((await admin('POST', {}, '/repair')).body.revoked, 2, 'both unasked grants are severed');
+  const notices = await call(oneEnv, '/api/notices', { cookie: owner });
+  assert.equal(notices.body.notices.filter((n) => n.kind === 'access.restore').length, 2,
+    'one notice per severed grant');
+
+  const single = await call(oneEnv, '/api/grants/restore', {
+    method: 'POST', cookie: owner, body: { profileId: aProfile },
+  });
+  assert.equal(single.body.restored, 1, 'only the named person comes back');
+  assert.equal((await call(oneEnv, '/api/schedule/' + me.profileId, { cookie: viewerA })).status, 200,
+    'A can read the schedule again');
+  assert.equal((await call(oneEnv, '/api/schedule/' + me.profileId, { cookie: viewerB })).status, 403,
+    'B is left as it was');
 });
 
 await test('auto-grant can be limited to the owner\'s own grade', async () => {

@@ -156,6 +156,7 @@
   var NOTICE_TEXT = {
     'access.revoked': { with: '%s revoked your access.', alone: 'Your access was revoked.' },
     'access.granted': { with: '%s can now see your schedule.', alone: 'Someone can now see your schedule.' },
+    'access.restore': { with: '%s had your schedule from auto-grant. Restore it?', alone: 'Access shared by auto-grant was revoked. Restore it?' },
     'request.received': { with: '%s asked for your schedule.', alone: 'Someone asked for your schedule.' },
     'request.accepted': { with: '%s accepted your request.', alone: 'Someone accepted your request.' },
     'request.declined': { with: '%s declined your request.', alone: 'Someone declined your request.' },
@@ -169,7 +170,12 @@
   }
 
 
-  function noticesButton() {
+  // The notices bell holds exactly what the Notices tab on the settings page
+  // holds: this account's notices, newest first, and the requests it is still
+  // waiting on. One list, one rule -- if the tab shows it, the bell shows it,
+  // and anything in the list can be cleared from the list. The auto-grant
+  // switches that used to live here are gone; they belong to the Account tab.
+  function noticesAccount() {
     var panel = el('div', { class: 'notices-card', role: 'dialog', 'aria-label': 'Notices' });
     panel.hidden = true;
     var list = el('div', { class: 'notices-card__list' });
@@ -181,26 +187,11 @@
     });
     button.appendChild(dot);
 
-    // The controls live in the popup, not the settings page: approve
-    // automatically, narrow that to your own grade, and put back access this
-    // account revoked.
-    var toggle = el('input', { type: 'checkbox', class: 'notices-card__check', value: 'on', 'aria-label': 'Approve requests automatically' });
-    var toggleLabel = el('label', { class: 'notices-card__setting' }, [
-      toggle, el('span', { text: 'Approve requests automatically' })
-    ]);
-    var gradeToggle = el('input', { type: 'checkbox', class: 'notices-card__check', value: 'on', 'aria-label': 'Only people in my grade' });
-    var gradeLabel = el('label', { class: 'notices-card__setting' }, [
-      gradeToggle, el('span', { text: 'Only people in my grade' })
-    ]);
-    var restore = el('button', { class: 'notices-card__action notices-card__action--primary', type: 'button', text: 'Restore revoked access' });
-    var note = el('p', { class: 'notices-card__note' });
-    note.hidden = true;
-    var footer = el('div', { class: 'notices-card__footer' }, [toggleLabel, gradeLabel, restore, note]);
-    // These controls change an account's settings, so they wait for one: a
-    // signed-out visitor never gave access and has nothing to restore. The
-    // account read below reveals them; a frame that cannot keep a session
-    // never shows them at all.
-    footer.hidden = true;
+    // The tab's one bulk control, in the same place: the footer holds marking
+    // the list read and nothing else.
+    var seen = el('button', { class: 'notices-card__action', type: 'button', text: 'Mark all as read' });
+    seen.hidden = true;
+    var footer = el('div', { class: 'notices-card__footer' }, [seen]);
 
     var wrapper = el('div', { class: 'settings-button-wrapper notices-wrapper' }, [
       button,
@@ -209,123 +200,221 @@
     ]);
     panel.append(list, footer);
 
-    function paint(notices) {
+    var notices = [];
+    var requests = { incoming: [], outgoing: [] };
+    // An opened row stays open across a repaint, so acting on it does not pull
+    // the buttons out from under the pointer.
+    var open = {};
+
+    /** The request a request.* or access.restore notice points at. */
+    function requestFor(notice) {
+      var who = notice.actorProfileId || (notice.payload && notice.payload.profileId);
+      if (!who) return null;
+      return requests.incoming.concat(requests.outgoing).filter(function (request) {
+        return request.profileId === who;
+      })[0] || null;
+    }
+
+    function pendingRequests() {
+      return requests.incoming.concat(requests.outgoing).filter(function (request) {
+        return request.status === 'pending';
+      });
+    }
+
+    function badge(text, modifier) {
+      return el('span', {
+        class: 'notices-card__badge' + (modifier ? ' notices-card__badge--' + modifier : ''),
+        text: text
+      });
+    }
+
+    /**
+     * One read of everything the list is made from. Only the kinds this card can
+     * say in a sentence are kept, so a row written by an older build cannot come
+     * back into the list after a deploy.
+     */
+    function fetchAll() {
+      var A = window.HTAccount;
+      if (!A || typeof A.listNotices !== 'function') return Promise.resolve(false);
+      var calls = [A.listNotices()];
+      calls.push(typeof A.listRequests === 'function' ? A.listRequests() : Promise.resolve({ ok: false }));
+      return Promise.all(calls).then(function (results) {
+        if (!results[0] || !results[0].ok) return false;
+        notices = (results[0].data.notices || []).filter(function (notice) {
+          return Object.prototype.hasOwnProperty.call(NOTICE_TEXT, notice.kind);
+        });
+        requests = results[1] && results[1].ok ? results[1].data : { incoming: [], outgoing: [] };
+        return true;
+      }, function () { return false; });
+    }
+
+    function paintDot() {
+      var unseen = notices.filter(function (notice) { return !notice.seen; }).length;
+      dot.hidden = unseen === 0 && pendingRequests().length === 0;
+    }
+
+    function refresh() {
+      return fetchAll().then(function () { paint(); paintDot(); });
+    }
+
+    function clear(notice) {
+      delete open[notice.id];
+      if (window.HTAccount && typeof window.HTAccount.dismissNotice === 'function') {
+        window.HTAccount.dismissNotice(notice.id);
+      }
+      notices = notices.filter(function (item) { return item.id !== notice.id; });
+      paint();
+      paintDot();
+    }
+
+    function decide(request, decision) {
+      if (!window.HTAccount || typeof window.HTAccount.decideRequest !== 'function') return;
+      window.HTAccount.decideRequest(request.id, decision).then(refresh, refresh);
+    }
+
+    function ask(notice, control) {
+      var who = notice.actorProfileId || (notice.payload && notice.payload.profileId);
+      if (!who) return;
+      control.disabled = true;
+      window.HTAccount.askForSchedule(who).then(refresh, refresh);
+    }
+
+    function restore(notice, control) {
+      var who = notice.actorProfileId || (notice.payload && notice.payload.profileId);
+      control.disabled = true;
+      window.HTAccount.restoreGrants(who).then(function (result) {
+        // The row asked for one thing and the server did it, so the row has
+        // done its job and leaves rather than staying to be reread.
+        if (result && result.ok && notice.id != null
+            && typeof window.HTAccount.dismissNotice === 'function') {
+          window.HTAccount.dismissNotice(notice.id);
+        }
+        refresh();
+      }, refresh);
+    }
+
+    /** What this row can do, matched to what it actually reports. */
+    function actions(notice, request) {
+      var box = el('div', { class: 'notices-card__actions' });
+      function add(label, primary, run) {
+        var control = el('button', {
+          class: 'notices-card__action' + (primary ? ' notices-card__action--primary' : ''),
+          type: 'button', text: label
+        });
+        control.addEventListener('click', function (event) {
+          event.stopPropagation();
+          run(control);
+        });
+        box.appendChild(control);
+      }
+      if (notice.kind === 'request.received' && request && request.status === 'pending') {
+        add('Accept', true, function () { decide(request, 'accept'); });
+        add('Decline', false, function () { decide(request, 'decline'); });
+      } else if (notice.kind === 'access.restore') {
+        add('Restore access', true, function (control) { restore(notice, control); });
+      } else {
+        add('Ask for their schedule', false, function (control) { ask(notice, control); });
+      }
+      add('Clear', false, function () { clear(notice); });
+      return box;
+    }
+
+    function noticeRow(notice) {
+      var request = requestFor(notice);
+      var waiting = request && request.status === 'pending';
+      var row = el('p', {
+        class: 'notices-card__row' + (notice.seen ? '' : ' is-new') + (open[notice.id] ? ' is-open' : ''),
+        role: 'button', tabindex: '0',
+        'aria-expanded': open[notice.id] ? 'true' : 'false',
+        title: 'Show what you can do with this'
+      }, [
+        el('span', { class: 'notices-card__text', text: noticeText(notice) }),
+        waiting ? badge('Pending', 'pending') : null,
+        notice.seen ? null : badge('New')
+      ]);
+      function toggle(event) {
+        if (event) event.stopPropagation();
+        open[notice.id] = !open[notice.id];
+        paint();
+      }
+      row.addEventListener('click', toggle);
+      row.addEventListener('keydown', function (event) {
+        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); toggle(event); }
+      });
+      return row;
+    }
+
+    function paint() {
       list.replaceChildren();
-      if (!notices.length) {
+      // Notices and the requests this account sent share one list, newest
+      // first, exactly as the tab orders them. A sent request makes no notice
+      // for the sender, so without its own row it would appear nowhere.
+      var entries = notices.map(function (notice) {
+        return { at: notice.createdAt || 0, notice: notice };
+      });
+      requests.outgoing.forEach(function (request) {
+        if (request.status !== 'pending') return;
+        entries.push({ at: request.createdAt || 0, outgoing: request });
+      });
+      entries.sort(function (a, b) { return b.at - a.at; });
+      seen.hidden = notices.length === 0;
+
+      if (!entries.length) {
         list.appendChild(el('p', { class: 'notices-card__empty', text: 'Nothing new.' }));
         return;
       }
-      // Each row can be dismissed. Opening the bell used to only mark the list
-      // read, so a row stayed there for good: there was no way to remove one,
-      // and an old one read as something that would not go away.
-      notices.slice(0, 8).forEach(function (notice) {
-        var row = el('p', {
-          class: 'notices-card__row' + (notice.seen ? '' : ' is-new'),
-          text: noticeText(notice),
-          role: 'button',
-          tabindex: '0',
-          title: 'Dismiss this notice'
-        });
-        function dismiss(event) {
-          if (event) event.stopPropagation();
-          row.remove();
-          if (!list.querySelector('.notices-card__row')) {
-            list.replaceChildren(el('p', { class: 'notices-card__empty', text: 'Nothing new.' }));
-          }
-          // A stale account.js may not carry the export; the row still leaves
-          // the page, and the next read from the server brings it back only if
-          // it truly was not deleted.
-          if (window.HTAccount && typeof window.HTAccount.dismissNotice === 'function') {
-            window.HTAccount.dismissNotice(notice.id);
-          }
+      entries.forEach(function (entry) {
+        if (entry.outgoing) {
+          list.appendChild(el('p', { class: 'notices-card__row notices-card__row--asked' }, [
+            el('span', {
+              class: 'notices-card__text',
+              text: 'You asked ' + (entry.outgoing.displayName || entry.outgoing.profileId)
+                + ' for their schedule.'
+            }),
+            badge('Pending', 'pending')
+          ]));
+          return;
         }
-        row.addEventListener('click', dismiss);
-        row.addEventListener('keydown', function (event) {
-          if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); dismiss(event); }
-        });
-        list.appendChild(row);
-      });
-    }
-
-    function load(markRead) {
-      if (!window.HTAccount || typeof window.HTAccount.listNotices !== 'function') { paint([]); return; }
-      window.HTAccount.listNotices().then(function (result) {
-        var notices = result && result.ok ? (result.data.notices || []) : [];
-        // Only what the bell can render. The server filters too, but a cached
-        // response from an older Worker may still carry an announcement row.
-        notices = notices.filter(function (notice) {
-          return Object.prototype.hasOwnProperty.call(NOTICE_TEXT, notice.kind);
-        });
-        dot.hidden = notices.every(function (notice) { return notice.seen; });
-        if (!markRead) return;
-        paint(notices);
-        dot.hidden = true;
-        if (notices.length && typeof window.HTAccount.markNoticesSeen === 'function') {
-          window.HTAccount.markNoticesSeen();
+        list.appendChild(noticeRow(entry.notice));
+        if (open[entry.notice.id]) {
+          list.appendChild(actions(entry.notice, requestFor(entry.notice)));
         }
       });
-      if (typeof window.HTAccount.refresh === 'function') {
-        window.HTAccount.refresh().then(function (me) {
-          footer.hidden = !me;
-          if (!me) return;
-          toggle.checked = me.autoGrant === true;
-          gradeToggle.checked = me.autoGrantGradeOnly === true;
-          gradeLabel.hidden = !toggle.checked;
-        });
-      }
     }
-
-    toggle.addEventListener('change', function () {
-      gradeLabel.hidden = !toggle.checked;
-      window.HTAccount.updateProfile({ autoGrant: toggle.checked });
-    });
-    gradeToggle.addEventListener('change', function () {
-      window.HTAccount.updateProfile({ autoGrantGradeOnly: gradeToggle.checked });
-    });
-    function restoredNote(result) {
-      restore.disabled = false;
-      note.hidden = false;
-      var restored = result && result.ok ? (result.data.restored || 0) : 0;
-      note.textContent = result && result.ok
-        ? (restored > 0
-            ? 'Access restored for ' + restored + (restored === 1 ? ' person.' : ' people.')
-            : 'Nothing to restore.')
-        : 'Could not restore access. Try again.';
-    }
-
-    restore.addEventListener('click', function () {
-      restore.disabled = true;
-      // The button never stays disabled: a dropped connection is the one case
-      // that used to leave it greyed out, looking like a click that did nothing.
-      window.HTAccount.restoreGrants().then(restoredNote, function () { restoredNote(null); });
-    });
-
-    function close() { panel.hidden = true; button.setAttribute('aria-expanded', 'false'); }
 
     // As a Topping the card sits in a frame a few hundred pixels wide, so the
     // popup is positioned inside the card rather than floating out of it: it
-    // takes the card's width and starts at its left edge, never past either.
+    // takes the card's width and starts inside its edge, never past either.
     function place() {
-      // Measured against the frame, not the card: whatever padding, negative
-      // margin or narrow Topping this ends up inside, the card keeps itself
-      // within the visible width, inset by the page's own gutter.
       var gutter = 12;
       var viewport = window.innerWidth || document.documentElement.clientWidth || 320;
       var buttonBox = button.getBoundingClientRect();
-      var width = Math.min(268, Math.max(180, viewport - gutter * 2));
+      var width = Math.min(300, Math.max(200, viewport - gutter * 2));
       var left = Math.min(Math.max(buttonBox.right - width, gutter), viewport - gutter - width);
       panel.style.width = width + 'px';
       panel.style.left = Math.max(0, left) + 'px';
       panel.style.top = Math.round(buttonBox.bottom + 6) + 'px';
-      panel.style.maxHeight = Math.max(160, (window.innerHeight || 480) - buttonBox.bottom - gutter * 2) + 'px';
+      panel.style.maxHeight = Math.max(180, (window.innerHeight || 480) - buttonBox.bottom - gutter * 2) + 'px';
     }
+
+    function close() { panel.hidden = true; button.setAttribute('aria-expanded', 'false'); }
+
+    seen.addEventListener('click', function (event) {
+      event.stopPropagation();
+      if (!window.HTAccount || typeof window.HTAccount.markNoticesSeen !== 'function') return;
+      window.HTAccount.markNoticesSeen().then(function () {
+        notices.forEach(function (notice) { notice.seen = true; });
+        paint();
+        paintDot();
+      });
+    });
 
     button.addEventListener('click', function (event) {
       event.stopPropagation();
       var opening = panel.hidden;
       panel.hidden = !opening;
       button.setAttribute('aria-expanded', opening ? 'true' : 'false');
-      if (opening) { place(); paint([]); load(true); }
+      if (opening) { place(); paint(); refresh(); }
     });
     window.addEventListener('resize', function () { if (!panel.hidden) place(); });
     document.addEventListener('pointerdown', function (event) {
@@ -335,7 +424,7 @@
       if (event.key === 'Escape') close();
     });
     // One quiet read on load, for the dot only.
-    load(false);
+    fetchAll().then(paintDot);
     return wrapper;
   }
 
@@ -546,7 +635,7 @@
       // button inside a button is not) and stops it toggling the day. The
       // lunch-wave row is a tap target of its own and lives in the day list
       // below, out of this handler's reach.
-      var card = el('div', { class: 'primary-card' }, [noticesButton(), settingsButton(), section]);
+      var card = el('div', { class: 'primary-card' }, [noticesAccount(), settingsButton(), section]);
       section.classList.add('is-tappable');
       section.setAttribute('role', 'button');
       section.setAttribute('tabindex', '0');
@@ -652,7 +741,7 @@
         el('section', { class: 'status' }, [
           el('div', { class: 'status-heading-row' }, [
             el('p', { class: 'friend-heading', text: 'No friends yet' }),
-            noticesButton(), settingsButton()
+            noticesAccount(), settingsButton()
           ]),
           el('div', { class: 'status-ended' }, [
             el('h2', { text: 'Get a life.' }),

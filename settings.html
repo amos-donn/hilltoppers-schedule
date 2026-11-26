@@ -1383,6 +1383,7 @@
         var NOTICE_TEXT = {
           'access.revoked': '%s revoked your access.',
           'access.granted': '%s can now see your schedule.',
+          'access.restore': '%s had your schedule from auto-grant. Restore it?',
           'request.received': '%s asked for your schedule.',
           'request.accepted': '%s accepted your request for their schedule.',
           'request.declined': '%s declined your request for their schedule.'
@@ -1390,6 +1391,7 @@
         var NOTICE_TEXT_SOMEONE = {
           'access.revoked': 'Your access was revoked.',
           'access.granted': 'Someone can now see your schedule.',
+          'access.restore': 'Access shared by auto-grant was revoked. Restore it?',
           'request.received': 'Someone asked for your schedule.',
           'request.accepted': 'Someone accepted your request for a schedule.',
           'request.declined': 'Someone declined your request for a schedule.'
@@ -1470,6 +1472,21 @@
             decline.addEventListener('click', function (e) { e.stopPropagation(); decideNotice(notice, 'decline'); });
             actions.appendChild(accept);
             actions.appendChild(decline);
+          } else if (notice.kind === 'access.restore') {
+            // The undo, offered as the notice's own action so it reads like
+            // every other row: one button that does what the sentence says.
+            var restore = el('button', { type: 'button', class: 'primary', text: 'Restore access' });
+            restore.addEventListener('click', function (e) {
+              e.stopPropagation();
+              var who = notice.actorProfileId || (notice.payload && notice.payload.profileId);
+              A.restoreGrants(who).then(function (result) {
+                if (!result.ok) { setAccountStatus(friendlyError(result), 'error'); return; }
+                setAccountStatus('Access restored.', 'success');
+                dismissNotice(notice.id).then(refreshNotices);
+                refreshGrants();
+              });
+            });
+            actions.appendChild(restore);
           } else {
             var ask = el('button', { type: 'button', class: 'secondary', text: 'Ask for their schedule' });
             ask.addEventListener('click', function (e) { e.stopPropagation(); askFromNotice(notice); });

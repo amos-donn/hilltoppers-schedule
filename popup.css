@@ -1747,6 +1747,33 @@ header {
   font-size: 12px;
   line-height: 1.35;
   color: #2f3338;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 3px 6px;
+}
+
+.notices-card__text { flex: 1 1 100%; }
+.notices-card__row .notices-card__badge + .notices-card__text { flex-basis: auto; }
+.notices-card__row.is-open { background: #f5f8fa; }
+.notices-card__row--asked { color: #5a6169; }
+
+.notices-card__badge {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #eef2ea;
+  color: #2f6b3f;
+  font-size: 10px;
+  font-weight: 700;
+}
+.notices-card__badge--pending { background: #fff4e0; color: #8a5a00; }
+
+.notices-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 0 2px 8px;
 }
 
 .notices-card__row + .notices-card__row { border-top: 1px solid #f0f2f4; }
