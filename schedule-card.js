@@ -169,6 +169,19 @@
   var APOLOGY_TEXT = 'We screwed up. Auto-grant was on by default when the page said it '
     + 'would be off by default. All of those connections were severed, and each one is '
     + 'now a request waiting on you to approve.';
+  // Answered in this page. render() builds a new banner every time, so without
+  // this a re-render put the old one straight back and the hide landed on a
+  // detached node -- which is exactly what "it disappears for no time at all"
+  // was.
+  var apologyAnswered = false;
+
+  /** A short message that fades out where the banner was, like a toast. */
+  function toast(text) {
+    var box = el('p', { class: 'toast', role: 'status', text: text });
+    root.appendChild(box);
+    setTimeout(function () { box.classList.add('is-gone'); }, 2200);
+    setTimeout(function () { if (box.parentNode) box.parentNode.removeChild(box); }, 2800);
+  }
 
   function apologyBanner(onRestored) {
     var banner = el('section', { class: 'apology', role: 'status', 'aria-label': 'About your access requests' });
@@ -190,16 +203,23 @@
      * an answer too -- the thing the banner asks about has been dealt with, so
      * it should not linger, and the notices list should not carry it either.
      */
-    function answer() {
-      banner.hidden = true;
+    function answer(message) {
+      if (apologyAnswered) return;
+      apologyAnswered = true;
       try { window.localStorage.setItem('apologySeen', '1'); } catch (e) { /* private mode */ }
       var me = typeof state.self === 'object' && state.self ? state.self : null;
       var kind = me && me.announcement ? me.announcement.kind : 'announcement.auto-grant';
-      // Local first, server second: the banner is gone even if the Worker is
-      // older than this page, and the answer is retried on the next read.
+      // Local flag first: the banner is gone even if the Worker is older than
+      // this page, and the answer is retried on the next /api/me read.
       if (window.HTAccount && typeof window.HTAccount.answerAnnouncement === 'function') {
         window.HTAccount.answerAnnouncement(kind);
       }
+      // Slide off the top the way a toast does, then leave the page.
+      banner.classList.add('is-leaving');
+      setTimeout(function () {
+        if (banner.parentNode) banner.parentNode.removeChild(banner);
+      }, 280);
+      if (message) toast(message);
     }
 
     restore.addEventListener('click', function () {
@@ -207,12 +227,16 @@
       window.HTAccount.restoreGrants().then(function (result) {
         restore.disabled = false;
         var n = result && result.ok ? (result.data.restored || 0) : -1;
-        if (n < 0) { note.hidden = false; note.textContent = 'Could not restore access. You can still do it from the bell.'; return; }
-        note.hidden = false;
-        note.textContent = n === 0 ? 'Nothing was waiting to be restored.' : 'Access restored for ' + n + (n === 1 ? ' person.' : ' people.');
-        // The question is answered, so the banner leaves rather than sitting
-        // there asking again. The note stays put for a moment first.
-        setTimeout(answer, 1400);
+        if (n < 0) {
+          note.hidden = false;
+          note.textContent = 'Could not restore access. You can try again from the bell.';
+          return;
+        }
+        // Answering and leaving happen together, before onRestored() re-renders
+        // the card -- a re-render would otherwise rebuild the banner and the
+        // click would look like it did nothing.
+        answer(n === 0 ? 'Nothing was waiting to be restored.'
+          : 'Access restored for ' + n + (n === 1 ? ' person.' : ' people.'));
         if (onRestored) onRestored();
       });
     });
@@ -224,8 +248,10 @@
     // A local answer hides it at once, before the account has heard; the server
     // catches up on the next /api/me read. Without this, a Worker that predates
     // the answer field would bring the banner back on every reload.
-    var answered = false;
-    try { answered = window.localStorage.getItem('apologySeen') === '1'; } catch (e) { answered = false; }
+    var answered = apologyAnswered;
+    if (!answered) {
+      try { answered = window.localStorage.getItem('apologySeen') === '1'; } catch (e) { answered = false; }
+    }
     banner.hidden = !(me && me.announcement) || answered;
     return banner;
   }
@@ -737,7 +763,9 @@
       }
 
       if (owner) {
-        var heading = state.self ? (state.self.name || 'Your Schedule') : friendLabel(owner);
+        // The name is not repeated on your own card: it sat right beside the
+        // bell and made the top row a jumble. A friend's card still names them.
+        var heading = state.self ? '' : friendLabel(owner);
         main.appendChild(renderPrimary(owner, heading));
       }
       var friendsSection = renderFriends();

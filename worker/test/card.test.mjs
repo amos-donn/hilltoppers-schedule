@@ -391,7 +391,8 @@ await test('the collapsed primary card shows the period, subject and remaining t
   assert.equal(root.querySelector('.schedule-list.collapsed') !== null, true, 'the day starts collapsed');
   assert.match(root.querySelector('.current-period').textContent, /8:00/, 'the block time span is named');
   assert.equal(root.querySelector('.time-value').textContent, '30:00', 'and the remaining time');
-  assert.match(root.querySelector('.friend-heading').textContent, /Sam/, "the card is headed with the viewer's name");
+  assert.equal(root.querySelector('.friend-heading').textContent.trim(), '',
+    'your own card is not headed with your name, which crowded the bell');
   // The period badge sits on the name row next to the name, not stacked above
   // the subject, so the top of the card stays compact.
   const badge = root.querySelector('.status-heading-row .current-block-badge');
@@ -643,8 +644,8 @@ await test('signed in, the primary card is your own schedule even opened directl
   await page.settle(60);
 
   assert.equal(page.errors.length, 0, page.errors.join(' | '));
-  assert.match(page.window.document.querySelector('.friend-heading').textContent, /Alex/,
-    'the primary card is headed with the account name');
+  assert.equal(page.window.document.querySelector('.friend-heading').textContent.trim(), '',
+    'the primary card leaves its top row to the bell and the gear');
   // Their own courses reach the card, not a friend's.
   const H = page.window.HT;
   const me = page.window.HTAccount.current();

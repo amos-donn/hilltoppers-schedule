@@ -1776,10 +1776,38 @@ header {
      so no negative margin can push it past a narrow frame. */
   margin: 0;
   padding: 12px;
+  overflow: hidden;
+  max-height: 400px;
   border-bottom: 1px solid #cfe3d4;
   background: #f1f8f2;
   color: #1e2a22;
+  transition: max-height 0.26s ease, padding 0.26s ease, opacity 0.2s ease,
+    transform 0.26s ease, border-bottom-color 0.26s ease;
 }
+
+/* The same lift a toast makes: up and away, taking its space with it. */
+.apology.is-leaving {
+  max-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-bottom-color: transparent;
+  opacity: 0;
+  transform: translateY(-8px);
+}
+
+.toast {
+  margin: 0;
+  padding: 10px 12px;
+  border-bottom: 1px solid #cfe3d4;
+  background: #eaf5ec;
+  color: #1e2a22;
+  font-size: 12.5px;
+  line-height: 1.4;
+  opacity: 1;
+  transition: opacity 0.5s ease;
+}
+
+.toast.is-gone { opacity: 0; }
 
 .apology__text {
   margin: 0 0 10px;
