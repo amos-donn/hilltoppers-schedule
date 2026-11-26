@@ -184,13 +184,17 @@
       note
     );
 
-    function hide() {
+    /**
+     * Answer the banner for good: hide it here, and record the answer on the
+     * account so it does not come back on another device. Restoring counts as
+     * an answer too -- the thing the banner asks about has been dealt with, so
+     * it should not linger, and the notices list should not carry it either.
+     */
+    function answer() {
       banner.hidden = true;
       try { window.localStorage.setItem('apologySeen', '1'); } catch (e) { /* private mode */ }
-      // The answer belongs to the account, not just this browser. The answer is
-      // a sealed row in `notices`, which is also what makes it a real notice for
-      // anything that lists that table -- so it is written only once the frame
-      // has taken the new height, never at the same moment as the click.
+      // A sealed row in `notices` is what the server reads to know it has been
+      // answered, so it is written after the frame has taken the new height.
       setTimeout(function () {
         if (window.HTAccount && typeof window.HTAccount.acknowledgeAnnouncement === 'function') {
           window.HTAccount.acknowledgeAnnouncement('announcement.auto-grant');
@@ -206,11 +210,13 @@
         if (n < 0) { note.hidden = false; note.textContent = 'Could not restore access. You can still do it from the bell.'; return; }
         note.hidden = false;
         note.textContent = n === 0 ? 'Nothing was waiting to be restored.' : 'Access restored for ' + n + (n === 1 ? ' person.' : ' people.');
-        keep.hidden = true;
+        // The question is answered, so the banner leaves rather than sitting
+        // there asking again. The note stays put for a moment first.
+        setTimeout(answer, 1400);
         if (onRestored) onRestored();
       });
     });
-    keep.addEventListener('click', function () { hide(); });
+    keep.addEventListener('click', answer);
 
     // Shown the moment the page opens: no bell, no tab, nothing to click. The
     // answer comes from /api/me, which the card already reads.
