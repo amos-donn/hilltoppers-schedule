@@ -778,6 +778,57 @@ body, html {
   flex-shrink: 0;
 }
 
+/* A person's two access facts live on their card as pills, instead of in two
+   separate lists further down the page. */
+.class-settings__friend-pills {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.class-settings__pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+button.class-settings__pill {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.class-settings__pill--on {
+  border-color: transparent;
+  background: rgba(34, 197, 94, 0.14);
+  color: #15803d;
+}
+
+.class-settings__pill--action {
+  background: transparent;
+  color: var(--muted);
+}
+
+button.class-settings__pill--action:hover {
+  border-color: var(--accent, #1a7f37);
+  color: var(--text);
+}
+
+button.class-settings__pill:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 /* A notice row opens to reveal what it is about; the whole row is the target,
    so it takes a pointer and a hover cue the way a button would. */
 .class-settings__notice {
@@ -909,6 +960,15 @@ body, html {
 
   .class-settings__day-label {
     min-width: 60px;
+  }
+
+  /* The access pills drop under the name rather than squeezing it. */
+  .class-settings__friend-row {
+    flex-wrap: wrap;
+  }
+
+  .class-settings__friend-pills {
+    justify-content: flex-start;
   }
 
   .class-settings__free-checkbox {

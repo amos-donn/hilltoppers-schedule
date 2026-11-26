@@ -9,11 +9,11 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=20260929a" />
     <!-- The extension's classSettings.css, copied unchanged, so the settings
          page matches the extension's Class & Schedule Settings page. -->
-    <link rel="stylesheet" href="classSettings.css?v=20260928h" />
+    <link rel="stylesheet" href="classSettings.css?v=20261126a" />
     <!-- The Hilltoppers dashboard shell: sidebar tabs, the sage palette,
          and the custom dropdowns. Loaded after classSettings.css, which it
          restyles. -->
-    <link rel="stylesheet" href="dashboard.css?v=20261126b" />
+    <link rel="stylesheet" href="dashboard.css?v=20261126c" />
   </head>
   <!-- The page starts as a skeleton and is told which state it is in once the
        session check answers. Without this class it would paint "not signed in"
@@ -287,20 +287,6 @@
           <div id="friend-rows" class="class-settings__friend-list"></div>
         </section>
 
-        <section class="class-settings__panel" id="access-panel" hidden>
-          <h2>Who can see your schedule</h2>
-          <p class="class-settings__hint class-settings__hint--intro">
-            Everyone who can see your schedule is listed here. Revoking one
-            takes away only that person's access, immediately, and they are
-            told.
-          </p>
-          <div id="grant-viewers" class="class-settings__friend-list"></div>
-
-          <div class="class-settings__subsection">
-            <h3>Schedules you can see</h3>
-            <div id="grant-viewing" class="class-settings__friend-list"></div>
-          </div>
-        </section>
         </section>
 
         <section class="dashboard__panel" id="panel-notices" role="tabpanel" aria-labelledby="tab-notices-btn" tabindex="-1" hidden>
@@ -378,13 +364,6 @@
         var H = window.HT;
         var A = window.HTAccount;
 
-        // Icons are Phosphor (Regular weight), the set the extension's sidebar
-        // uses, inlined as paths so the page needs no build step or CDN and the
-        // icons survive going offline.
-        function icon(path, size) {
-          return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 256 256" fill="currentColor" aria-hidden="true"><path d="' + path + '"/></svg>';
-        }
-        var ICON_X = 'M205.66,194.34a8,8,0,0,1-11.32,11.32L128,139.31,61.66,205.66a8,8,0,0,1-11.32-11.32L116.69,128,50.34,61.66A8,8,0,0,1,61.66,50.34L128,116.69l66.34-66.35a8,8,0,0,1,11.32,11.32L139.31,128Z';
         // The grip is a 2x3 dot grid, the same affordance the extension's
         // Toppings manager uses, so reordering reads the same in both places.
         // fill="currentColor": the dots had no fill of their own, so they
@@ -635,27 +614,109 @@
         var friendDropTarget = null;
         var pickedFriend = null;
 
+        // Whose schedules this account can see, and who can see its own. Each
+        // person's card shows both facts as pills, so there is no separate
+        // access list to keep in step with the friends list.
+        var latestGrants = { viewers: [], viewing: [] };
+
         function clearFriendDropTarget() {
           if (!friendDropTarget) return;
           friendDropTarget.classList.remove('is-drop-target');
           friendDropTarget = null;
         }
 
+        /** Everyone who belongs on this tab: saved friends plus anyone who
+         *  holds access in either direction but is not on the card yet. */
+        function friendPeople() {
+          var people = [];
+          var seen = {};
+          state.friends.forEach(function (friend) {
+            seen[friend.email] = true;
+            people.push({ email: friend.email, friend: friend });
+          });
+          ['viewing', 'viewers'].forEach(function (side) {
+            (latestGrants[side] || []).forEach(function (grant) {
+              if (seen[grant.profileId]) return;
+              seen[grant.profileId] = true;
+              people.push({ email: grant.profileId, grant: grant });
+            });
+          });
+          return people;
+        }
+
+        /**
+         * The two access facts about a person, as pills on their card. A pill
+         * reading "You can see theirs" opens that schedule; the Revoke beside
+         * "They can see yours" is the way to take access back.
+         */
+        function friendPills(profileId, label) {
+          var canSee = (latestGrants.viewing || []).filter(function (grant) {
+            return grant.profileId === profileId;
+          })[0];
+          var canBeSeen = (latestGrants.viewers || []).filter(function (grant) {
+            return grant.profileId === profileId;
+          })[0];
+          var pills = el('div', { class: 'class-settings__friend-pills' });
+          if (canSee) {
+            var open = el('button', {
+              type: 'button',
+              class: 'class-settings__pill class-settings__pill--on',
+              title: 'Open their schedule',
+              text: 'You can see theirs'
+            });
+            open.addEventListener('click', function () { openSchedule(profileId); });
+            pills.appendChild(open);
+          }
+          if (canBeSeen) {
+            pills.appendChild(el('span', {
+              class: 'class-settings__pill class-settings__pill--on',
+              title: label + ' can open your schedule',
+              text: 'They can see yours'
+            }));
+            var revoke = el('button', {
+              type: 'button',
+              class: 'class-settings__pill class-settings__pill--action',
+              'aria-label': 'Revoke access for ' + label,
+              title: 'Take their access away',
+              text: 'Revoke'
+            });
+            revoke.addEventListener('click', function () {
+              if (!window.confirm('Revoke access for ' + label + '? They will be told.')) return;
+              A.revokeGrant(canBeSeen.id).then(function (result) {
+                if (!result.ok) { setAccountStatus(friendlyError(result), 'error'); return; }
+                setAccountStatus('Access revoked. They will be told the next time they sign in.', 'success');
+                refreshGrants();
+              });
+            });
+            pills.appendChild(revoke);
+          }
+          if (!canSee && !canBeSeen) {
+            pills.appendChild(el('span', {
+              class: 'class-settings__pill',
+              title: 'No schedule access in either direction',
+              text: 'No access'
+            }));
+          }
+          return pills;
+        }
+
         function renderFriends() {
-          syncFriendButtons();
           friendRows.innerHTML = '';
-          if (state.friends.length === 0) {
-            friendRows.appendChild(emptyHint('No friends yet. Add one below.'));
+          var people = friendPeople();
+          if (people.length === 0) {
+            friendRows.appendChild(emptyHint('No friends yet. Use Find friends above to add one.'));
             return;
           }
-          state.friends.forEach(function (friend, index) {
-            var label = friend.name ? friend.name + ' (' + friend.email + ')' : friend.email;
+          people.forEach(function (person) {
+            var friend = person.friend;
+            var label = friend
+              ? (friend.name ? friend.name + ' (' + friend.email + ')' : friend.email)
+              : (person.grant.displayName || person.grant.profileId);
             var grip = el('button', {
               type: 'button', class: 'class-settings__grip',
               'aria-label': 'Reorder ' + label,
               title: 'Drag to reorder, or use arrow keys', html: ICON_GRIP
             });
-            var remove = el('button', { type: 'button', class: 'class-settings__icon-button', 'aria-label': 'Remove ' + label, html: icon(ICON_X, 16) });
             grip.addEventListener('click', function () {
               // A click without a drag means "pick up this row"; clicking a
               // second grip drops it there.
@@ -674,55 +735,57 @@
               event.preventDefault();
               move(friend.email, delta);
             });
-            remove.addEventListener('click', function () {
-              state.friends = H.removeFriend(state.friends, friend.email);
-              H.saveFriends(state.friends);
-              if (H.loadSelectedFriend() === friend.email) H.saveSelectedFriend('');
-              renderFriends();
-            });
             var meta = [];
-            if (friend.grade != null) meta.push(H.GRADE_LABELS[friend.grade] || ('Grade ' + friend.grade));
-            if (friend.lunchWave != null) meta.push(H.LUNCH_WAVE_LABELS[friend.lunchWave]);
-            var row = el('div', {
-              class: 'class-settings__friend-row class-settings__friend-row--sortable'
-                + (pickedFriend === friend.email ? ' is-picked' : '')
-            }, [
-              grip,
-              el('div', { class: 'class-settings__friend-info' }, [
-                el('strong', { text: label }),
-                el('span', { class: 'class-settings__friend-meta', text: meta.join(' \u00b7 ') })
-              ]),
-              el('div', { class: 'class-settings__friend-actions' }, [remove])
+            if (friend) {
+              if (friend.grade != null) meta.push(H.GRADE_LABELS[friend.grade] || ('Grade ' + friend.grade));
+              if (friend.lunchWave != null) meta.push(H.LUNCH_WAVE_LABELS[friend.lunchWave]);
+            } else {
+              meta.push(person.grant.profileId);
+            }
+            var info = el('div', { class: 'class-settings__friend-info' }, [
+              el('strong', { text: label }),
+              el('span', { class: 'class-settings__friend-meta', text: meta.join(' \u00b7 ') })
             ]);
-            row.setAttribute('draggable', 'true');
-            row.addEventListener('dragstart', function (event) {
-              draggedFriend = friend.email;
-              if (event.dataTransfer) {
-                event.dataTransfer.effectAllowed = 'move';
-                event.dataTransfer.setData('text/plain', friend.email);
-              }
-            });
-            row.addEventListener('dragover', function (event) {
-              if (!draggedFriend || draggedFriend === friend.email) return;
-              event.preventDefault();
-              if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
-              if (friendDropTarget !== row) {
+            var parts = [];
+            if (friend) parts.push(grip);
+            parts.push(info);
+            parts.push(friendPills(person.email, label));
+            var row = el('div', {
+              class: 'class-settings__friend-row'
+                + (friend ? ' class-settings__friend-row--sortable' : '')
+                + (friend && pickedFriend === friend.email ? ' is-picked' : '')
+            }, parts);
+            if (friend) {
+              row.setAttribute('draggable', 'true');
+              row.addEventListener('dragstart', function (event) {
+                draggedFriend = friend.email;
+                if (event.dataTransfer) {
+                  event.dataTransfer.effectAllowed = 'move';
+                  event.dataTransfer.setData('text/plain', friend.email);
+                }
+              });
+              row.addEventListener('dragover', function (event) {
+                if (!draggedFriend || draggedFriend === friend.email) return;
+                event.preventDefault();
+                if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+                if (friendDropTarget !== row) {
+                  clearFriendDropTarget();
+                  friendDropTarget = row;
+                  row.classList.add('is-drop-target');
+                }
+              });
+              row.addEventListener('drop', function (event) {
+                event.preventDefault();
+                var from = draggedFriend;
+                draggedFriend = null;
                 clearFriendDropTarget();
-                friendDropTarget = row;
-                row.classList.add('is-drop-target');
-              }
-            });
-            row.addEventListener('drop', function (event) {
-              event.preventDefault();
-              var from = draggedFriend;
-              draggedFriend = null;
-              clearFriendDropTarget();
-              if (from) moveFriendTo(from, friend.email);
-            });
-            row.addEventListener('dragend', function () {
-              draggedFriend = null;
-              clearFriendDropTarget();
-            });
+                if (from) moveFriendTo(from, friend.email);
+              });
+              row.addEventListener('dragend', function () {
+                draggedFriend = null;
+                clearFriendDropTarget();
+              });
+            }
             friendRows.appendChild(row);
           });
         }
@@ -770,7 +833,6 @@
         var autoGrantGrade = document.getElementById('auto-grant-grade');
         var accountEmail = document.getElementById('account-email');
         var accountStatus = document.getElementById('account-status');
-        var accessPanel = document.getElementById('access-panel');
         var noticesPanel = document.getElementById('notices-panel');
         var dangerPanel = document.getElementById('danger-panel');
 
@@ -791,7 +853,6 @@
             signedInBox.hidden = true;
             topbarText.textContent = 'Not signed in. Settings are saved in this browser.';
             topbarAuth.hidden = true;
-            accessPanel.hidden = true;
             noticesPanel.hidden = true;
             dangerPanel.hidden = true;
             // The tab markers describe the signed-in student's notices, so
@@ -806,7 +867,6 @@
           signedInBox.hidden = false;
           topbarText.textContent = 'Signed in as ' + (me.displayName || me.email);
           topbarAuth.hidden = false;
-          accessPanel.hidden = false;
           noticesPanel.hidden = false;
           dangerPanel.hidden = false;
 
@@ -1275,66 +1335,8 @@
         }
 
         // --- grants -------------------------------------------------------
-        var grantViewers = document.getElementById('grant-viewers');
-        var grantViewing = document.getElementById('grant-viewing');
-
-        function syncFriendButtons() {
-          document.querySelectorAll('[data-add-friend]').forEach(function (button) {
-            var profileId = H.normalizeEmail(button.getAttribute('data-add-friend'));
-            var added = state.friends.some(function (friend) { return friend.email === profileId; });
-            button.disabled = added;
-            button.textContent = added ? 'Added' : 'Add to friends';
-          });
-        }
-
-        function renderGrants(data) {
-          grantViewers.innerHTML = '';
-          grantViewing.innerHTML = '';
-
-          if (!data.viewers.length) {
-            grantViewers.appendChild(emptyHint('Only you can see your schedule.'));
-          }
-          data.viewers.forEach(function (grant) {
-            var revoke = el('button', { type: 'button', class: 'secondary', text: 'Revoke' });
-            revoke.addEventListener('click', function () {
-              if (!window.confirm('Revoke access for ' + (grant.displayName || grant.profileId) + '? They will be told, and this code will never work again.')) return;
-              A.revokeGrant(grant.id).then(function (result) {
-                if (!result.ok) { setAccountStatus(friendlyError(result), 'error'); return; }
-                setAccountStatus('Access revoked. They will be told the next time they sign in.', 'success');
-                refreshGrants();
-              });
-            });
-            grantViewers.appendChild(el('div', { class: 'class-settings__friend-row' }, [
-              el('div', { class: 'class-settings__friend-info' }, [
-                el('strong', { text: grant.displayName || grant.profileId }),
-                el('span', { class: 'class-settings__friend-meta', text: grant.profileId + ' \u00b7 can see your schedule' })
-              ]),
-              el('div', { class: 'class-settings__friend-actions' }, [revoke])
-            ]));
-          });
-
-          if (!data.viewing.length) {
-            grantViewing.appendChild(emptyHint('You cannot see anyone else\'s schedule yet.'));
-          }
-          data.viewing.forEach(function (grant) {
-            var view = el('button', { type: 'button', class: 'secondary', text: 'View' });
-            view.addEventListener('click', function () { openSchedule(grant.profileId); });
-            var add = el('button', { type: 'button', class: 'secondary', text: 'Add to friends', 'data-add-friend': grant.profileId });
-            add.addEventListener('click', function () {
-              if (add.disabled) return;
-              addFriendFromProfile(grant);
-            });
-            grantViewing.appendChild(el('div', { class: 'class-settings__friend-row' }, [
-              el('div', { class: 'class-settings__friend-info' }, [
-                el('strong', { text: grant.displayName || grant.profileId }),
-                el('span', { class: 'class-settings__friend-meta', text: grant.profileId })
-              ]),
-              el('div', { class: 'class-settings__friend-actions' }, [view, add])
-            ]));
-          });
-          syncFriendButtons();
-        }
-
+        // Access is drawn on each person's card in the Friends tab (see
+        // friendPills), so there is no separate access list to render here.
         function refreshGrants() {
           if (!A.isSignedIn()) return;
           A.listGrants().then(function (result) {
@@ -1344,7 +1346,7 @@
             // it. Merging here means someone whose request was accepted appears
             // on the card without having to come back and add them by hand.
             adoptGrantedFriends(result.data.viewing || []);
-            renderGrants(result.data);
+            renderFriends();
             // The pills and the Pending count read grants too, so a row whose
             // access arrived later stops saying Pending when this lands.
             renderNotices();
@@ -1393,9 +1395,6 @@
 
         var latestNotices = [];
         var latestRequests = { incoming: [], outgoing: [] };
-        // Whose schedules this account can see, and who can see its own. The
-        // grant is the answer to an ask; a request row is only the ask.
-        var latestGrants = { viewers: [], viewing: [] };
         // Open rows survive a re-render, so acting on one does not collapse it.
         var expandedNotices = {};
 

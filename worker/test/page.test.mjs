@@ -181,7 +181,6 @@ await test('signed out, the page offers sign-in and hides account panels', async
   assert.equal($('signin-dialog').hasAttribute('open'), false, 'the popup starts closed');
   assert.ok($('signin-email'), 'with an email field');
   assert.ok($('signin-password'), 'and a password field');
-  assert.equal($('access-panel').hidden, true);
   assert.equal($('notices-panel').hidden, true);
   assert.equal($('danger-panel').hidden, true);
 });
@@ -224,7 +223,6 @@ await test('signing in reveals every account section', async () => {
   assert.equal($('account-signed-in').hidden, false, 'the signed-in card shows');
   assert.equal($('account-signed-out').hidden, true);
   assert.equal($('topbar-auth').hidden, false, 'the sidebar now offers sign-out');
-  assert.equal($('access-panel').hidden, false);
   assert.equal($('notices-panel').hidden, false);
   assert.equal($('danger-panel').hidden, false);
   assert.match($('profile-id').value, /^[a-z]+-[a-z]+-\d{4}$/, 'a profile ID is shown');
@@ -449,10 +447,11 @@ await test('a request from someone else can be accepted in the UI', async () => 
     'and stops saying pending once accepted');
 });
 
-await test('the access panel lists viewers and can revoke', async () => {
-  const rows = $('grant-viewers').querySelectorAll('.class-settings__friend-row');
-  assert.ok(rows.length >= 1, 'the viewer is listed');
-  const revoke = [...$('grant-viewers').querySelectorAll('button')].find((b) => b.textContent === 'Revoke');
+await test('a friend card says who can see whose schedule and can revoke', async () => {
+  const bobRow = [...$('friend-rows').querySelectorAll('.class-settings__friend-row')]
+    .find((row) => /Bob/.test(row.textContent) && /They can see yours/.test(row.textContent));
+  assert.ok(bobRow, 'the viewer has a card that says he can see Alice\'s schedule');
+  const revoke = [...bobRow.querySelectorAll('button')].find((b) => b.textContent === 'Revoke');
   assert.ok(revoke, 'a Revoke button is offered');
   revoke.dispatchEvent(new window.Event('click'));
   await settle();
@@ -808,36 +807,26 @@ await test('a friend added from the directory carries real course data for the c
   assert.equal(erinEntry.grade, 11, 'her grade reached the card entry');
 });
 
-await test('schedule access buttons stay in sync with friends after removal, re-addition and reload', async () => {
+await test('a friend card shows the access it holds and keeps it across reloads', async () => {
   const erinProfileId = (await accountOf('sub-page-erin')).profile_id;
-  const addButton = (p) => [...p.$('grant-viewing').querySelectorAll('[data-add-friend]')]
-    .find((button) => button.getAttribute('data-add-friend') === erinProfileId);
-  const assertAdded = (p) => {
-    const button = addButton(p);
-    assert.ok(button, 'Erin has a schedule access card');
-    assert.equal(button.disabled, true, 'an existing friend cannot be added again');
-    assert.equal(button.textContent, 'Added');
+  const erinRow = (p) => [...p.$('friend-rows').querySelectorAll('.class-settings__friend-row')]
+    .find((row) => row.textContent.includes(erinProfileId));
+  const assertAccess = (p) => {
+    const row = erinRow(p);
+    assert.ok(row, 'Erin has a friend card');
+    assert.match(row.textContent, /You can see theirs/, 'the card says her schedule is available');
+    assert.doesNotMatch(row.textContent, /No access/, 'and not the empty state');
   };
 
   await window.HTAccount.refresh();
   await settle();
-  assertAdded(page);
-  const friendRow = [...$('friend-rows').querySelectorAll('.class-settings__friend-row')]
-    .find((row) => row.textContent.includes(erinProfileId));
-  friendRow.querySelector('.class-settings__icon-button').click();
-  assert.equal(addButton(page).disabled, false, 'removing the friend enables adding them again');
-  assert.equal(addButton(page).textContent, 'Add to friends');
-  addButton(page).click();
-  assertAdded(page);
-  await settle();
-  assertAdded(page);
-  const friends = JSON.parse(window.localStorage.getItem('friends'));
-  assert.equal(friends.filter((friend) => friend.email === erinProfileId).length, 1, 'only one friend entry is saved');
+  assertAccess(page);
 
+  const friends = JSON.parse(window.localStorage.getItem('friends'));
   const reloaded = mountPage({ storage: { friends } });
   try {
     await reloaded.settle();
-    assertAdded(reloaded);
+    assertAccess(reloaded);
     assert.deepEqual(reloaded.errors, [], 'reload has no runtime errors');
   } finally {
     reloaded.dom.window.close();
@@ -846,9 +835,9 @@ await test('schedule access buttons stay in sync with friends after removal, re-
   const fresh = mountPage();
   try {
     await fresh.settle();
-    assertAdded(fresh);
+    assertAccess(fresh);
     assert.ok(JSON.parse(fresh.window.localStorage.getItem('friends'))
-      .some((friend) => friend.email === erinProfileId), 'automatically adopted friends also disable the button');
+      .some((friend) => friend.email === erinProfileId), 'granted people are still adopted onto the card');
     assert.deepEqual(fresh.errors, [], 'cold load has no runtime errors');
   } finally {
     fresh.dom.window.close();

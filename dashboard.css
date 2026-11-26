@@ -1243,6 +1243,7 @@ body.social-web-open .dashboard { height: 100dvh; }
   .class-settings__badge--pending { background: rgba(96, 165, 250, 0.18); color: #8ec2f8; }
   .class-settings__badge--granted { background: rgba(74, 222, 128, 0.16); color: #86efac; }
   .class-settings__badge--declined { background: rgba(148, 163, 184, 0.18); color: #cbd5e1; }
+  .class-settings__pill--on { background: rgba(74, 222, 128, 0.16); color: #86efac; }
   .class-settings__panel,
   .class-settings__account { box-shadow: 0 8px 18px rgba(0, 0, 0, 0.36); }
 
