@@ -245,6 +245,35 @@ If signing in fails, open the browser console. The settings page reports what
 Firebase said — a wrong password, an unknown address, or an address that has not
 been confirmed yet.
 
+## Repair: revoking access that was auto approved
+
+If `auto_grant` was ever set on accounts that never chose it, some grants exist
+that nobody approved. They can be found exactly: an automatic approval wrote the
+grant and never created a request row, so a live grant with **no** request row
+between the same two accounts is one that skipped the owner. A grant from a real
+decision always has its `accepted` request.
+
+Two routes act on that, and they are inert until the Worker has a Secret named
+`ADMIN_TOKEN` (any long random string, kept in your password manager):
+
+- `GET /api/admin/auto-grants` lists what would be revoked (no secrets in it,
+only profile IDs, which are what the owners see on their own page).
+- `POST /api/admin/auto-grants/revoke` revokes each one the way the owner's own
+  Revoke button does: `revoked_at` is set and the viewer gets an
+  "access revoked" notice. Nothing is deleted; the row stays and stays visible in
+  the owner's history.
+
+Both want `Authorization: Bearer <ADMIN_TOKEN>`. The script does the two steps:
+
+```
+node worker/revoke-auto-grants.mjs --token <ADMIN_TOKEN>            # show the plan
+node worker/revoke-auto-grants.mjs --token <ADMIN_TOKEN> --apply    # do it
+```
+
+Run the first line and read the list before the second. Revoking is not the same
+as undoing the disclosure -- the schedules were readable while the grant existed
+-- so the owners also need to be told.
+
 ## Notes for later
 
 - **The Firebase project.** The Worker accepts tokens for `schedule-59d28`,

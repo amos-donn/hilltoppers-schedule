@@ -130,8 +130,8 @@ const worker = (await import(new URL('../api.js', import.meta.url).href)).defaul
 // ---------------------------------------------------------------------------
 // Request helpers
 // ---------------------------------------------------------------------------
-function req(path, { method = 'GET', cookie, body, origin } = {}) {
-  const headers = {};
+function req(path, { method = 'GET', cookie, body, origin, headers: extra } = {}) {
+  const headers = { ...(extra || {}) };
   if (cookie) headers.Cookie = cookie;
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   if (origin) headers.Origin = origin;
@@ -570,6 +570,88 @@ await test('approve-automatically off is the default, and a request then waits',
     body: { profileId: ownerMe.profileId },
   });
   assert.equal(ask.body.status, 'granted', 'turning the switch on grants at once');
+});
+
+await test('the auto-grant repair revokes only grants no one approved', async () => {
+  // Three grants with three histories: an auto approval (no request row), a
+  // declined request that was granted anyway (a row, but not accepted), and a
+  // request the owner accepted. Only the first is what nobody agreed to.
+  const repairEnv = makeEnv();
+  repairEnv.ADMIN_TOKEN = 'test-admin-token';
+  const admin = (method = 'GET', body) => call(repairEnv, '/api/admin/auto-grants' + (method === 'POST' ? '/revoke' : ''), {
+    method,
+    body,
+    headers: { Authorization: 'Bearer test-admin-token' },
+  });
+
+  const owner = async (sub) => {
+    const cookie = await signIn(repairEnv, { sub, email: `${sub}@x.org`, name: sub });
+    return { cookie, ...(await call(repairEnv, '/api/me', { cookie })).body };
+  };
+  const autoOwner = await owner('repair-auto-owner');
+  const oddOwner = await owner('repair-odd-owner');
+  const askedOwner = await owner('repair-asked-owner');
+  const asker = await owner('repair-asker');
+
+  // The auto path: the switch accepts the ask, so no request row is written.
+  await call(repairEnv, '/api/me', { cookie: autoOwner.cookie, method: 'PATCH', body: { autoGrant: true } });
+  const autoAsk = await call(repairEnv, '/api/requests', {
+    method: 'POST', cookie: asker.cookie, body: { profileId: autoOwner.profileId },
+  });
+  assert.equal(autoAsk.body.status, 'granted');
+
+  // A row that never said "accepted" is not an approval either.
+  await call(repairEnv, '/api/requests', {
+    method: 'POST', cookie: asker.cookie, body: { profileId: oddOwner.profileId },
+  });
+  repairEnv.__db.prepare(
+    `INSERT INTO grants (code_hash, owner_account_id, viewer_account_id, created_at)
+     VALUES ('odd', (SELECT id FROM accounts WHERE firebase_uid_bidx IS NOT NULL LIMIT 1), 1, 1)`
+  );
+
+  // The honest case: asked, then accepted.
+  await call(repairEnv, '/api/requests', {
+    method: 'POST', cookie: asker.cookie, body: { profileId: askedOwner.profileId },
+  });
+  const pending = await call(repairEnv, '/api/requests', { cookie: askedOwner.cookie });
+  const id = pending.body.incoming.find((r) => r.status === 'pending').id;
+  await call(repairEnv, `/api/requests/${id}`, { method: 'POST', cookie: askedOwner.cookie, body: { decision: 'accept' } });
+
+  const before = (await call(repairEnv, '/api/grants', { cookie: askedOwner.cookie })).body;
+  assert.equal(before.viewers.length, 1, 'the accepted ask stands');
+  await call(repairEnv, '/api/schedule/' + autoOwner.profileId, { cookie: asker.cookie });
+
+  // Who may run it: not nobody, not a wrong secret, not a session cookie.
+  assert.equal((await call(repairEnv, '/api/admin/auto-grants')).status, 401, 'a token is required');
+  assert.equal((await call(repairEnv, '/api/admin/auto-grants', {
+    headers: { Authorization: 'Bearer wrong' },
+  })).status, 401, 'and it has to be the right one');
+  assert.equal((await call(repairEnv, '/api/admin/auto-grants', {
+    cookie: askedOwner.cookie,
+  })).status, 401, 'a session is not a token');
+
+  const plan = await admin();
+  assert.equal(plan.status, 200);
+  assert.deepEqual(plan.body.grants.map((g) => g.owner), [autoOwner.profileId],
+    'the plan names the grant no one approved, and nothing else');
+  assert.deepEqual(plan.body.grants.map((g) => g.viewer), [asker.profileId]);
+
+  const done = await admin('POST', {});
+  assert.equal(done.status, 200);
+  assert.equal(done.body.revoked, 1, 'exactly that one grant is revoked');
+  assert.equal(done.body.failed, 0);
+
+  // The viewer is told, learns nothing more, and the accepted grant is intact.
+  const notices = await call(repairEnv, '/api/notices', { cookie: asker.cookie });
+  assert.ok(notices.body.notices.some((n) => n.kind === 'access.revoked'), 'the viewer is told');
+  const blocked = await call(repairEnv, '/api/schedule/' + autoOwner.profileId, { cookie: asker.cookie });
+  assert.equal(blocked.status, 403, 'and can no longer read the schedule');
+  const after = await call(repairEnv, '/api/grants', { cookie: askedOwner.cookie });
+  assert.equal(after.body.viewers.length, 1, 'the approved grant was left alone');
+  assert.equal((await call(repairEnv, '/api/schedule/' + askedOwner.profileId, { cookie: asker.cookie })).status, 200);
+
+  const again = await admin();
+  assert.equal(again.body.grants.length, 0, 'a second run finds nothing left to do');
 });
 
 await test('a private profile is reachable by ID when already known', async () => {

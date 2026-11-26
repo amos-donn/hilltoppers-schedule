@@ -1411,6 +1411,105 @@ async function handleRevokeGrant(env, account, grantId) {
   return json({ ok: true });
 }
 
+/**
+ * The grants that were made by auto approval.
+ *
+ * While an account had `auto_grant` on, a request wrote the grant and returned
+ * before any request row existed: the owner was never asked. A grant that was
+ * somebody's decision has the `accepted` request between the same two accounts.
+ * So a live grant with no request row at all is one nobody approved, and that
+ * is exactly what these two routes act on. Nothing is inferred from a timestamp,
+ * or from `auto_grant` being on or off now, because either can disagree with how
+ * a particular grant came about.
+ */
+const AUTO_GRANTS_SQL = `
+  SELECT g.id AS grant_id, g.created_at, g.owner_account_id, g.viewer_account_id,
+         owner.profile_id_enc AS owner_enc
+    FROM grants g
+    JOIN accounts owner  ON owner.id  = g.owner_account_id
+   WHERE g.revoked_at IS NULL
+     AND NOT EXISTS (
+       SELECT 1 FROM requests r
+        WHERE r.from_account_id = g.viewer_account_id
+          AND r.to_account_id  = g.owner_account_id
+     )
+   ORDER BY g.created_at`;
+
+/** A constant-time-ish comparison: compare hashes, so timing says nothing. */
+async function sameSecret(given, expected) {
+  if (!expected || typeof given !== 'string' || !given) return false;
+  const [a, b] = await Promise.all([sha256Hex(given), sha256Hex(expected)]);
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+/**
+ * Operator routes. These are behind a secret rather than a session so a repair
+ * is not tied to any one student's login, and they do nothing at all until the
+ * ADMIN_TOKEN secret exists on the Worker.
+ */
+async function adminRoute(request, env, path, method) {
+  if (!env.ADMIN_TOKEN) return json({ error: 'admin_disabled' }, 404);
+  const header = request.headers.get('Authorization') || '';
+  const given = header.startsWith('Bearer ') ? header.slice(7) : '';
+  if (!(await sameSecret(given, env.ADMIN_TOKEN))) return json({ error: 'unauthorized' }, 401);
+
+  // Profile IDs are ciphertext in the table, so they are read the way the rest
+  // of the API reads them: decrypted with the account's own AAD.
+  const list = async () => {
+    const { results } = await env.DB.prepare(AUTO_GRANTS_SQL).all();
+    const out = [];
+    for (const row of results || []) {
+      out.push({
+        grantId: row.grant_id,
+        createdAt: row.created_at,
+        ownerAccountId: row.owner_account_id,
+        viewerAccountId: row.viewer_account_id,
+        owner: await decryptField(env, row.owner_enc, accountAad(null, 'profile_id')),
+        viewer: await decryptField(
+          env,
+          (await env.DB.prepare('SELECT profile_id_enc FROM accounts WHERE id = ?')
+            .bind(row.viewer_account_id).first())?.profile_id_enc,
+          accountAad(null, 'profile_id')
+        ),
+      });
+    }
+    return out;
+  };
+
+  if (path === '/api/admin/auto-grants' && method === 'GET') {
+    return json({ grants: await list() }, 200, { 'Cache-Control': 'no-store' });
+  }
+
+  if (path === '/api/admin/auto-grants/revoke' && method === 'POST') {
+    // Listing first, then revoking one row at a time: one bad row cannot stop
+    // the rest, and a second run picks up only what is still live.
+    const grants = await list();
+    const ts = nowSeconds();
+    let revoked = 0;
+    let failed = 0;
+    for (const grant of grants) {
+      try {
+        const done = await env.DB.prepare(
+          'UPDATE grants SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL'
+        ).bind(ts, grant.grantId).run();
+        const changes = done && typeof done.meta?.changes === 'number'
+          ? done.meta.changes : (done && done.changes) || 0;
+        if (!Number(changes)) continue;
+        revoked++;
+        // The viewer is told the same way a manual revoke tells them.
+        await notify(env, grant.viewerAccountId, 'access.revoked', { profileId: grant.owner });
+      } catch (err) {
+        failed++;
+      }
+    }
+    return json({ revoked, failed }, 200, { 'Cache-Control': 'no-store' });
+  }
+
+  return json({ error: 'not_found' }, 404);
+}
+
 async function handleListNotices(env, account) {
   // This used to join accounts on json_extract(payload, '$.profileId'), which
   // stops being possible the moment the payload becomes ciphertext. So the
@@ -1550,6 +1649,14 @@ export default {
 async function route(request, env, url, path, method) {
   if (path === '/api/auth/firebase' && method === 'POST') {
     return handleFirebaseSignIn(request, env);
+  }
+
+  // Operator routes, authenticated by a secret rather than a session, so a
+  // repair can be made without signing in as a student. They are registered
+  // before the session check so a missing secret fails as "off" rather than
+  // as "signed out".
+  if (path === '/api/admin/auto-grants' || path === '/api/admin/auto-grants/revoke') {
+    return adminRoute(request, env, path, method);
   }
 
   if (path === '/api/auth/logout' && method === 'POST') {
