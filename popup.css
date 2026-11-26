@@ -1707,7 +1707,8 @@ header {
   margin: -6px -6px -6px auto;
 }
 
-.notices-button { position: relative; }
+.notices-button,
+.notices-button:hover { position: relative; color: #2f6b3f; }
 
 .notices-dot {
   position: absolute;

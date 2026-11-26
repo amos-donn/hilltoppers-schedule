@@ -215,12 +215,6 @@
       })[0] || null;
     }
 
-    function pendingRequests() {
-      return requests.incoming.concat(requests.outgoing).filter(function (request) {
-        return request.status === 'pending';
-      });
-    }
-
     function badge(text, modifier) {
       return el('span', {
         class: 'notices-card__badge' + (modifier ? ' notices-card__badge--' + modifier : ''),
@@ -248,9 +242,11 @@
       }, function () { return false; });
     }
 
+    // The red dot is for unread notices only. A request the account sent is
+    // waiting on someone else, not something to read, so it does not mark the
+    // bell; the row itself still says Pending when the list is open.
     function paintDot() {
-      var unseen = notices.filter(function (notice) { return !notice.seen; }).length;
-      dot.hidden = unseen === 0 && pendingRequests().length === 0;
+      dot.hidden = notices.every(function (notice) { return notice.seen; });
     }
 
     function refresh() {
