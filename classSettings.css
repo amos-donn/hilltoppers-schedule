@@ -710,6 +710,8 @@ body, html {
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--surface-muted);
+  /* The whole card opens the person it describes. */
+  cursor: pointer;
 }
 
 /* Rows you can drag by their grip. The grip sits at the leading edge, the way

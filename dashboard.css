@@ -871,6 +871,82 @@ body, html {
   background: var(--surface-muted);
 }
 
+/* A friend's card popup: their courses under block labels, not today's
+   timetable. Same shell as the sign-in dialog. */
+.class-settings__friend-dialog {
+  width: min(360px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  padding: 22px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--text);
+  box-sizing: border-box;
+}
+
+.dashboard__panel .class-settings__panel > .class-settings__friend-dialog {
+  margin: auto;
+}
+
+.class-settings__friend-dialog::backdrop {
+  background: rgba(17, 17, 17, 0.45);
+}
+
+.class-settings__friend-dialog h2 {
+  margin: 0 0 4px;
+  padding-right: 28px;
+  font-size: 18px;
+}
+
+.class-settings__friend-dialog-meta {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.class-settings__friend-dialog-note {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.class-settings__friend-dialog-blocks {
+  display: grid;
+  gap: 8px;
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.class-settings__friend-block {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-muted);
+}
+
+.class-settings__friend-block-label {
+  flex: none;
+  min-width: 64px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.class-settings__friend-block-course {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.class-settings__friend-block-course--empty {
+  color: var(--muted);
+  font-weight: 400;
+}
+
 .class-settings__auth-dialog .class-settings__signin-grid {
   margin-top: 14px;
 }

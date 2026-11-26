@@ -950,6 +950,37 @@ await test('a friend added from the directory carries real course data for the c
   assert.equal(erinEntry.grade, 11, 'her grade reached the card entry');
 });
 
+await test('a friend card opens a popup with their blocks, grade and lunch', async () => {
+  // The tab reads its grants on refresh, so the row is drawn with the access
+  // pill and the card's own course cache.
+  await window.HTAccount.refresh();
+  await settle();
+  const erinProfileId = (await accountOf('sub-page-erin')).profile_id;
+  const row = [...$('friend-rows').querySelectorAll('.class-settings__friend-row')]
+    .find((r) => r.textContent.includes(erinProfileId));
+  assert.ok(row, 'Erin is on the card');
+  // The access pill reports access; the card itself is the control, so the
+  // pill must not be a separate way into anything.
+  assert.equal(row.querySelector('.class-settings__pill--see').tagName, 'SPAN',
+    'the access pill is a read-out, not a link');
+
+  row.click();
+  await settle();
+  assert.equal($('friend-dialog').hasAttribute('open'), true,
+    'clicking the card opens their popup');
+  assert.match($('friend-dialog-title').textContent, /Erin/);
+  assert.match($('friend-dialog-meta').textContent, /Junior/, 'the popup names her grade');
+  assert.match($('friend-dialog-meta').textContent, /1st Lunch/, 'and her lunch wave');
+  const blocks = [...$('friend-dialog-blocks').querySelectorAll('.class-settings__friend-block')];
+  assert.equal(blocks.length, 5, 'every A-E block has a line');
+  assert.ok(blocks.some((li) => /A Block/.test(li.textContent) && /Chemistry/.test(li.textContent)),
+    'her course sits under its block label');
+
+  const dialog = $('friend-dialog');
+  if (typeof dialog.close === 'function') dialog.close();
+  else dialog.removeAttribute('open');
+});
+
 await test('a friend card shows the access it holds and keeps it across reloads', async () => {
   const erinProfileId = (await accountOf('sub-page-erin')).profile_id;
   const erinRow = (p) => [...p.$('friend-rows').querySelectorAll('.class-settings__friend-row')]

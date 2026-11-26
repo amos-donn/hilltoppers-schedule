@@ -13,7 +13,7 @@
     <!-- The Hilltoppers dashboard shell: sidebar tabs, the sage palette,
          and the custom dropdowns. Loaded after classSettings.css, which it
          restyles. -->
-    <link rel="stylesheet" href="dashboard.css?v=20261126d" />
+    <link rel="stylesheet" href="dashboard.css?v=20261126e" />
   </head>
   <!-- The page starts as a skeleton and is told which state it is in once the
        session check answers. Without this class it would paint "not signed in"
@@ -286,6 +286,19 @@
 
           <p class="class-settings__account-status" id="friends-status" hidden></p>
           <div id="friend-rows" class="class-settings__friend-list"></div>
+
+          <!-- A friend's card popup: their courses under block labels, not
+               today's timetable. A <dialog> so Escape, focus handling and the
+               backdrop come from the browser rather than from us. -->
+          <dialog class="class-settings__friend-dialog" id="friend-dialog" aria-labelledby="friend-dialog-title">
+            <form method="dialog" class="class-settings__auth-dialog-close">
+              <button type="submit" aria-label="Close">&times;</button>
+            </form>
+            <h2 id="friend-dialog-title"></h2>
+            <p class="class-settings__friend-dialog-meta" id="friend-dialog-meta" hidden></p>
+            <p class="class-settings__friend-dialog-note" id="friend-dialog-note" hidden></p>
+            <ul class="class-settings__friend-dialog-blocks" id="friend-dialog-blocks"></ul>
+          </dialog>
         </section>
 
         </section>
@@ -761,14 +774,13 @@
           })[0];
           var pills = el('div', { class: 'class-settings__friend-pills' });
           if (canSee) {
-            var open = el('button', {
-              type: 'button',
+            // A read-out, not a control: the card itself opens their profile,
+            // so the pill must not compete with that.
+            pills.appendChild(el('span', {
               class: 'class-settings__pill class-settings__pill--see',
-              title: 'Open their schedule',
+              title: 'Their schedule is on their card',
               html: ICON_EYE + 'You can see theirs'
-            });
-            open.addEventListener('click', function () { openSchedule(profileId); });
-            pills.appendChild(open);
+            }));
           }
           if (canBeSeen) {
             pills.appendChild(el('span', {
@@ -785,6 +797,110 @@
             }));
           }
           return pills;
+        }
+
+        // --- friend card popup --------------------------------------------
+        // A card is a person, not a day: the popup lists their courses under
+        // A/B/C block labels with their grade and lunch wave, instead of
+        // replaying today's timetable. A card with no courses cached yet (an
+        // accepted request, or a row kept only for access) is filled from the
+        // account when it opens.
+        var friendDialog = document.getElementById('friend-dialog');
+        var friendDialogTitle = document.getElementById('friend-dialog-title');
+        var friendDialogMeta = document.getElementById('friend-dialog-meta');
+        var friendDialogNote = document.getElementById('friend-dialog-note');
+        var friendDialogBlocks = document.getElementById('friend-dialog-blocks');
+
+        /** One block's course, or a free block; '' when nothing is listed. */
+        function blockCourse(pref) {
+          if (!pref) return '';
+          if (pref.free === true) return 'Free Block';
+          var name = (pref.name || '').trim();
+          if (name) return name;
+          if (pref.alternating === true) {
+            var green = (pref.nameGreen || '').trim();
+            var white = (pref.nameWhite || '').trim();
+            if (green && white && green !== white) return green + ' / ' + white;
+            return green || white;
+          }
+          return '';
+        }
+
+        /** Whether a saved friend actually has courses to draw. */
+        function friendHasCourses(friend) {
+          var prefs = friend && friend.blockPrefs;
+          if (!prefs) return false;
+          return Object.keys(H.DEFAULT_BLOCK_NAMES).some(function (key) {
+            var pref = prefs[key];
+            return Boolean(pref && (blockCourse(pref) || pref.freeGreen === true || pref.freeWhite === true));
+          });
+        }
+
+        function renderFriendPopup(friend, label) {
+          friendDialogTitle.textContent = friend ? (friend.name || label) : label;
+          var meta = [];
+          if (friend) {
+            if (friend.grade != null) meta.push(H.GRADE_LABELS[friend.grade] || ('Grade ' + friend.grade));
+            if (friend.lunchWave != null) meta.push(H.LUNCH_WAVE_LABELS[friend.lunchWave]);
+          }
+          friendDialogMeta.textContent = meta.join(' \u00b7 ');
+          friendDialogMeta.hidden = meta.length === 0;
+          friendDialogBlocks.innerHTML = '';
+          var prefs = (friend && friend.blockPrefs) || {};
+          Object.keys(H.DEFAULT_BLOCK_NAMES).forEach(function (key) {
+            var course = blockCourse(prefs[key]);
+            friendDialogBlocks.appendChild(el('li', { class: 'class-settings__friend-block' }, [
+              el('span', { class: 'class-settings__friend-block-label', text: H.DEFAULT_BLOCK_NAMES[key] }),
+              el('span', {
+                class: 'class-settings__friend-block-course'
+                  + (course ? '' : ' class-settings__friend-block-course--empty'),
+                text: course || 'Nothing listed'
+              })
+            ]));
+          });
+        }
+
+        function showFriendPopup(person, label) {
+          renderFriendPopup(person.friend, label);
+          friendDialogNote.hidden = true;
+          if (!friendDialog.open) {
+            if (typeof friendDialog.showModal === 'function') friendDialog.showModal();
+            else friendDialog.setAttribute('open', '');
+          }
+          if (!friendHasCourses(person.friend)) loadFriendSchedule(person, label);
+        }
+
+        /** Fill a card that has no cached courses, without re-adding a row the
+         *  user took off their card on purpose. */
+        function loadFriendSchedule(person, label) {
+          friendDialogNote.hidden = false;
+          friendDialogNote.textContent = 'Loading their schedule\u2026';
+          A.getSchedule(person.email).then(function (result) {
+            if (!result.ok) {
+              friendDialogNote.textContent = 'Their schedule is not available right now.';
+              return;
+            }
+            var schedule = result.data;
+            var fetched = H.normalizeFriend({
+              email: schedule.profileId || person.email,
+              name: schedule.displayName || label,
+              grade: schedule.grade,
+              lunchWave: schedule.lunchWave,
+              timeFormat: schedule.timeFormat,
+              blockPrefs: schedule.blockPrefs
+            });
+            if (!fetched) {
+              friendDialogNote.textContent = 'Their schedule is not available right now.';
+              return;
+            }
+            friendDialogNote.hidden = true;
+            renderFriendPopup(fetched, label);
+            if (person.friend) {
+              state.friends = H.upsertFriend(state.friends, fetched);
+              H.saveFriends(state.friends);
+              renderFriends();
+            }
+          });
         }
 
         /**
@@ -968,6 +1084,13 @@
                 + (friend ? ' class-settings__friend-row--sortable' : '')
                 + (friend && pickedFriend === friend.email ? ' is-picked' : '')
             }, parts);
+            row.addEventListener('click', function (event) {
+              // The grip and the overflow have their own jobs; every other part
+              // of the card opens the person it describes.
+              if (event.target.closest('.class-settings__grip')) return;
+              if (event.target.closest('.class-settings__overflow-wrap')) return;
+              showFriendPopup(person, label);
+            });
             if (friend) {
               row.setAttribute('draggable', 'true');
               row.addEventListener('dragstart', function (event) {
@@ -1613,22 +1736,6 @@
             H.saveFriends(state.friends);
             renderFriends();
           }
-        }
-
-        /** Show someone else's schedule on the same card the site already has. */
-        function openSchedule(profileId) {
-          A.getSchedule(profileId).then(function (result) {
-            if (!result.ok) { setAccountStatus(friendlyError(result), 'error'); return; }
-            var schedule = result.data;
-            var payload = H.createSharePayload({
-              email: profileId,
-              name: schedule.displayName || profileId,
-              blockPrefs: schedule.blockPrefs,
-              schedulePrefs: schedule.schedulePrefs
-            });
-            var base = location.href.split('#')[0].split('?')[0].replace(/[^/]*$/, 'index.html');
-            window.open(base + '#' + H.SHARE_HASH_PREFIX + H.encodeShare(payload), '_blank');
-          });
         }
 
         // --- notices ------------------------------------------------------
