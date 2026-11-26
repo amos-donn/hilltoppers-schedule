@@ -140,6 +140,134 @@
       return wrapper;
     }
 
+
+  // A bell beside the gear: the same notices the settings page lists, without
+  // leaving the card. The dot is for anything unread; opening the card marks
+  // them read, the way opening the Notices tab does on the settings page.
+  var BELL_SVG = '<svg aria-hidden="true" width="18" height="18" viewBox="0 0 256 256" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M220.8 169.6a8 8 0 0 1-8 6.4H43.2a8 8 0 0 1-6.4-12.8l17.6-23.5V104a73.6 73.6 0 0 1 147.2 0v35.7l17.6 23.5a8 8 0 0 1 1.6 6.4ZM160 200h-64a32 32 0 0 0 64 0Z"/></svg>';
+
+  function noticeText(notice) {
+    var who = notice.actorName || notice.actorProfileId || '';
+    var kinds = {
+      'access.revoked': who ? who + ' revoked your access.' : 'Your access was revoked.',
+      'access.granted': who ? who + ' can now see your schedule.' : 'Someone can now see your schedule.',
+      'request.received': who ? who + ' asked for your schedule.' : 'Someone asked for your schedule.',
+      'request.accepted': who ? who + ' accepted your request.' : 'Someone accepted your request.',
+      'request.declined': who ? who + ' declined your request.' : 'Someone declined your request.',
+      'announcement.auto-grant': 'We screwed up. Auto-grant was on by default when the page said it would be off by default. All of those connections were severed, and each one is now a request waiting on you to approve.'
+    };
+    return kinds[notice.kind] || notice.kind;
+  }
+
+  function noticesButton() {
+    var panel = el('div', { class: 'notices-card', role: 'dialog', 'aria-label': 'Notices' });
+    panel.hidden = true;
+    var list = el('div', { class: 'notices-card__list' });
+    var dot = el('span', { class: 'notices-dot', 'aria-hidden': 'true' });
+    dot.hidden = true;
+    var button = el('button', {
+      class: 'settings-button notices-button', type: 'button',
+      'aria-label': 'Notices', 'aria-expanded': 'false', html: BELL_SVG
+    });
+    button.appendChild(dot);
+
+    // The controls live in the popup, not the settings page: approve
+    // automatically, narrow that to your own grade, and put back access this
+    // account revoked.
+    var toggle = el('input', { type: 'checkbox', class: 'notices-card__check' });
+    var toggleLabel = el('label', { class: 'notices-card__setting' }, [
+      toggle, el('span', { text: 'Approve requests automatically' })
+    ]);
+    var gradeToggle = el('input', { type: 'checkbox', class: 'notices-card__check' });
+    var gradeLabel = el('label', { class: 'notices-card__setting' }, [
+      gradeToggle, el('span', { text: 'Only people in my grade' })
+    ]);
+    var restore = el('button', { class: 'notices-card__action', type: 'button', text: 'Restore revoked access' });
+    var note = el('p', { class: 'notices-card__note' });
+    note.hidden = true;
+    var footer = el('div', { class: 'notices-card__footer' }, [toggleLabel, gradeLabel, restore, note]);
+
+    var wrapper = el('div', { class: 'settings-button-wrapper notices-wrapper' }, [
+      button,
+      el('span', { class: 'hover-float-label settings-float-label', text: 'Notices' }),
+      panel
+    ]);
+    panel.append(list, footer);
+
+    function paint(notices) {
+      list.replaceChildren();
+      if (!notices.length) {
+        list.appendChild(el('p', { class: 'notices-card__empty', text: 'Nothing new.' }));
+        return;
+      }
+      notices.slice(0, 8).forEach(function (notice) {
+        list.appendChild(el('p', {
+          class: 'notices-card__row' + (notice.seen ? '' : ' is-new'),
+          text: noticeText(notice)
+        }));
+      });
+    }
+
+    function load(markRead) {
+      if (!window.HTAccount || typeof window.HTAccount.listNotices !== 'function') { paint([]); return; }
+      window.HTAccount.listNotices().then(function (result) {
+        var notices = result && result.ok ? (result.data.notices || []) : [];
+        dot.hidden = notices.every(function (notice) { return notice.seen; });
+        if (!markRead) return;
+        paint(notices);
+        dot.hidden = true;
+        if (notices.length && typeof window.HTAccount.markNoticesSeen === 'function') {
+          window.HTAccount.markNoticesSeen();
+        }
+      });
+      if (typeof window.HTAccount.refresh === 'function') {
+        window.HTAccount.refresh().then(function (me) {
+          if (!me) return;
+          toggle.checked = me.autoGrant === true;
+          gradeToggle.checked = me.autoGrantGradeOnly === true;
+          gradeLabel.hidden = !toggle.checked;
+        });
+      }
+    }
+
+    toggle.addEventListener('change', function () {
+      gradeLabel.hidden = !toggle.checked;
+      window.HTAccount.updateProfile({ autoGrant: toggle.checked });
+    });
+    gradeToggle.addEventListener('change', function () {
+      window.HTAccount.updateProfile({ autoGrantGradeOnly: gradeToggle.checked });
+    });
+    restore.addEventListener('click', function () {
+      restore.disabled = true;
+      window.HTAccount.restoreGrants().then(function (result) {
+        restore.disabled = false;
+        note.hidden = false;
+        note.textContent = result && result.ok
+          ? 'Access restored for ' + (result.data.restored || 0) + (result.data.restored === 1 ? ' person.' : ' people.')
+          : 'Could not restore access. Try again.';
+      });
+    });
+
+    function close() { panel.hidden = true; button.setAttribute('aria-expanded', 'false'); }
+
+    button.addEventListener('click', function (event) {
+      event.stopPropagation();
+      var opening = panel.hidden;
+      panel.hidden = !opening;
+      button.setAttribute('aria-expanded', opening ? 'true' : 'false');
+      if (opening) { paint([]); load(true); }
+    });
+    document.addEventListener('pointerdown', function (event) {
+      if (!panel.hidden && !wrapper.contains(event.target)) close();
+    });
+    document.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape') close();
+    });
+    // One quiet read on load, for the dot only.
+    load(false);
+    return wrapper;
+  }
+
     function friendGapLabel(friend) {
       if (ownerBlocks(friend).length === 0) {
         return state.schedule.networkFailed === true ? 'No connection' : 'No school today';
@@ -347,7 +475,7 @@
       // button inside a button is not) and stops it toggling the day. The
       // lunch-wave row is a tap target of its own and lives in the day list
       // below, out of this handler's reach.
-      var card = el('div', { class: 'primary-card' }, [settingsButton(), section]);
+      var card = el('div', { class: 'primary-card' }, [noticesButton(), settingsButton(), section]);
       section.classList.add('is-tappable');
       section.setAttribute('role', 'button');
       section.setAttribute('tabindex', '0');
@@ -453,7 +581,7 @@
         el('section', { class: 'status' }, [
           el('div', { class: 'status-heading-row' }, [
             el('p', { class: 'friend-heading', text: 'No friends yet' }),
-            settingsButton()
+            el('div', { class: 'card-actions' }, [noticesButton(), settingsButton()])
           ]),
           el('div', { class: 'status-ended' }, [
             el('h2', { text: 'Get a life.' }),

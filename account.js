@@ -146,6 +146,10 @@
     return api('/api/requests/' + encodeURIComponent(id), { method: 'POST', body: { decision: decision } });
   }
 
+  function restoreGrants() {
+    return api('/api/grants/restore', { method: 'POST' });
+  }
+
   function listGrants() {
     return api('/api/grants');
   }
@@ -194,6 +198,7 @@
     listRequests: listRequests,
     decideRequest: decideRequest,
     listGrants: listGrants,
+    restoreGrants: restoreGrants,
     getSocialWeb: function () { return api('/api/social-web'); },
     revokeGrant: revokeGrant,
     listNotices: listNotices,

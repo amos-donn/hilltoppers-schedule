@@ -39,7 +39,9 @@ class Stmt {
   }
   async run() {
     const info = this.db.prepare(this.sql).run(...this.params);
-    return { success: true, meta: { changes: info.changes } };
+    // last_row_id is what D1 reports for an INSERT; the page's first-read
+    // announcement row needs it to be listed straight away.
+    return { success: true, meta: { changes: info.changes, last_row_id: Number(info.lastInsertRowid) } };
   }
 }
 
@@ -578,7 +580,7 @@ await test('the auto-grant repair revokes only grants no one approved', async ()
   // request the owner accepted. Only the first is what nobody agreed to.
   const repairEnv = makeEnv();
   repairEnv.ADMIN_TOKEN = 'test-admin-token';
-  const admin = (method = 'GET', body) => call(repairEnv, '/api/admin/auto-grants' + (method === 'POST' ? '/revoke' : ''), {
+  const admin = (method = 'GET', body, suffix = '') => call(repairEnv, '/api/admin/auto-grants' + suffix, {
     method,
     body,
     headers: { Authorization: 'Bearer test-admin-token' },
@@ -636,7 +638,7 @@ await test('the auto-grant repair revokes only grants no one approved', async ()
     'the plan names the grant no one approved, and nothing else');
   assert.deepEqual(plan.body.grants.map((g) => g.viewer), [asker.profileId]);
 
-  const done = await admin('POST', {});
+  const done = await admin('POST', {}, '/repair');
   assert.equal(done.status, 200);
   assert.equal(done.body.revoked, 1, 'exactly that one grant is revoked');
   assert.equal(done.body.failed, 0);
@@ -644,14 +646,47 @@ await test('the auto-grant repair revokes only grants no one approved', async ()
   // The viewer is told, learns nothing more, and the accepted grant is intact.
   const notices = await call(repairEnv, '/api/notices', { cookie: asker.cookie });
   assert.ok(notices.body.notices.some((n) => n.kind === 'access.revoked'), 'the viewer is told');
+  // The announcement arrives on the read after the one that created its row.
+  const reread = await call(repairEnv, '/api/notices', { cookie: asker.cookie });
+  const apology = reread.body.notices.find((n) => n.kind === 'announcement.auto-grant');
+  assert.ok(apology && !apology.seen, 'with one unread announcement alongside it');
+  assert.equal(reread.body.notices.filter((n) => n.kind === 'announcement.auto-grant').length, 1,
+    'exactly one, so it is said once and not on every load');
   const blocked = await call(repairEnv, '/api/schedule/' + autoOwner.profileId, { cookie: asker.cookie });
   assert.equal(blocked.status, 403, 'and can no longer read the schedule');
   const after = await call(repairEnv, '/api/grants', { cookie: askedOwner.cookie });
   assert.equal(after.body.viewers.length, 1, 'the approved grant was left alone');
   assert.equal((await call(repairEnv, '/api/schedule/' + askedOwner.profileId, { cookie: asker.cookie })).status, 200);
 
+  // Severing access leaves a request behind, so nobody has to ask again.
+  const reopened = await call(repairEnv, '/api/requests', { cookie: autoOwner.cookie });
+  assert.ok(reopened.body.incoming.some((r) => r.status === 'pending'),
+    'the severed access is now a request waiting on the owner');
+
+  const back = await call(repairEnv, '/api/grants/restore', { method: 'POST', cookie: autoOwner.cookie });
+  assert.equal(back.status, 200);
+  assert.equal(back.body.restored, 1, 'and the owner can restore it with one tap');
+  assert.equal((await call(repairEnv, '/api/schedule/' + autoOwner.profileId, { cookie: asker.cookie })).status, 200);
+
   const again = await admin();
   assert.equal(again.body.grants.length, 0, 'a second run finds nothing left to do');
+});
+
+await test('auto-grant can be limited to the owner\'s own grade', async () => {
+  const owner = await signIn(env, { sub: 'grade-owner', email: 'grade-owner@x.org', name: 'Grade Owner' });
+  await call(env, '/api/me', { cookie: owner, method: 'PATCH', body: { grade: 11, autoGrant: true, autoGrantGradeOnly: true } });
+  const ownerMe = (await call(env, '/api/me', { cookie: owner })).body;
+  assert.equal(ownerMe.autoGrantGradeOnly, true, 'the switch saves');
+
+  const younger = await signIn(env, { sub: 'grade-younger', email: 'younger@x.org', name: 'Younger' });
+  await call(env, '/api/me', { cookie: younger, method: 'PATCH', body: { grade: 10 } });
+  const junior = await signIn(env, { sub: 'grade-junior', email: 'junior@x.org', name: 'Junior' });
+  await call(env, '/api/me', { cookie: junior, method: 'PATCH', body: { grade: 11 } });
+
+  const blocked = await call(env, '/api/requests', { method: 'POST', cookie: younger, body: { profileId: ownerMe.profileId } });
+  assert.equal(blocked.body.status, 'pending', 'another grade waits for the owner');
+  const granted = await call(env, '/api/requests', { method: 'POST', cookie: junior, body: { profileId: ownerMe.profileId } });
+  assert.equal(granted.body.status, 'granted', 'the same grade is approved at once');
 });
 
 await test('a private profile is reachable by ID when already known', async () => {

@@ -555,6 +555,7 @@ async function decryptAccount(env, row) {
     id: row.id,
     is_public: row.is_public,
     auto_grant: row.auto_grant,
+    auto_grant_grade_only: row.auto_grant_grade_only,
     social_web_opt_in: row.social_web_opt_in,
     created_at: row.created_at,
     updated_at: row.updated_at,
@@ -762,6 +763,7 @@ function publicSelf(row) {
     email: row.email,
     isPublic: Boolean(row.is_public),
     autoGrant: Boolean(row.auto_grant),
+    autoGrantGradeOnly: Boolean(row.auto_grant_grade_only),
     socialWebOptIn: true, // Everyone participates; kept for older clients.
     timeFormat: row.time_format,
     grade: row.grade,
@@ -1115,6 +1117,10 @@ async function handleMe(request, env, account) {
       fields.push('auto_grant = ?');
       values.push(body.autoGrant ? 1 : 0);
     }
+    if (typeof body.autoGrantGradeOnly === 'boolean') {
+      fields.push('auto_grant_grade_only = ?');
+      values.push(body.autoGrantGradeOnly ? 1 : 0);
+    }
     // Everyone is in the Social web now; this switch no longer exists.
 
     // Encrypted fields are gathered first so each can be written with the row's
@@ -1265,7 +1271,15 @@ async function handleCreateRequest(request, env, account) {
   const already = await hasLiveGrant(env, target.id, account.id);
   if (already) return json({ status: 'granted' });
 
-  if (target.is_public && target.auto_grant) {
+  // Approve automatically, but -- with the grade switch on -- only for someone
+  // in the owner's own grade. Both grades have to be known: guessing one would
+  // hand out a schedule the setting was meant to keep back.
+  const gradeOnly = Boolean(target.auto_grant_grade_only);
+  const sameGrade = !gradeOnly || (
+    target.grade != null && account.grade != null
+    && Number(target.grade) === Number(account.grade)
+  );
+  if (target.is_public && target.auto_grant && sameGrade) {
     await createGrant(env, target.id, account.id);
     await notify(env, target.id, 'access.granted', { profileId: account.profile_id });
     return json({ status: 'granted' });
@@ -1396,6 +1410,34 @@ async function handleListGrants(env, account) {
  * written for the viewer is how they find out - there is no email or push, so
  * they learn on their next signed-in load.
  */
+
+/**
+ * Undo a revocation for everyone this account has revoked.
+ *
+ * A repair revokes access; this is the other direction, owned by the account
+ * whose schedule it is, so nobody has to be asked to run SQL. The viewer is
+ * told the same way a grant always tells them.
+ */
+async function handleRestoreGrants(env, account) {
+  const { results } = await env.DB.prepare(
+    'SELECT id, viewer_account_id FROM grants WHERE owner_account_id = ? AND revoked_at IS NOT NULL'
+  )
+    .bind(account.id)
+    .all();
+  let restored = 0;
+  const ts = nowSeconds();
+  for (const row of results || []) {
+    const done = await env.DB.prepare(
+      'UPDATE grants SET revoked_at = NULL, created_at = ? WHERE id = ? AND revoked_at IS NOT NULL'
+    ).bind(ts, row.id).run();
+    const changes = done && typeof done.meta?.changes === 'number' ? done.meta.changes : (done && done.changes) || 0;
+    if (!changes) continue;
+    restored++;
+    await notify(env, row.viewer_account_id, 'access.granted', { profileId: account.profile_id });
+  }
+  return json({ restored });
+}
+
 async function handleRevokeGrant(env, account, grantId) {
   const row = await env.DB.prepare(
     'SELECT * FROM grants WHERE id = ? AND owner_account_id = ?'
@@ -1482,7 +1524,9 @@ async function adminRoute(request, env, path, method) {
     return json({ grants: await list() }, 200, { 'Cache-Control': 'no-store' });
   }
 
-  if (path === '/api/admin/auto-grants/revoke' && method === 'POST') {
+  // The whole repair: revoke what nobody approved, and write the one notice
+  // every account gets when it next loads the page.
+  if (path === '/api/admin/auto-grants/repair' && method === 'POST') {
     // Listing first, then revoking one row at a time: one bad row cannot stop
     // the rest, and a second run picks up only what is still live.
     const grants = await list();
@@ -1491,6 +1535,16 @@ async function adminRoute(request, env, path, method) {
     let failed = 0;
     for (const grant of grants) {
       try {
+        // First, the same access as a request: the owner can approve it with
+        // one tap, and the asker does not have to find them and ask again.
+        await env.DB.prepare(
+          `INSERT INTO requests (from_account_id, to_account_id, status, created_at)
+           VALUES (?, ?, 'pending', ?)
+           ON CONFLICT (from_account_id, to_account_id)
+           DO UPDATE SET status = 'pending', created_at = excluded.created_at, decided_at = NULL`
+        ).bind(grant.viewerAccountId, grant.ownerAccountId, ts).run();
+        await notify(env, grant.ownerAccountId, 'request.received', { profileId: grant.viewer });
+
         const done = await env.DB.prepare(
           'UPDATE grants SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL'
         ).bind(ts, grant.grantId).run();
@@ -1504,6 +1558,11 @@ async function adminRoute(request, env, path, method) {
         failed++;
       }
     }
+
+    // Everyone hears it, not just the people whose access was cut: the
+    // setting was on for accounts that never chose it, so nobody can tell
+    // from the page alone whether theirs was.
+    // Nothing to write for that: see ANNOUNCEMENTS.
     return json({ revoked, failed }, 200, { 'Cache-Control': 'no-store' });
   }
 
@@ -1511,10 +1570,25 @@ async function adminRoute(request, env, path, method) {
 }
 
 async function handleListNotices(env, account) {
-  // This used to join accounts on json_extract(payload, '$.profileId'), which
-  // stops being possible the moment the payload becomes ciphertext. So the
-  // payloads are decrypted first and the profiles they name are then resolved in
-  // one query through their blind indexes.
+  const now = nowSeconds();
+
+  // Announcements are for everyone, and cost nothing for people who never open
+  // this tab: the row is written the first time their notices are read, which
+  // is also the read that shows it. After the announcement's window closes it
+  // is neither written nor shown, so it disappears for everyone on time.
+  for (const [kind, meta] of Object.entries(ANNOUNCEMENTS)) {
+    if (now < meta.at || now > meta.until) continue;
+    const already = await env.DB.prepare(
+      'SELECT id FROM notices WHERE account_id = ? AND kind = ? LIMIT 1'
+    ).bind(account.id, kind).first();
+    if (already) continue;
+    const payload = await encryptField(env, {}, noticeAad(account.id));
+    await env.DB.prepare(
+      `INSERT INTO notices (account_id, kind, payload, payload_enc, created_at)
+       VALUES (?, ?, '{}', ?, ?)`
+    ).bind(account.id, kind, payload, meta.at).run();
+  }
+
   const { results: rows } = await env.DB.prepare(
     `SELECT id, kind, payload, payload_enc, created_at, seen_at
        FROM notices WHERE account_id = ? ORDER BY created_at DESC LIMIT 50`
@@ -1549,10 +1623,16 @@ async function handleListNotices(env, account) {
       .run();
   }
 
-  const actors = await accountsByProfileId(env, notices.map((n) => n.payload.profileId));
+  // A notice still in the table after its announcement closed is not shown.
+  const shown = notices.filter(({ row }) => {
+    const meta = ANNOUNCEMENTS[row.kind];
+    return !meta || (now >= meta.at && now <= meta.until);
+  });
+
+  const actors = await accountsByProfileId(env, shown.map((n) => n.payload.profileId));
 
   return json({
-    notices: notices.map(({ row, payload }) => {
+    notices: shown.map(({ row, payload }) => {
       const actor = actors.get(payload.profileId);
       return {
         id: row.id,
@@ -1569,7 +1649,26 @@ async function handleListNotices(env, account) {
   });
 }
 
-/** Dismiss one notice, so a student can clear an item without clearing all. */
+/**
+ * Post a notice to everyone, or to one account.
+ *
+ * An announcement is all-accounts, so it is not stored per account: one row is
+ * written per account only when that person first opens their notices (see
+ * handleListNotices), which keeps the notices table the size it already is and
+ * makes "has this account seen it" the row that a normal notice already is.
+ * The body is fixed here rather than stored, because its one wording is the
+ * point: the page renders it from the kind.
+ */
+const ANNOUNCEMENTS = {
+  'announcement.auto-grant': {
+    at: 1795651200, // 2026-11-26T00:00:00Z, when the repair was published
+    // A week after the Monday following Thanksgiving (Monday 30 Nov 2026, so
+    // this ends Monday 7 Dec 2026). After this the notice is not written, not
+    // returned, and a row that already exists stops being shown.
+    until: 1796601600,
+  },
+};
+
 async function handleDismissNotice(env, account, noticeId) {
   await env.DB.prepare('DELETE FROM notices WHERE id = ? AND account_id = ?')
     .bind(noticeId, account.id)
@@ -1655,7 +1754,7 @@ async function route(request, env, url, path, method) {
   // repair can be made without signing in as a student. They are registered
   // before the session check so a missing secret fails as "off" rather than
   // as "signed out".
-  if (path === '/api/admin/auto-grants' || path === '/api/admin/auto-grants/revoke') {
+  if (path === '/api/admin/auto-grants' || path === '/api/admin/auto-grants/repair') {
     return adminRoute(request, env, path, method);
   }
 
@@ -1694,6 +1793,7 @@ async function route(request, env, url, path, method) {
   }
 
   if (path === '/api/grants' && method === 'GET') return handleListGrants(env, account);
+  if (path === '/api/grants/restore' && method === 'POST') return handleRestoreGrants(env, account);
   const revokeMatch = path.match(/^\/api\/grants\/(\d+)$/);
   if (revokeMatch && method === 'DELETE') {
     return handleRevokeGrant(env, account, Number(revokeMatch[1]));

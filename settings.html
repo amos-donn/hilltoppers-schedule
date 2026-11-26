@@ -13,7 +13,7 @@
     <!-- The Hilltoppers dashboard shell: sidebar tabs, the sage palette,
          and the custom dropdowns. Loaded after classSettings.css, which it
          restyles. -->
-    <link rel="stylesheet" href="dashboard.css?v=20261125j" />
+    <link rel="stylesheet" href="dashboard.css?v=20261126a" />
   </head>
   <!-- The page starts as a skeleton and is told which state it is in once the
        session check answers. Without this class it would paint "not signed in"
@@ -190,6 +190,10 @@
                 <input type="checkbox" id="auto-grant" />
                 <span>Approve requests automatically</span>
               </label>
+              <label class="class-settings__free-checkbox" id="auto-grant-grade-row" hidden>
+                <input type="checkbox" id="auto-grant-grade" />
+                <span>Only people in my grade</span>
+              </label>
               <p class="class-settings__hint">
                 Off by default, so each request waits for you to decide. Turn it
                 on and a request from anyone who can find your profile is granted
@@ -365,7 +369,7 @@
     <script src="schedule-core.js?v=20260928h"></script>
     <script src="auth.js?v=20260930a"></script>
     <script src="account.js?v=20261001a"></script>
-    <script src="social-web.js?v=20261125i"></script>
+    <script src="social-web.js?v=20261126a"></script>
     <script src="tour.js?v=20261125b"></script>
     <script>
       (function () {
@@ -761,6 +765,8 @@
         var profileIdInput = document.getElementById('profile-id');
         var visibility = document.getElementById('visibility');
         var autoGrant = document.getElementById('auto-grant');
+        var autoGrantGradeRow = document.getElementById('auto-grant-grade-row');
+        var autoGrantGrade = document.getElementById('auto-grant-grade');
         var accountEmail = document.getElementById('account-email');
         var accountStatus = document.getElementById('account-status');
         var accessPanel = document.getElementById('access-panel');
@@ -812,6 +818,10 @@
           }
           visibility.value = me.isPublic ? 'public' : 'private';
           autoGrant.checked = me.autoGrant === true;
+          autoGrantGrade.checked = me.autoGrantGradeOnly === true;
+          // The grade switch narrows automatic approval, so it is only offered
+          // while automatic approval is on.
+          autoGrantGradeRow.hidden = !autoGrant.checked;
 
           if (appliedProfileId !== me.profileId) {
             appliedProfileId = me.profileId;
@@ -1083,6 +1093,20 @@
                 : 'Requests now wait for your approval.',
               'success'
             );
+          });
+        });
+
+        // The grade switch only means anything while automatic approval is on,
+        // so it is shown and hidden with it but saved on its own.
+        autoGrant.addEventListener('change', function () {
+          autoGrantGradeRow.hidden = !autoGrant.checked;
+        });
+        autoGrantGrade.addEventListener('change', function () {
+          A.updateProfile({ autoGrantGradeOnly: autoGrantGrade.checked }).then(function (result) {
+            if (!result.ok) { setAccountStatus(friendlyError(result), 'error'); return; }
+            setAccountStatus(autoGrantGrade.checked
+              ? 'Saved. Requests from your grade are approved; everyone else waits.'
+              : 'Saved. Every request waits for you again.', 'success');
           });
         });
 
@@ -1361,15 +1385,29 @@
           'access.granted': '%s can now see your schedule.',
           'request.received': '%s asked for your schedule.',
           'request.accepted': '%s accepted your request for their schedule.',
-          'request.declined': '%s declined your request for their schedule.'
+          'request.declined': '%s declined your request for their schedule.',
+          'announcement.auto-grant': 'Auto-grant was on by default when the page said it would be off by default.'
         };
         var NOTICE_TEXT_SOMEONE = {
           'access.revoked': 'Your access was revoked.',
           'access.granted': 'Someone can now see your schedule.',
           'request.received': 'Someone asked for your schedule.',
           'request.accepted': 'Someone accepted your request for a schedule.',
-          'request.declined': 'Someone declined your request for a schedule.'
+          'request.declined': 'Someone declined your request for a schedule.',
+          'announcement.auto-grant': 'Auto-grant was on by default when the page said it would be off by default.'
         };
+
+        // Said once per browser, when the page opens, and then only in the
+        // notices list.
+        // The notice itself is what makes it once: it is marked read the moment
+        // the dialog is shown, and a dismissed notice is gone for good.
+        var APOLOGY = 'We screwed up. Auto-grant was on by default when the page said it '
+          + 'would be off by default. All of those connections were severed, and each one '
+          + 'is now a request waiting on you to approve.';
+        var APOLOGY_KIND = 'announcement.auto-grant';
+        // The page reloads its account on every sign-in change, and a second
+        // dialog in the same visit would be nagging, not telling.
+        var reportedApology = false;
 
         var latestNotices = [];
         var latestRequests = { incoming: [], outgoing: [] };
@@ -1559,12 +1597,30 @@
           });
         }
 
+        /**
+         * The one-time apology. It waits for the notices to arrive rather than
+         * being its own request, so the dialog and the row it leaves behind
+         * cannot disagree about whether this account has seen it.
+         */
+        function tellOnce(notices) {
+          var has = notices.some(function (notice) { return notice.kind === APOLOGY_KIND; });
+          if (!has || reportedApology) return;
+          reportedApology = true;
+          try {
+            if (window.localStorage.getItem('apologySeen')) return;
+            window.localStorage.setItem('apologySeen', '1');
+          } catch (e) { /* no storage: once per page is enough */ }
+          window.alert(APOLOGY);
+          if (A.markNoticesSeen) A.markNoticesSeen();
+        }
+
         function refreshNotices() {
           if (!A.isSignedIn()) return;
           A.listNotices().then(function (result) {
             if (!result.ok) return;
             latestNotices = result.data.notices || [];
             renderNotices();
+            if (!reportedApology) tellOnce(latestNotices);
           });
         }
 

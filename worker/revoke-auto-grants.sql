@@ -58,3 +58,11 @@ SELECT COUNT(*) AS still_live
 -- find out when the schedule stops loading (403) and their page shows it as no
 -- access rather than as an error. If you want them told in the app, revoke with
 -- worker/revoke-auto-grants.mjs instead, which sends the real notice.
+
+
+-- What this file cannot do: the one-time notice every student sees on their
+-- next load. A notice is encrypted with the Worker's DATA_KEY, so it cannot be
+-- written from SQL without leaving a row the page cannot read. That notice is
+-- written by POST /api/admin/auto-grants/repair, which does steps 2 and the
+-- notices together. The code for it lives in worker/api.js only until that
+-- deploy, so nothing else in this repository needs to change with it.
