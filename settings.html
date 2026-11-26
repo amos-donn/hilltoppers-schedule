@@ -353,10 +353,10 @@
       </main>
     </div>
 
-    <script src="notices-core.js?v=20261126c"></script>
+    <script src="notices-core.js?v=20261126d"></script>
     <script src="schedule-core.js?v=20260928h"></script>
     <script src="auth.js?v=20260930a"></script>
-    <script src="account.js?v=20261126e"></script>
+    <script src="account.js?v=20261126f"></script>
     <script src="social-web.js?v=20261126a"></script>
     <script src="tour.js?v=20261125b"></script>
     <script>
@@ -492,6 +492,7 @@
           if (result.status === 403) return 'You do not have access to that schedule.';
           if (result.status === 404) return 'No profile with that ID.';
           if (result.status === 429) return 'Too many attempts. Wait a moment and try again.';
+          if (result.status === 409) return 'That request already changed. The list has been refreshed.';
           if (result.error === 'self') return 'That is your own profile ID.';
           return 'Something went wrong (' + (result.status || 'no response') + ').';
         }
@@ -1649,11 +1650,43 @@
           var request = N.requestFor(notice, latestRequests);
           if (!request) return;
           A.decideRequest(request.id, decision).then(function (result) {
-            if (!result.ok) { setAccountStatus(friendlyError(result), 'error'); return; }
+            if (!result.ok) {
+              setAccountStatus(friendlyError(result), 'error');
+              // A withdrawn or already-decided request is not an error state to
+              // sit on: read the list again so the row tells the truth.
+              refreshRequests();
+              return;
+            }
             setAccountStatus(decision === 'accept' ? 'Access granted.' : 'Request declined.', 'success');
             refreshRequests();
             refreshGrants();
           });
+        }
+
+        /** Take back a sent ask; the row disappears once it is not pending. */
+        function stopAsking(request, control) {
+          control.disabled = true;
+          control.textContent = 'Stopping\u2026';
+          A.cancelRequest(request.id).then(function (result) {
+            if (!result.ok) {
+              control.disabled = false;
+              control.textContent = 'Stop asking';
+            }
+            // A decision in another tab also ends the wait. Either way the
+            // request list is the truth, so read it again.
+            refreshRequests();
+          });
+        }
+
+        function askedActions(request) {
+          var actions = el('div', { class: 'class-settings__notice-actions' });
+          var stop = el('button', { type: 'button', class: 'secondary', text: 'Stop asking' });
+          stop.addEventListener('click', function (e) {
+            e.stopPropagation();
+            stopAsking(request, stop);
+          });
+          actions.appendChild(stop);
+          return actions;
         }
 
         function askFromNotice(notice) {
@@ -1762,8 +1795,13 @@
             if (entry.outgoing) {
               var asked = entry.outgoing;
               var askedChip = N.askedStatus(asked, latestGrants);
-              noticeList.appendChild(el('div', {
+              var askedKey = 'ask-' + asked.id;
+              var askedOpen = !!expandedNotices[askedKey];
+              var askedRow = el('div', {
                 class: 'class-settings__friend-row class-settings__notice'
+                  + (askedOpen ? ' class-settings__notice--open' : ''),
+                role: 'button', tabindex: '0',
+                'aria-expanded': askedOpen ? 'true' : 'false'
               }, [
                 el('div', { class: 'class-settings__friend-info' }, [
                   el('strong', {
@@ -1776,7 +1814,17 @@
                   })
                 ]),
                 askedChip ? statusBadge(askedChip) : null
-              ]));
+              ]);
+              var toggleAsked = function () {
+                expandedNotices[askedKey] = !expandedNotices[askedKey];
+                renderNotices();
+              };
+              askedRow.addEventListener('click', toggleAsked);
+              askedRow.addEventListener('keydown', function (e) {
+                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleAsked(); }
+              });
+              noticeList.appendChild(askedRow);
+              if (askedOpen) noticeList.appendChild(askedActions(asked));
               return;
             }
             var notice = entry.notice;

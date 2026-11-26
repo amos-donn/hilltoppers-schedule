@@ -145,6 +145,9 @@
     if (request.status === 'pending') return { text: 'Pending', modifier: 'pending' };
     if (request.status === 'accepted') return { text: 'Granted', modifier: 'granted' };
     if (request.status === 'declined') return { text: 'Declined', modifier: 'declined' };
+    // The asker took the question back. The owner's notice is still a record
+    // that it happened, but nothing is waiting on them any more.
+    if (request.status === 'cancelled') return { text: 'Withdrawn', modifier: 'declined' };
     return null;
   }
 

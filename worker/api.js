@@ -36,6 +36,7 @@
  *   POST /api/requests         ask for a schedule by profile ID
  *   GET  /api/requests         incoming and outgoing requests
  *   POST /api/requests/:id     accept or decline an incoming request
+ *   DELETE /api/requests/:id   withdraw a request I sent
  *   GET  /api/grants           who can see my schedule, and whose I can see
  *   DELETE /api/grants/:id     revoke someone's access
  *   DELETE /api/grants/viewing/:id
@@ -1359,6 +1360,11 @@ async function handleDecideRequest(request, env, account, requestId, body) {
     .bind(requestId, account.id)
     .first();
   if (!row) return json({ error: 'not_found' }, 404);
+  // A pending request has exactly one decision. Without this, an accept could
+  // land after the asker withdrew and hand out access they no longer asked for.
+  if (row.status !== 'pending') {
+    return json({ error: 'not_pending', status: row.status }, 409);
+  }
 
   const ts = nowSeconds();
   await env.DB.prepare('UPDATE requests SET status = ?, decided_at = ? WHERE id = ?')
@@ -1372,6 +1378,33 @@ async function handleDecideRequest(request, env, account, requestId, body) {
     await notify(env, row.from_account_id, 'request.declined', { profileId: account.profile_id });
   }
   return json({ status: decision === 'accept' ? 'accepted' : 'declined' });
+}
+
+/**
+ * The asker's own way out: stop waiting for an answer.
+ *
+ * Scoped to from_account_id, so only the person who asked can withdraw, and
+ * only while the request is still pending. The row stays as `cancelled` rather
+ * than disappearing so a later ask can reuse it and the owner's notice can
+ * stop claiming to be pending.
+ */
+async function handleCancelRequest(env, account, requestId) {
+  const row = await env.DB.prepare(
+    'SELECT * FROM requests WHERE id = ? AND from_account_id = ?'
+  )
+    .bind(requestId, account.id)
+    .first();
+  if (!row) return json({ error: 'not_found' }, 404);
+  if (row.status !== 'pending') {
+    return json({ error: 'not_pending', status: row.status }, 409);
+  }
+
+  await env.DB.prepare(
+    "UPDATE requests SET status = 'cancelled', decided_at = ? WHERE id = ? AND status = 'pending'"
+  )
+    .bind(nowSeconds(), row.id)
+    .run();
+  return json({ status: 'cancelled' });
 }
 
 /** Who can see my schedule, and whose schedule I can see. */
@@ -1779,7 +1812,7 @@ export default {
  * /api/version in a browser is how a deploy is confirmed to have landed,
  * instead of guessed at from the page's behaviour.
  */
-const WORKER_BUILD = '2026-11-26-o';
+const WORKER_BUILD = '2026-11-26-p';
 
 async function route(request, env, url, path, method) {
   if (path === '/api/version' && method === 'GET') {
@@ -1822,6 +1855,9 @@ async function route(request, env, url, path, method) {
   if (decideMatch && method === 'POST') {
     const body = await request.json().catch(() => ({}));
     return handleDecideRequest(request, env, account, Number(decideMatch[1]), body);
+  }
+  if (decideMatch && method === 'DELETE') {
+    return handleCancelRequest(env, account, Number(decideMatch[1]));
   }
 
   if (path === '/api/grants' && method === 'GET') return handleListGrants(env, account);

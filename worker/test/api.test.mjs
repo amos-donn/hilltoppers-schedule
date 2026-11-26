@@ -1034,6 +1034,66 @@ await test('a viewer can give up access without the owner revoking it', async ()
   assert.equal(again.status, 200, 'giving up an already-ended share is harmless');
 });
 
+await test('an asker can withdraw a request that is still waiting', async () => {
+  const env = makeEnv();
+  const ownerCookie = await signIn(env, { sub: 'stop-owner', email: 'stop.owner@example.com', name: 'Stop Owner' });
+  const owner = (await call(env, '/api/me', { cookie: ownerCookie })).body;
+  const askerCookie = await signIn(env, { sub: 'stop-asker', email: 'stop.asker@example.com', name: 'Stop Asker' });
+  const asker = (await call(env, '/api/me', { cookie: askerCookie })).body;
+
+  const ask = await call(env, '/api/requests', {
+    method: 'POST',
+    cookie: askerCookie,
+    body: { profileId: owner.profileId },
+  });
+  assert.equal(ask.body.status, 'pending');
+
+  const outgoing = await call(env, '/api/requests', { cookie: askerCookie });
+  const request = outgoing.body.outgoing.find((entry) => entry.profileId === owner.profileId);
+  assert.ok(request, 'the sent ask is listed');
+
+  // The recipient cannot withdraw somebody else's ask.
+  const wrongSide = await call(env, `/api/requests/${request.id}`, {
+    method: 'DELETE',
+    cookie: ownerCookie,
+  });
+  assert.equal(wrongSide.status, 404);
+
+  const cancel = await call(env, `/api/requests/${request.id}`, {
+    method: 'DELETE',
+    cookie: askerCookie,
+  });
+  assert.equal(cancel.status, 200);
+  assert.equal(cancel.body.status, 'cancelled');
+
+  const afterOut = await call(env, '/api/requests', { cookie: askerCookie });
+  assert.equal(afterOut.body.outgoing.find((entry) => entry.id === request.id).status, 'cancelled');
+  const afterIn = await call(env, '/api/requests', { cookie: ownerCookie });
+  assert.equal(afterIn.body.incoming.find((entry) => entry.id === request.id).status, 'cancelled',
+    'the owner no longer sees a waiting ask');
+
+  // A decision racing the withdrawal must not hand out access afterwards.
+  const late = await call(env, `/api/requests/${request.id}`, {
+    method: 'POST',
+    cookie: ownerCookie,
+    body: { decision: 'accept' },
+  });
+  assert.equal(late.status, 409);
+  assert.equal(late.body.status, 'cancelled');
+  assert.equal((await call(env, `/api/schedule/${owner.profileId}`, { cookie: askerCookie })).status, 403,
+    'withdrawing did not grant access');
+
+  // Asking again is allowed and starts a fresh pending request.
+  const again = await call(env, '/api/requests', {
+    method: 'POST',
+    cookie: askerCookie,
+    body: { profileId: owner.profileId },
+  });
+  assert.equal(again.body.status, 'pending');
+  const reasked = await call(env, '/api/requests', { cookie: askerCookie });
+  assert.equal(reasked.body.outgoing.find((entry) => entry.id === request.id).status, 'pending');
+});
+
 console.log(results.join('\n'));
 console.log(`\n${passed} passed, ${results.length - passed} failed`);
 process.exit(results.length - passed ? 1 : 0);

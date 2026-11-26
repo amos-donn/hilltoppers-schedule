@@ -834,6 +834,49 @@ await test('a pending request with no notice is still answerable', async () => {
     'Clear waits until the ask is decided, so it cannot orphan the request');
 });
 
+await test('a sent request can be withdrawn from the bell', async () => {
+  // The sender's only row for an ask is the "You asked" line. It needs the
+  // same way out as the Notices tab: open it, stop asking, row gone.
+  const page = mountPage({});
+  await page.settle();
+  const w = page.window;
+  const requests = {
+    incoming: [],
+    outgoing: [{ id: 31, status: 'pending', profileId: 'calm-otter-4321', displayName: 'Calm Otter', createdAt: 30 }],
+  };
+  let cancelled = null;
+  w.HTAccount.listNotices = async () => ({ ok: true, data: { notices: [] } });
+  w.HTAccount.listRequests = async () => ({ ok: true, data: requests });
+  w.HTAccount.listGrants = async () => ({ ok: true, data: { viewers: [], viewing: [] } });
+  w.HTAccount.cancelRequest = async (id) => {
+    cancelled = id;
+    requests.outgoing[0].status = 'cancelled';
+    return { ok: true, data: { status: 'cancelled' } };
+  };
+
+  w.document.querySelector('.notices-button').click();
+  await wait(60);
+  const panel = () => w.document.querySelector('.notices-card');
+  let row = panel().querySelector('.notices-card__row--asked');
+  assert.ok(row, 'the sent ask has a row');
+  assert.match(panel().textContent, /You asked Calm Otter/);
+  assert.match(panel().textContent, /Pending/);
+
+  row.click();
+  await wait(30);
+  row = panel().querySelector('.notices-card__row--asked');
+  assert.equal(row.getAttribute('aria-expanded'), 'true', 'the row opens');
+  const stop = [...panel().querySelectorAll('.notices-card__actions button')]
+    .find((button) => button.textContent === 'Stop asking');
+  assert.ok(stop, 'Stop asking is offered below the request');
+  stop.click();
+  await wait(60);
+
+  assert.equal(cancelled, 31, 'the request is withdrawn by id');
+  assert.equal(panel().querySelector('.notices-card__row--asked'), null, 'the pending row is gone');
+  assert.doesNotMatch(panel().textContent, /Pending/, 'nothing still claims to be waiting');
+});
+
 await test('only a friend-request row carries a state pill', async () => {
   // The pill reports the ask behind the row. An access notice names the same
   // person but is not an ask, so a request in flight must not paint it.
@@ -857,6 +900,10 @@ await test('only a friend-request row carries a state pill', async () => {
   assert.equal(N.status({ ...base, kind: 'request.received' }, requests).text, 'Granted');
   requests.incoming[0].status = 'declined';
   assert.equal(N.status({ ...base, kind: 'request.received' }, requests).text, 'Declined');
+  requests.incoming[0].status = 'cancelled';
+  assert.equal(N.status({ ...base, kind: 'request.received' }, requests).text, 'Withdrawn',
+    'a withdrawn ask is no longer waiting');
+  assert.equal(N.pending(requests).length, 0, 'and is not counted as pending');
 
   // A live grant is the answer even when the request row was never updated --
   // an auto-grant switched on after the ask, or a decision made elsewhere.

@@ -263,6 +263,62 @@
       window.HTAccount.askForSchedule(who).then(refresh, refresh);
     }
 
+    /** Take back a sent ask. The row leaves once it is no longer pending. */
+    function cancelAsk(request, control) {
+      if (!window.HTAccount || typeof window.HTAccount.cancelRequest !== 'function') return;
+      control.disabled = true;
+      window.HTAccount.cancelRequest(request.id).then(function (result) {
+        if (result && result.ok) delete open['ask-' + request.id];
+        control.disabled = false;
+        refresh();
+      }, function () {
+        control.disabled = false;
+        refresh();
+      });
+    }
+
+    function askedActions(request) {
+      var box = el('div', { class: 'notices-card__actions' });
+      var stop = el('button', {
+        type: 'button', class: 'notices-card__action', text: 'Stop asking'
+      });
+      stop.addEventListener('click', function (event) {
+        event.stopPropagation();
+        cancelAsk(request, stop);
+      });
+      box.appendChild(stop);
+      return box;
+    }
+
+    function askedRow(request) {
+      var key = 'ask-' + request.id;
+      var isOpen = !!open[key];
+      var chip = N.askedStatus(request, grants);
+      var row = el('p', {
+        class: 'notices-card__row notices-card__row--asked' + (isOpen ? ' is-open' : ''),
+        role: 'button', tabindex: '0',
+        'aria-expanded': isOpen ? 'true' : 'false',
+        title: 'Show what you can do with this'
+      }, [
+        el('span', {
+          class: 'notices-card__text',
+          text: 'You asked ' + (request.displayName || request.profileId)
+            + ' for their schedule.'
+        }),
+        chip ? badge(chip.text, chip.modifier) : null
+      ]);
+      function toggle(event) {
+        if (event) event.stopPropagation();
+        open[key] = !open[key];
+        paint();
+      }
+      row.addEventListener('click', toggle);
+      row.addEventListener('keydown', function (event) {
+        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); toggle(event); }
+      });
+      return row;
+    }
+
     function restore(notice, control) {
       var who = notice.actorProfileId || (notice.payload && notice.payload.profileId);
       control.disabled = true;
@@ -344,15 +400,10 @@
       }
       entries.forEach(function (entry) {
         if (entry.outgoing) {
-          var asked = N.askedStatus(entry.outgoing, grants);
-          list.appendChild(el('p', { class: 'notices-card__row notices-card__row--asked' }, [
-            el('span', {
-              class: 'notices-card__text',
-              text: 'You asked ' + (entry.outgoing.displayName || entry.outgoing.profileId)
-                + ' for their schedule.'
-            }),
-            asked ? badge(asked.text, asked.modifier) : null
-          ]));
+          list.appendChild(askedRow(entry.outgoing));
+          if (open['ask-' + entry.outgoing.id]) {
+            list.appendChild(askedActions(entry.outgoing));
+          }
           return;
         }
         list.appendChild(noticeRow(entry.notice));

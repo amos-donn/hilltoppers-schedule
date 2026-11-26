@@ -611,6 +611,47 @@ await test('clearing a notice removes just that row', async () => {
   assert.equal(after, before - 1, 'only the cleared notice is gone');
 });
 
+await test('a sent request can be stopped from the Notices tab', async () => {
+  // The sender's row only had a Pending pill and no way out. Open it and stop
+  // asking: the request is withdrawn, so it is no longer pending for either
+  // side and the row leaves the list.
+  await signInAs('sub-page-stop-owner', 'stop.owner@example.org', 'Stop Owner');
+  await window.HTAccount.updateProfile({ isPublic: false, autoGrant: false, displayName: 'Stop Owner' });
+  await window.HTAccount.refresh();
+  const owner = await accountOf('sub-page-stop-owner');
+
+  await signInAs('sub-page-stop-asker', 'stop.asker@example.org', 'Stop Asker');
+  await window.HTAccount.askForSchedule(owner.profile_id);
+  await window.HTAccount.refresh();
+  await settle();
+
+  let row = [...$('notice-list').querySelectorAll('.class-settings__notice')]
+    .find((entry) => /You asked Stop Owner/.test(entry.textContent));
+  assert.ok(row, 'the sent ask is listed');
+  assert.match(row.textContent, /Pending/, 'and says it is waiting');
+
+  row.dispatchEvent(new window.Event('click'));
+  await settle(2);
+  row = [...$('notice-list').querySelectorAll('.class-settings__notice')]
+    .find((entry) => /You asked Stop Owner/.test(entry.textContent));
+  assert.equal(row.getAttribute('aria-expanded'), 'true', 'the request row opens');
+  const stop = [...$('notice-list').querySelectorAll('.class-settings__notice-actions button')]
+    .find((button) => button.textContent === 'Stop asking');
+  assert.ok(stop, 'Stop asking is offered below the request');
+  stop.dispatchEvent(new window.Event('click'));
+  await settle();
+
+  row = [...$('notice-list').querySelectorAll('.class-settings__notice')]
+    .find((entry) => /You asked Stop Owner/.test(entry.textContent));
+  assert.equal(row, undefined, 'the withdrawn request leaves the list');
+  assert.equal($('notices-pending-badge').hidden, true, 'nothing still claims to be pending');
+  const asker = await accountOf('sub-page-stop-asker');
+  const stored = db.prepare(
+    'SELECT status FROM requests WHERE from_account_id = ? AND to_account_id = ?'
+  ).get(asker.id, owner.id);
+  assert.equal(stored.status, 'cancelled', 'the request is withdrawn, not declined by the owner');
+});
+
 await test('a stale cached account.js does not leave Clear a silent no-op', async () => {
   // GitHub Pages caches account.js for ten minutes under an unversioned name,
   // and PR #32 added dismissNotice to it without bumping the ?v= query, so a

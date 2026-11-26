@@ -146,6 +146,11 @@
     return api('/api/requests/' + encodeURIComponent(id), { method: 'POST', body: { decision: decision } });
   }
 
+  /** Take back a request this account sent, while it is still waiting. */
+  function cancelRequest(id) {
+    return api('/api/requests/' + encodeURIComponent(id), { method: 'DELETE' });
+  }
+
   /** Restore revoked access: one person when a profile ID is given, else all. */
   function restoreGrants(profileId) {
     return api('/api/grants/restore', {
@@ -206,6 +211,7 @@
     askForSchedule: askForSchedule,
     listRequests: listRequests,
     decideRequest: decideRequest,
+    cancelRequest: cancelRequest,
     listGrants: listGrants,
     restoreGrants: restoreGrants,
     getSocialWeb: function () { return api('/api/social-web'); },
