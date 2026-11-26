@@ -162,6 +162,11 @@
     return api('/api/notices');
   }
 
+  /** The card's "Leave it to me": the answer follows the account, not the tab. */
+  function acknowledgeAnnouncement(kind) {
+    return api('/api/announcements/' + encodeURIComponent(kind) + '/ack', { method: 'POST' });
+  }
+
   function markNoticesSeen() {
     return api('/api/notices/seen', { method: 'POST' });
   }
@@ -203,6 +208,7 @@
     revokeGrant: revokeGrant,
     listNotices: listNotices,
     markNoticesSeen: markNoticesSeen,
+    acknowledgeAnnouncement: acknowledgeAnnouncement,
     dismissNotice: dismissNotice,
     getSchedule: getSchedule,
     syncPrefs: syncPrefs,

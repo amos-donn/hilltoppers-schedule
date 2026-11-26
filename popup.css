@@ -9,7 +9,9 @@ body, html {
 }
 
 .popup {
-  min-width: 320px;
+  /* No width floor: the standalone page fills whatever frame it is in, and the
+     extension supplies its own 320px window around this. */
+  min-width: 0;
   padding: 16px;
 }
 
@@ -1716,13 +1718,16 @@ header {
 }
 
 .notices-card {
-  position: absolute;
-  top: 36px;
+  /* fixed: positioned against the frame by JS on open, so no ancestor's
+     padding, margin or transform can push it out of a narrow Topping. */
+  position: fixed;
+  top: auto;
   left: 0;
   right: auto;
   z-index: 20;
   width: 252px;
   max-height: 264px;
+  box-sizing: border-box;
   overflow-y: auto;
   padding: 8px;
   border: 1px solid #e3e6ea;
@@ -1764,10 +1769,11 @@ header {
 
 /* --- the one-time apology, drawn in the card (not a notice) ---------------- */
 .apology {
-  margin: 0 0 12px;
-  padding: 12px 12px 10px;
-  border: 1px solid #cfe3d4;
-  border-radius: 12px;
+  /* A full-width card header, not an inset pill: it is inside the page padding
+     so no negative margin can push it past a narrow frame. */
+  margin: 0;
+  padding: 12px;
+  border-bottom: 1px solid #cfe3d4;
   background: #f1f8f2;
   color: #1e2a22;
 }
@@ -1779,6 +1785,7 @@ header {
 }
 
 .apology__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.apology__actions > button { min-width: 0; white-space: normal; text-align: center; }
 
 .apology__restore {
   flex: 1 1 auto;

@@ -187,6 +187,15 @@
     function hide() {
       banner.hidden = true;
       try { window.localStorage.setItem('apologySeen', '1'); } catch (e) { /* private mode */ }
+      // The answer belongs to the account, not just this browser. The answer is
+      // a sealed row in `notices`, which is also what makes it a real notice for
+      // anything that lists that table -- so it is written only once the frame
+      // has taken the new height, never at the same moment as the click.
+      setTimeout(function () {
+        if (window.HTAccount && typeof window.HTAccount.acknowledgeAnnouncement === 'function') {
+          window.HTAccount.acknowledgeAnnouncement('announcement.auto-grant');
+        }
+      }, 0);
     }
 
     restore.addEventListener('click', function () {
@@ -203,13 +212,12 @@
     });
     keep.addEventListener('click', function () { hide(); });
 
-    if (window.HTAccount && typeof window.HTAccount.refresh === 'function') {
-      window.HTAccount.refresh().then(function (me) {
-        var seen = false;
-        try { seen = window.localStorage.getItem('apologySeen') === '1'; } catch (e) { seen = false; }
-        banner.hidden = !(me && me.announcement) || seen;
-      });
-    }
+    // Shown the moment the page opens: no bell, no tab, nothing to click. The
+    // answer comes from /api/me, which the card already reads.
+    var me = typeof state.self === 'object' && state.self ? state.self : null;
+    var seen = false;
+    try { seen = window.localStorage.getItem('apologySeen') === '1'; } catch (e) { seen = false; }
+    banner.hidden = !(me && me.announcement) || seen;
     return banner;
   }
 
@@ -308,14 +316,18 @@
     // popup is positioned inside the card rather than floating out of it: it
     // takes the card's width and starts at its left edge, never past either.
     function place() {
-      var card = wrapper.closest('.primary-card');
-      if (!card) return;
-      var cardBox = card.getBoundingClientRect();
+      // Measured against the frame, not the card: whatever padding, negative
+      // margin or narrow Topping this ends up inside, the card keeps itself
+      // within the visible width, inset by the page's own gutter.
+      var gutter = 12;
+      var viewport = window.innerWidth || document.documentElement.clientWidth || 320;
       var buttonBox = button.getBoundingClientRect();
-      var width = Math.min(268, Math.max(200, cardBox.width - 8));
+      var width = Math.min(268, Math.max(180, viewport - gutter * 2));
+      var left = Math.min(Math.max(buttonBox.right - width, gutter), viewport - gutter - width);
       panel.style.width = width + 'px';
-      panel.style.left = Math.max(0, (buttonBox.left - cardBox.left) + buttonBox.width - width) + 'px';
-      panel.style.right = 'auto';
+      panel.style.left = Math.max(0, left) + 'px';
+      panel.style.top = Math.round(buttonBox.bottom + 6) + 'px';
+      panel.style.maxHeight = Math.max(160, (window.innerHeight || 480) - buttonBox.bottom - gutter * 2) + 'px';
     }
 
     button.addEventListener('click', function (event) {
@@ -697,10 +709,11 @@
       }
 
       var main = el('main', { class: 'popup' });
-
-      // Above the card and the friends: it is about the whole page's access,
-      // and only appears while the API says the window is open.
-      main.appendChild(apologyBanner());
+      // Outside the popup column on purpose: the popup has a 320px floor for
+      // the extension, which is wider than a narrow Topping frame. At the root
+      // the banner takes whatever width the frame actually is.
+      var apology = apologyBanner();
+      if (!apology.hidden) root.appendChild(apology);
 
       if (state.schedule.networkFailed === true && H.gradeFilteredBlocks(state.schedule.blocks, null).length === 0 && !state.schedule.dayType) {
         main.className = 'popup no-network';

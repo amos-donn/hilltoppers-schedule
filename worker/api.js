@@ -758,6 +758,22 @@ async function hasLiveGrant(env, ownerAccountId, viewerAccountId) {
 // field by selecting a whole row.
 // ---------------------------------------------------------------------------
 
+/**
+ * The one-time apology, as the card needs it: on inside its window for anyone
+ * who has not answered it. The answer is a row in `notices` -- the same table
+ * every other acknowledgement uses -- and is never returned in the list.
+ */
+async function announcementFor(env, account) {
+  const kind = 'announcement.auto-grant';
+  const meta = ANNOUNCEMENTS[kind];
+  const now = nowSeconds();
+  if (now < meta.at || now > meta.until) return null;
+  const answered = await env.DB.prepare(
+    'SELECT id FROM notices WHERE account_id = ? AND kind = ? LIMIT 1'
+  ).bind(account.id, kind).first();
+  return answered ? null : { kind };
+}
+
 function publicSelf(row) {
   return {
     profileId: row.profile_id,
@@ -767,11 +783,8 @@ function publicSelf(row) {
     autoGrant: Boolean(row.auto_grant),
     autoGrantGradeOnly: Boolean(row.auto_grant_grade_only),
     // When the apology is on screen. The card draws it itself; no notice row.
-    announcement: (() => {
-      const meta = ANNOUNCEMENTS['announcement.auto-grant'];
-      const now = nowSeconds();
-      return now >= meta.at && now <= meta.until ? { kind: 'announcement.auto-grant' } : null;
-    })(),
+    // `acknowledged` is filled in by handleMe, which has the database.
+    announcement: row.announcement || null,
     socialWebOptIn: true, // Everyone participates; kept for older clients.
     timeFormat: row.time_format,
     grade: row.grade,
@@ -1107,7 +1120,11 @@ async function handleSocialWebDiagnostic(request, env, account) {
 }
 
 async function handleMe(request, env, account) {
-  if (request.method === 'GET') return json(publicSelf(account));
+  if (request.method === 'GET') {
+    const self = publicSelf(account);
+    self.announcement = await announcementFor(env, account);
+    return json(self);
+  }
 
   if (request.method === 'PATCH') {
     const body = await request.json().catch(() => ({}));
@@ -1665,6 +1682,27 @@ async function handleDismissNotice(env, account, noticeId) {
   return json({ ok: true });
 }
 
+/**
+ * One announcement has been acknowledged by this account. The card uses this
+ * for "Leave it to me", so the answer follows the person rather than the browser
+ * and the settings page stops showing it too. Stored as a row rather than a
+ * column so adding a future announcement never needs a migration.
+ */
+async function handleAcknowledgeAnnouncement(env, account, kind) {
+  if (!ANNOUNCEMENTS[kind]) return json({ error: 'not_found' }, 404);
+  const already = await env.DB.prepare(
+    'SELECT id FROM notices WHERE account_id = ? AND kind = ? LIMIT 1'
+  ).bind(account.id, kind).first();
+  if (!already) {
+    const payload = await encryptField(env, {}, noticeAad(account.id));
+    await env.DB.prepare(
+      `INSERT INTO notices (account_id, kind, payload, payload_enc, created_at, seen_at)
+       VALUES (?, ?, '{}', ?, ?, ?)`
+    ).bind(account.id, kind, payload, nowSeconds(), nowSeconds()).run();
+  }
+  return json({ ok: true });
+}
+
 async function handleMarkNoticesSeen(env, account) {
   await env.DB.prepare('UPDATE notices SET seen_at = ? WHERE account_id = ? AND seen_at IS NULL')
     .bind(nowSeconds(), account.id)
@@ -1793,6 +1831,8 @@ async function route(request, env, url, path, method) {
 
   if (path === '/api/notices' && method === 'GET') return handleListNotices(env, account);
   if (path === '/api/notices/seen' && method === 'POST') return handleMarkNoticesSeen(env, account);
+  const ackMatch = path.match(/^\/api\/announcements\/([^/]+)\/ack$/);
+  if (ackMatch && method === 'POST') return handleAcknowledgeAnnouncement(env, account, decodeURIComponent(ackMatch[1]));
   const noticeMatch = path.match(/^\/api\/notices\/(\d+)$/);
   if (noticeMatch && method === 'DELETE') {
     return handleDismissNotice(env, account, Number(noticeMatch[1]));
