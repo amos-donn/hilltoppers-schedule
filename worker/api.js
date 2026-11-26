@@ -759,19 +759,36 @@ async function hasLiveGrant(env, ownerAccountId, viewerAccountId) {
 // ---------------------------------------------------------------------------
 
 /**
+ * The account's answer to an announcement: when it was made, by this account.
+ * `answered_at` holds 0 while unanswered, so a client that answered offline can
+ * carry its own timestamp and let the most recent answer win.
+ */
+async function recordAnnouncementAnswer(env, accountId, kind, at) {
+  await env.DB.prepare(
+    `INSERT INTO notice_acks (account_id, kind, answered_at) VALUES (?, ?, ?)
+     ON CONFLICT (account_id, kind)
+     DO UPDATE SET answered_at = MAX(answered_at, excluded.answered_at)`
+  )
+    .bind(accountId, kind, at)
+    .run();
+}
+
+/**
  * The one-time apology, as the card needs it: on inside its window for anyone
- * who has not answered it. The answer is a row in `notices` -- the same table
- * every other acknowledgement uses -- and is never returned in the list.
+ * who has not answered it. The answer is an acknowledgement row, never a notice,
+ * so it cannot appear in the bell or on the settings page.
  */
 async function announcementFor(env, account) {
   const kind = 'announcement.auto-grant';
   const meta = ANNOUNCEMENTS[kind];
   const now = nowSeconds();
   if (now < meta.at || now > meta.until) return null;
-  const answered = await env.DB.prepare(
-    'SELECT id FROM notices WHERE account_id = ? AND kind = ? LIMIT 1'
-  ).bind(account.id, kind).first();
-  return answered ? null : { kind };
+  const ack = await env.DB.prepare(
+    'SELECT answered_at FROM notice_acks WHERE account_id = ? AND kind = ?'
+  )
+    .bind(account.id, kind)
+    .first();
+  return ack && Number(ack.answered_at) > 0 ? null : { kind };
 }
 
 function publicSelf(row) {
@@ -1128,6 +1145,17 @@ async function handleMe(request, env, account) {
 
   if (request.method === 'PATCH') {
     const body = await request.json().catch(() => ({}));
+
+    // Answering an announcement rides along with this request so the page needs
+    // only one call to start it. `acknowledgedAt` is checked before the numeric
+    // fields below, so it cannot be mistaken for a profile number.
+    if (body.acknowledgedAt && ANNOUNCEMENTS[body.announcement]) {
+      const at = Math.floor(Number(body.acknowledgedAt));
+      if (Number.isFinite(at)) {
+        await recordAnnouncementAnswer(env, account.id, body.announcement, Math.min(at, nowSeconds()));
+      }
+    }
+
     const fields = [];
     const values = [];
 
@@ -1188,7 +1216,9 @@ async function handleMe(request, env, account) {
     const updated = await env.DB.prepare('SELECT * FROM accounts WHERE id = ?')
       .bind(account.id)
       .first();
-    return json(publicSelf(await decryptAccount(env, updated)));
+    const self = publicSelf(await decryptAccount(env, updated));
+    self.announcement = await announcementFor(env, account);
+    return json(self);
   }
 
   return json({ error: 'method_not_allowed' }, 405);
@@ -1669,8 +1699,8 @@ const ANNOUNCEMENTS = {
   'announcement.auto-grant': {
     at: 1795651200, // 2026-11-26T00:00:00Z, when the repair was published
     // A week after the Monday following Thanksgiving (Monday 30 Nov 2026, so
-    // this ends Monday 7 Dec 2026). After this the notice is not written, not
-    // returned, and a row that already exists stops being shown.
+    // this ends Monday 7 Dec 2026). After this the banner is not shown, and a
+    // row that already exists stops being returned.
     until: 1796601600,
   },
 };
@@ -1679,27 +1709,6 @@ async function handleDismissNotice(env, account, noticeId) {
   await env.DB.prepare('DELETE FROM notices WHERE id = ? AND account_id = ?')
     .bind(noticeId, account.id)
     .run();
-  return json({ ok: true });
-}
-
-/**
- * One announcement has been acknowledged by this account. The card uses this
- * for "Leave it to me", so the answer follows the person rather than the browser
- * and the settings page stops showing it too. Stored as a row rather than a
- * column so adding a future announcement never needs a migration.
- */
-async function handleAcknowledgeAnnouncement(env, account, kind) {
-  if (!ANNOUNCEMENTS[kind]) return json({ error: 'not_found' }, 404);
-  const already = await env.DB.prepare(
-    'SELECT id FROM notices WHERE account_id = ? AND kind = ? LIMIT 1'
-  ).bind(account.id, kind).first();
-  if (!already) {
-    const payload = await encryptField(env, {}, noticeAad(account.id));
-    await env.DB.prepare(
-      `INSERT INTO notices (account_id, kind, payload, payload_enc, created_at, seen_at)
-       VALUES (?, ?, '{}', ?, ?, ?)`
-    ).bind(account.id, kind, payload, nowSeconds(), nowSeconds()).run();
-  }
   return json({ ok: true });
 }
 
@@ -1831,8 +1840,6 @@ async function route(request, env, url, path, method) {
 
   if (path === '/api/notices' && method === 'GET') return handleListNotices(env, account);
   if (path === '/api/notices/seen' && method === 'POST') return handleMarkNoticesSeen(env, account);
-  const ackMatch = path.match(/^\/api\/announcements\/([^/]+)\/ack$/);
-  if (ackMatch && method === 'POST') return handleAcknowledgeAnnouncement(env, account, decodeURIComponent(ackMatch[1]));
   const noticeMatch = path.match(/^\/api\/notices\/(\d+)$/);
   if (noticeMatch && method === 'DELETE') {
     return handleDismissNotice(env, account, Number(noticeMatch[1]));

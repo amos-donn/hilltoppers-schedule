@@ -192,14 +192,13 @@
      */
     function answer() {
       banner.hidden = true;
-      try { window.localStorage.setItem('apologySeen', '1'); } catch (e) { /* private mode */ }
-      // A sealed row in `notices` is what the server reads to know it has been
-      // answered, so it is written after the frame has taken the new height.
-      setTimeout(function () {
-        if (window.HTAccount && typeof window.HTAccount.acknowledgeAnnouncement === 'function') {
-          window.HTAccount.acknowledgeAnnouncement('announcement.auto-grant');
-        }
-      }, 0);
+      var me = typeof state.self === 'object' && state.self ? state.self : null;
+      var kind = me && me.announcement ? me.announcement.kind : 'announcement.auto-grant';
+      // Local first, server second: the banner is gone even if the Worker is
+      // older than this page, and the answer is retried on the next read.
+      if (window.HTAccount && typeof window.HTAccount.answerAnnouncement === 'function') {
+        window.HTAccount.answerAnnouncement(kind);
+      }
     }
 
     restore.addEventListener('click', function () {
@@ -221,9 +220,7 @@
     // Shown the moment the page opens: no bell, no tab, nothing to click. The
     // answer comes from /api/me, which the card already reads.
     var me = typeof state.self === 'object' && state.self ? state.self : null;
-    var seen = false;
-    try { seen = window.localStorage.getItem('apologySeen') === '1'; } catch (e) { seen = false; }
-    banner.hidden = !(me && me.announcement) || seen;
+    banner.hidden = !(me && me.announcement);
     return banner;
   }
 

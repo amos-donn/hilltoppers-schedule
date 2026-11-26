@@ -655,9 +655,7 @@ await test('the auto-grant repair revokes only grants no one approved', async ()
   // The viewer is told, learns nothing more, and the accepted grant is intact.
   const notices = await call(repairEnv, '/api/notices', { cookie: asker.cookie });
   assert.ok(notices.body.notices.some((n) => n.kind === 'access.revoked'), 'the viewer is told');
-  // The announcement arrives on the read after the one that created its row.
-  const reread = await call(repairEnv, '/api/notices', { cookie: asker.cookie });
-  assert.equal(reread.body.notices.filter((n) => n.kind === 'announcement.auto-grant').length, 0,
+  assert.equal(notices.body.notices.filter((n) => n.kind === 'announcement.auto-grant').length, 0,
     'the apology is not a notice, so it never appears in the list');
   const blocked = await call(repairEnv, '/api/schedule/' + autoOwner.profileId, { cookie: asker.cookie });
   assert.equal(blocked.status, 403, 'and can no longer read the schedule');
@@ -863,6 +861,52 @@ await test('CORS is limited to the site origin and allows credentials', async ()
   const res = await worker.fetch(req('/api/me', { cookie: env.alice.cookie }), env);
   assert.equal(res.headers.get('Access-Control-Allow-Origin'), 'https://amos-donn.github.io');
   assert.equal(res.headers.get('Access-Control-Allow-Credentials'), 'true');
+});
+
+await test('an announcement answer sticks to the account and is never a notice', async () => {
+  const env = makeEnv();
+  const cookie = await signIn(env, { sub: 'ack-tester', email: 'ack@example.com', name: 'Ack Tester' });
+
+  // On until it is answered -- and answered through the profile PATCH the page
+  // already uses, alongside a number the client sends with it.
+  const before = await call(env, '/api/me', { cookie });
+  assert.equal(before.body.announcement && before.body.announcement.kind, 'announcement.auto-grant',
+    'an unanswered apology is on');
+
+  const later = Math.floor(Date.now() / 1000) - 60;
+  const answered = await call(env, '/api/me', {
+    method: 'PATCH',
+    body: { announcement: 'announcement.auto-grant', acknowledgedAt: later },
+    cookie,
+  });
+  assert.equal(answered.status, 200);
+  assert.equal(answered.body.announcement, null, 'the answer comes back in the same response');
+  assert.equal(answered.body.lunchWave, null, 'the timestamp is not read as a profile number');
+
+  const after = await call(env, '/api/me', { cookie });
+  assert.equal(after.body.announcement, null, 'and it stays answered');
+
+  // Answering again with an older timestamp -- what a stale re-send carries --
+  // keeps the newer answer, so a queued answer cannot undo a fresh one.
+  await call(env, '/api/me', {
+    method: 'PATCH',
+    body: { announcement: 'announcement.auto-grant', acknowledgedAt: later - 3600 },
+    cookie,
+  });
+  const row = env.__db.prepare("SELECT answered_at FROM notice_acks WHERE kind = 'announcement.auto-grant'").get();
+  assert.equal(row.answered_at, later, 'the later answer wins');
+
+  const notices = await call(env, '/api/notices', { cookie });
+  assert.equal(notices.body.notices.filter((n) => n.kind.startsWith('announcement.')).length, 0,
+    'the answer itself is not a notice');
+  const rows = env.__db.prepare("SELECT COUNT(*) AS n FROM notices WHERE kind LIKE 'announcement.%'").get();
+  assert.equal(rows.n, 0, 'and nothing was written to the notices table at all');
+
+  // A different account has its own answer.
+  const other = await signIn(env, { sub: 'ack-other', email: 'other@example.com', name: 'Other' });
+  const theirs = await call(env, '/api/me', { cookie: other });
+  assert.equal(theirs.body.announcement && theirs.body.announcement.kind, 'announcement.auto-grant',
+    'answering is per account');
 });
 
 await test('deleting an account cascades and notifies viewers', async () => {

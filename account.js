@@ -71,6 +71,12 @@
   async function refresh() {
     var result = await api('/api/me');
     cachedMe = result.ok ? result.data : null;
+    // An answer given here before the server knew about it is sent again on
+    // every read until the server says it is in. Re-sending the same timestamp
+    // is harmless, and it means an answer survives a failed or missing route.
+    if (cachedMe && cachedMe.announcement && answeredAt(cachedMe.announcement.kind)) {
+      answerAnnouncement(cachedMe.announcement.kind);
+    }
     emit();
     return cachedMe;
   }
@@ -162,9 +168,38 @@
     return api('/api/notices');
   }
 
-  /** The card's "Leave it to me": the answer follows the account, not the tab. */
-  function acknowledgeAnnouncement(kind) {
-    return api('/api/announcements/' + encodeURIComponent(kind) + '/ack', { method: 'POST' });
+  /**
+   * The card's answer to an announcement ("Leave it to me", or restoring
+   * access). Written locally first, so it sticks even when the server cannot
+   * hear it yet, and re-sent on every /api/me read until the server agrees.
+   */
+  var ANNOUNCEMENT_ANSWER_KEY = 'announcementAnswered';
+
+  function answeredAt(kind) {
+    try {
+      var answered = JSON.parse(window.localStorage.getItem(ANNOUNCEMENT_ANSWER_KEY) || '{}') || {};
+      return Number(answered[kind]) || 0;
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  function answerAnnouncement(kind) {
+    if (!kind) return;
+    // The first answer wins: a second click must not move the timestamp the
+    // server takes the maximum of.
+    var at = answeredAt(kind);
+    if (!at) {
+      at = Math.floor(Date.now() / 1000);
+      try {
+        var answered = JSON.parse(window.localStorage.getItem(ANNOUNCEMENT_ANSWER_KEY) || '{}') || {};
+        answered[kind] = at;
+        window.localStorage.setItem(ANNOUNCEMENT_ANSWER_KEY, JSON.stringify(answered));
+      } catch (e) { /* private mode: the server call below still carries it */ }
+    }
+    // Sent on the profile PATCH the page already uses, so a failed send costs
+    // nothing; refresh() retries it on the next read regardless.
+    api('/api/me', { method: 'PATCH', body: { announcement: kind, acknowledgedAt: at } });
   }
 
   function markNoticesSeen() {
@@ -208,7 +243,7 @@
     revokeGrant: revokeGrant,
     listNotices: listNotices,
     markNoticesSeen: markNoticesSeen,
-    acknowledgeAnnouncement: acknowledgeAnnouncement,
+    answerAnnouncement: answerAnnouncement,
     dismissNotice: dismissNotice,
     getSchedule: getSchedule,
     syncPrefs: syncPrefs,
