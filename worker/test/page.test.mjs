@@ -956,6 +956,11 @@ await test('a friend card opens a popup with their blocks, grade and lunch', asy
   await window.HTAccount.refresh();
   await settle();
   const erinProfileId = (await accountOf('sub-page-erin')).profile_id;
+  const cached = JSON.parse(window.localStorage.getItem('friends') || '[]')
+    .find((f) => f.email === erinProfileId);
+  assert.equal(cached.blockPrefs.A.name, 'Chemistry', 'a grants refresh keeps the cached course');
+  assert.equal(cached.grade, 11, 'and the grade');
+  assert.equal(cached.lunchWave, 1, 'and the lunch wave');
   const row = [...$('friend-rows').querySelectorAll('.class-settings__friend-row')]
     .find((r) => r.textContent.includes(erinProfileId));
   assert.ok(row, 'Erin is on the card');
@@ -964,8 +969,21 @@ await test('a friend card opens a popup with their blocks, grade and lunch', asy
   assert.equal(row.querySelector('.class-settings__pill--see').tagName, 'SPAN',
     'the access pill is a read-out, not a link');
 
-  row.click();
-  await settle();
+  // A card that already has its courses should draw them from the cache, not
+  // ask the account for the schedule again on every open.
+  let scheduleFetches = 0;
+  const plainFetch = window.fetch;
+  window.fetch = (input, init) => {
+    if (String(input).indexOf('/api/schedule/') >= 0) scheduleFetches += 1;
+    return plainFetch(input, init);
+  };
+  try {
+    row.click();
+    await settle();
+  } finally {
+    window.fetch = plainFetch;
+  }
+  assert.equal(scheduleFetches, 0, 'the popup drew from the cache instead of fetching');
   assert.equal($('friend-dialog').hasAttribute('open'), true,
     'clicking the card opens their popup');
   assert.match($('friend-dialog-title').textContent, /Erin/);

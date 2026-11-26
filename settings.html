@@ -13,7 +13,7 @@
     <!-- The Hilltoppers dashboard shell: sidebar tabs, the sage palette,
          and the custom dropdowns. Loaded after classSettings.css, which it
          restyles. -->
-    <link rel="stylesheet" href="dashboard.css?v=20261126e" />
+    <link rel="stylesheet" href="dashboard.css?v=20261126f" />
   </head>
   <!-- The page starts as a skeleton and is told which state it is in once the
        session check answers. Without this class it would paint "not signed in"
@@ -370,7 +370,7 @@
     <script src="schedule-core.js?v=20260928h"></script>
     <script src="auth.js?v=20260930a"></script>
     <script src="account.js?v=20261126f"></script>
-    <script src="social-web.js?v=20261126a"></script>
+    <script src="social-web.js?v=20261126b"></script>
     <script src="tour.js?v=20261125b"></script>
     <script>
       (function () {
@@ -870,6 +870,19 @@
           if (!friendHasCourses(person.friend)) loadFriendSchedule(person, label);
         }
 
+        /** A schedule reply from the account API as a card entry. */
+        function friendFromSchedule(schedule, fallbackName) {
+          if (!schedule || !schedule.profileId) return null;
+          return H.normalizeFriend({
+            email: schedule.profileId,
+            name: schedule.displayName || fallbackName || '',
+            grade: schedule.grade,
+            lunchWave: schedule.lunchWave,
+            timeFormat: schedule.timeFormat,
+            blockPrefs: schedule.blockPrefs
+          });
+        }
+
         /** Fill a card that has no cached courses, without re-adding a row the
          *  user took off their card on purpose. */
         function loadFriendSchedule(person, label) {
@@ -880,15 +893,7 @@
               friendDialogNote.textContent = 'Their schedule is not available right now.';
               return;
             }
-            var schedule = result.data;
-            var fetched = H.normalizeFriend({
-              email: schedule.profileId || person.email,
-              name: schedule.displayName || label,
-              grade: schedule.grade,
-              lunchWave: schedule.lunchWave,
-              timeFormat: schedule.timeFormat,
-              blockPrefs: schedule.blockPrefs
-            });
+            var fetched = friendFromSchedule(result.data, label);
             if (!fetched) {
               friendDialogNote.textContent = 'Their schedule is not available right now.';
               return;
@@ -1723,19 +1728,51 @@
         }
 
         function adoptGrantedFriends(viewing) {
-          var before = state.friends.length;
+          var changed = false;
           viewing.forEach(function (grant) {
             // Removed from the card on purpose. Keep them as an access row in
             // this tab, but do not put them back on the card behind the user's
             // back on the next grants refresh.
             if (removedFriends.indexOf(grant.profileId) >= 0) return;
+            // A grant carries the display name and nothing else. Replacing a
+            // card entry with it used to wipe the courses, grade and lunch
+            // cached there, so the profile popup had to fetch them again.
+            var existing = state.friends.filter(function (friend) {
+              return friend.email === grant.profileId;
+            })[0];
+            if (existing) {
+              if (grant.displayName && grant.displayName !== existing.name) {
+                existing.name = grant.displayName;
+                changed = true;
+              }
+              return;
+            }
             var friend = H.normalizeFriend({ name: grant.displayName || '', email: grant.profileId });
+            if (!friend) return;
             state.friends = H.upsertFriend(state.friends, friend);
+            changed = true;
+            // A new entry has a name but no courses yet; ask for the schedule
+            // once, here, rather than the first time the popup is opened.
+            fillFriendSchedule(friend.email);
           });
-          if (state.friends.length !== before) {
+          if (changed) {
             H.saveFriends(state.friends);
             renderFriends();
           }
+        }
+
+        /** Fill one card entry from the schedule endpoint. */
+        function fillFriendSchedule(profileId) {
+          A.getSchedule(profileId).then(function (result) {
+            if (!result.ok) return;
+            var friend = friendFromSchedule(result.data, '');
+            // The user may have taken the card off the list while this was in
+            // flight; a grants refresh may not put it back.
+            if (!friend || removedFriends.indexOf(friend.email) >= 0) return;
+            state.friends = H.upsertFriend(state.friends, friend);
+            H.saveFriends(state.friends);
+            renderFriends();
+          });
         }
 
         // --- notices ------------------------------------------------------

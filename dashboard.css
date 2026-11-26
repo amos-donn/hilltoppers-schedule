@@ -81,6 +81,9 @@ body.social-web-open #panel-social-web:not([hidden]) { display: block; height: 1
 .social-web__person:hover { background: #e5eadf; border-color: #ccd5c3; }
 .social-web__person:focus-visible { outline: 3px solid #78a88c; outline-offset: 2px; }
 .social-web__details[hidden] { display: none; }
+/* While the card is pulled it gets its own layer, so moving it does not repaint
+   the text and shadow inside it on every frame. */
+.social-web__details.is-moving { will-change: transform; }
 .social-web__status { position: absolute; top: 50%; left: 50%; z-index: 3; max-width: calc(100% - 48px); margin: 0; padding: 10px 16px; border-radius: 999px; background: #ffffffd9; border: 1px solid #d8e0d0; color: #456344; font-size: 13px; text-align: center; transform: translate(-50%, -50%); }
 .social-web__status:empty { display: none; }
 

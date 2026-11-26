@@ -996,24 +996,37 @@
   // the card are rebuilt on a selection -- until the page is left.
   var detailsOffset = { x: 0, y: 0 };
 
-  function placeDetails(clamp) {
+  function paintDetails() {
     details.style.setProperty('--details-x', detailsOffset.x + 'px');
     details.style.setProperty('--details-y', detailsOffset.y + 'px');
-    if (!clamp || !workspace || !details.getBoundingClientRect) return;
-    // Keep a dragged card inside the map it belongs to, so it cannot be lost
-    // off the edge of the workspace.
+  }
+
+  /**
+   * The offsets at which the card is flush with each edge of the workspace.
+   * Measured once when a drag starts rather than on every move: reading the
+   * layout after writing the transform forces the browser to re-lay out the map
+   * under the card, which is what made the drag lag behind the pointer.
+   */
+  function detailLimits() {
+    if (!workspace || !workspace.getBoundingClientRect || !details.getBoundingClientRect) return null;
     var edge = workspace.getBoundingClientRect();
     var box = details.getBoundingClientRect();
-    var dx = 0, dy = 0;
-    if (box.left < edge.left) dx = edge.left - box.left;
-    if (box.right > edge.right) dx = edge.right - box.right;
-    if (box.top < edge.top) dy = edge.top - box.top;
-    if (box.bottom > edge.bottom) dy = edge.bottom - box.bottom;
-    if (!dx && !dy) return;
-    detailsOffset.x += dx;
-    detailsOffset.y += dy;
-    details.style.setProperty('--details-x', detailsOffset.x + 'px');
-    details.style.setProperty('--details-y', detailsOffset.y + 'px');
+    // Laid out somewhere real? jsdom reports a zero-size box, and an empty
+    // workspace must not pin the card at 0.
+    if (!edge.width || !edge.height) return null;
+    return {
+      minX: detailsOffset.x + (edge.left - box.left),
+      maxX: detailsOffset.x + (edge.right - box.right),
+      minY: detailsOffset.y + (edge.top - box.top),
+      maxY: detailsOffset.y + (edge.bottom - box.bottom)
+    };
+  }
+
+  /** Keep the card inside the map it belongs to, without measuring it again. */
+  function clampDetails(limits) {
+    if (!limits) return;
+    detailsOffset.x = Math.round(Math.min(Math.max(detailsOffset.x, limits.minX), Math.max(limits.minX, limits.maxX)));
+    detailsOffset.y = Math.round(Math.min(Math.max(detailsOffset.y, limits.minY), Math.max(limits.minY, limits.maxY)));
   }
 
   if (grip && details) {
@@ -1021,18 +1034,38 @@
       if (event.button !== 0) return;
       event.preventDefault();
       var start = { x: event.clientX, y: event.clientY, ox: detailsOffset.x, oy: detailsOffset.y };
+      var limits = detailLimits();
+      var pending = null, moveFrame = 0;
       if (grip.setPointerCapture && event.pointerId !== undefined) {
         try { grip.setPointerCapture(event.pointerId); } catch (error) { /* no capture here */ }
       }
+      details.classList.add('is-moving');
+      // A pointer move is not a frame: a high-polling mouse reports several per
+      // frame. The card is placed once per frame, at wherever the pointer ended
+      // up, the way the map's camera already is.
+      function paint() {
+        moveFrame = 0;
+        if (!pending) return;
+        detailsOffset.x = pending.x;
+        detailsOffset.y = pending.y;
+        pending = null;
+        clampDetails(limits);
+        paintDetails();
+      }
       function move(moveEvent) {
-        detailsOffset.x = start.ox + (moveEvent.clientX - start.x);
-        detailsOffset.y = start.oy + (moveEvent.clientY - start.y);
-        placeDetails(true);
+        pending = {
+          x: start.ox + (moveEvent.clientX - start.x),
+          y: start.oy + (moveEvent.clientY - start.y)
+        };
+        if (!moveFrame) moveFrame = frame(paint);
       }
       function stop() {
         window.removeEventListener('pointermove', move);
         window.removeEventListener('pointerup', stop);
         window.removeEventListener('pointercancel', stop);
+        details.classList.remove('is-moving');
+        // Put the card where the pointer let go, not one frame short of it.
+        paint();
       }
       window.addEventListener('pointermove', move);
       window.addEventListener('pointerup', stop);
