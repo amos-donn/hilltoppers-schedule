@@ -19,6 +19,7 @@
   'use strict';
 
   var H = window.HT;
+  var N = window.HTNotices;
 
   function el(tag, props, children) {
     var node = document.createElement(tag);
@@ -149,33 +150,17 @@
   // them read, the way opening the Notices tab does on the settings page.
   var BELL_SVG = '<svg aria-hidden="true" width="18" height="18" viewBox="0 0 256 256" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M220.8 169.6a8 8 0 0 1-8 6.4H43.2a8 8 0 0 1-6.4-12.8l17.6-23.5V104a73.6 73.6 0 0 1 147.2 0v35.7l17.6 23.5a8 8 0 0 1 1.6 6.4ZM160 200h-64a32 32 0 0 0 64 0Z"/></svg>';
 
-  // The only kinds the bell can say in a sentence. Membership is also the
-  // filter: a row the page cannot render -- an announcement left behind by an
-  // older build, or a kind a newer Worker writes first -- is dropped rather than
-  // printed as its raw ID.
-  var NOTICE_TEXT = {
-    'access.revoked': { with: '%s revoked your access.', alone: 'Your access was revoked.' },
-    'access.granted': { with: '%s can now see your schedule.', alone: 'Someone can now see your schedule.' },
-    'access.restore': { with: '%s had your schedule from auto-grant. Restore it?', alone: 'Access shared by auto-grant was revoked. Restore it?' },
-    'request.received': { with: '%s asked for your schedule.', alone: 'Someone asked for your schedule.' },
-    'request.accepted': { with: '%s accepted your request.', alone: 'Someone accepted your request.' },
-    'request.declined': { with: '%s declined your request.', alone: 'Someone declined your request.' },
-  };
-
-  function noticeText(notice) {
-    var text = NOTICE_TEXT[notice.kind];
-    if (!text) return '';
-    var who = notice.actorName || notice.actorProfileId || '';
-    return who ? text.with.replace('%s', who) : text.alone;
-  }
-
-
   // The notices bell holds exactly what the Notices tab on the settings page
   // holds: this account's notices, newest first, and the requests it is still
   // waiting on. One list, one rule -- if the tab shows it, the bell shows it,
   // and anything in the list can be cleared from the list. The auto-grant
   // switches that used to live here are gone; they belong to the Account tab.
   function noticesAccount() {
+    // A page cached from before notices-core.js existed has no HTNotices. The
+    // bell is the only thing that needs it, so it disappears rather than the
+    // card failing to mount.
+    if (!N) return el('span', { class: 'settings-button-wrapper notices-wrapper', hidden: 'hidden' });
+
     var panel = el('div', { class: 'notices-card', role: 'dialog', 'aria-label': 'Notices' });
     panel.hidden = true;
     var list = el('div', { class: 'notices-card__list' });
@@ -206,15 +191,6 @@
     // the buttons out from under the pointer.
     var open = {};
 
-    /** The request a request.* or access.restore notice points at. */
-    function requestFor(notice) {
-      var who = notice.actorProfileId || (notice.payload && notice.payload.profileId);
-      if (!who) return null;
-      return requests.incoming.concat(requests.outgoing).filter(function (request) {
-        return request.profileId === who;
-      })[0] || null;
-    }
-
     function badge(text, modifier) {
       return el('span', {
         class: 'notices-card__badge' + (modifier ? ' notices-card__badge--' + modifier : ''),
@@ -234,9 +210,7 @@
       calls.push(typeof A.listRequests === 'function' ? A.listRequests() : Promise.resolve({ ok: false }));
       return Promise.all(calls).then(function (results) {
         if (!results[0] || !results[0].ok) return false;
-        notices = (results[0].data.notices || []).filter(function (notice) {
-          return Object.prototype.hasOwnProperty.call(NOTICE_TEXT, notice.kind);
-        });
+        notices = N.renderable(results[0].data.notices);
         requests = results[1] && results[1].ok ? results[1].data : { incoming: [], outgoing: [] };
         return true;
       }, function () { return false; });
@@ -246,7 +220,7 @@
     // waiting on someone else, not something to read, so it does not mark the
     // bell; the row itself still says Pending when the list is open.
     function paintDot() {
-      dot.hidden = notices.every(function (notice) { return notice.seen; });
+      dot.hidden = N.unread(notices) === 0;
     }
 
     function refresh() {
@@ -316,16 +290,15 @@
     }
 
     function noticeRow(notice) {
-      var request = requestFor(notice);
-      var waiting = request && request.status === 'pending';
+      var chip = N.status(notice, requests);
       var row = el('p', {
         class: 'notices-card__row' + (notice.seen ? '' : ' is-new') + (open[notice.id] ? ' is-open' : ''),
         role: 'button', tabindex: '0',
         'aria-expanded': open[notice.id] ? 'true' : 'false',
         title: 'Show what you can do with this'
       }, [
-        el('span', { class: 'notices-card__text', text: noticeText(notice) }),
-        waiting ? badge('Pending', 'pending') : null,
+        el('span', { class: 'notices-card__text', text: N.text(notice) }),
+        chip ? badge(chip.text, chip.modifier) : null,
         notice.seen ? null : badge('New')
       ]);
       function toggle(event) {
@@ -345,14 +318,7 @@
       // Notices and the requests this account sent share one list, newest
       // first, exactly as the tab orders them. A sent request makes no notice
       // for the sender, so without its own row it would appear nowhere.
-      var entries = notices.map(function (notice) {
-        return { at: notice.createdAt || 0, notice: notice };
-      });
-      requests.outgoing.forEach(function (request) {
-        if (request.status !== 'pending') return;
-        entries.push({ at: request.createdAt || 0, outgoing: request });
-      });
-      entries.sort(function (a, b) { return b.at - a.at; });
+      var entries = N.entries(notices, requests);
       seen.hidden = notices.length === 0;
 
       if (!entries.length) {
@@ -373,7 +339,7 @@
         }
         list.appendChild(noticeRow(entry.notice));
         if (open[entry.notice.id]) {
-          list.appendChild(actions(entry.notice, requestFor(entry.notice)));
+          list.appendChild(actions(entry.notice, N.requestFor(entry.notice, requests)));
         }
       });
     }

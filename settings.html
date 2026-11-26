@@ -13,7 +13,7 @@
     <!-- The Hilltoppers dashboard shell: sidebar tabs, the sage palette,
          and the custom dropdowns. Loaded after classSettings.css, which it
          restyles. -->
-    <link rel="stylesheet" href="dashboard.css?v=20261126a" />
+    <link rel="stylesheet" href="dashboard.css?v=20261126b" />
   </head>
   <!-- The page starts as a skeleton and is told which state it is in once the
        session check answers. Without this class it would paint "not signed in"
@@ -366,9 +366,10 @@
       </main>
     </div>
 
+    <script src="notices-core.js?v=20261126a"></script>
     <script src="schedule-core.js?v=20260928h"></script>
     <script src="auth.js?v=20260930a"></script>
-    <script src="account.js?v=20261001a"></script>
+    <script src="account.js?v=20261126d"></script>
     <script src="social-web.js?v=20261126a"></script>
     <script src="tour.js?v=20261125b"></script>
     <script>
@@ -1380,53 +1381,19 @@
         // The subject of a notice is named whenever we know it, so a row reads
         // "Alex asked for your schedule" rather than the faceless "Someone".
         // The API resolves the name at read time, so a rename shows through.
-        var NOTICE_TEXT = {
-          'access.revoked': '%s revoked your access.',
-          'access.granted': '%s can now see your schedule.',
-          'access.restore': '%s had your schedule from auto-grant. Restore it?',
-          'request.received': '%s asked for your schedule.',
-          'request.accepted': '%s accepted your request for their schedule.',
-          'request.declined': '%s declined your request for their schedule.'
-        };
-        var NOTICE_TEXT_SOMEONE = {
-          'access.revoked': 'Your access was revoked.',
-          'access.granted': 'Someone can now see your schedule.',
-          'access.restore': 'Access shared by auto-grant was revoked. Restore it?',
-          'request.received': 'Someone asked for your schedule.',
-          'request.accepted': 'Someone accepted your request for a schedule.',
-          'request.declined': 'Someone declined your request for a schedule.'
-        };
+        // One description of a notice, shared with the card's bell: which kinds
+        // exist, what each one says, the person it names, the request it points
+        // at, and what state that request is in. This page only decides how a
+        // row looks.
+        var N = window.HTNotices;
 
         var latestNotices = [];
         var latestRequests = { incoming: [], outgoing: [] };
         // Open rows survive a re-render, so acting on one does not collapse it.
         var expandedNotices = {};
 
-        function noticeWho(notice) {
-          return notice.actorName
-            || (notice.payload && notice.payload.displayName)
-            || notice.actorProfileId
-            || (notice.payload && notice.payload.profileId)
-            || '';
-        }
-
-        function noticeText(notice) {
-          var who = noticeWho(notice);
-          var pattern = NOTICE_TEXT[notice.kind] || notice.kind;
-          if (who) return pattern.replace('%s', who);
-          return NOTICE_TEXT_SOMEONE[notice.kind] || pattern;
-        }
-
-        /** The request a request.* notice points at, when we already hold it. */
-        function requestForNotice(notice) {
-          var who = notice.actorProfileId || (notice.payload && notice.payload.profileId);
-          if (!who) return null;
-          return latestRequests.incoming.concat(latestRequests.outgoing)
-            .filter(function (r) { return r.profileId === who; })[0] || null;
-        }
-
         function decideNotice(notice, decision) {
-          var request = requestForNotice(notice);
+          var request = N.requestFor(notice, latestRequests);
           if (!request) return;
           A.decideRequest(request.id, decision).then(function (result) {
             if (!result.ok) { setAccountStatus(friendlyError(result), 'error'); return; }
@@ -1444,7 +1411,7 @@
             setAccountStatus(result.data.status === 'granted'
               ? 'Access granted. Add them so their schedule shows on the card.' : 'Request sent.', 'success');
             if (result.data.status === 'granted') {
-              addFriendFromProfile({ profileId: who, displayName: noticeWho(notice) });
+              addFriendFromProfile({ profileId: who, displayName: N.who(notice) });
             }
             refreshRequests();
             refreshGrants();
@@ -1464,7 +1431,7 @@
         /** The actions a notice offers, matched to what it actually reports. */
         function noticeActions(notice) {
           var actions = el('div', { class: 'class-settings__notice-actions' });
-          var request = requestForNotice(notice);
+          var request = N.requestFor(notice, latestRequests);
           if (notice.kind === 'request.received' && request && request.status === 'pending') {
             var accept = el('button', { type: 'button', class: 'primary', text: 'Accept' });
             var decline = el('button', { type: 'button', class: 'secondary', text: 'Decline' });
@@ -1501,28 +1468,25 @@
           return actions;
         }
 
-        /** Requests still waiting, whether on this student or on someone else. */
-        function pendingRequests() {
-          return latestRequests.incoming.concat(latestRequests.outgoing)
-            .filter(function (request) { return request.status === 'pending'; });
-        }
-
         function pendingBadge() {
           return el('span', {
             class: 'class-settings__badge class-settings__badge--pending', text: 'Pending'
           });
         }
 
-        function renderNotices() {
-          // Only the kinds this page can say in a sentence. Membership is the
-          // filter, so a row written by an older build -- an announcement, say
-          // -- cannot come back into the list after a deploy.
-          var notices = latestNotices.filter(function (notice) {
-            return Object.prototype.hasOwnProperty.call(NOTICE_TEXT, notice.kind);
+        /** The request's own state, so an answered ask stops saying Pending. */
+        function statusBadge(chip) {
+          return el('span', {
+            class: 'class-settings__badge class-settings__badge--' + chip.modifier, text: chip.text
           });
+        }
+
+        function renderNotices() {
+          // The same rows, in the same order, as the card's bell.
+          var notices = N.renderable(latestNotices);
           noticeList.innerHTML = '';
-          var pending = pendingRequests();
-          var unseen = notices.filter(function (notice) { return !notice.seen; }).length;
+          var pending = N.pending(latestRequests);
+          var unseen = N.unread(notices);
           // The tab is always visible, so an unseen notice needs a marker there
           // too or a signed-in student would never know to open it.
           noticesTabBadge.hidden = unseen === 0;
@@ -1533,20 +1497,8 @@
           noticesPendingBadge.textContent = 'Pending ' + pending.length;
 
           // Notices and the pending requests this student sent share one list,
-          // newest first. A sent request makes no notice for the sender, so
-          // without this row it would never appear anywhere.
-          var entries = notices.map(function (notice) {
-            return {
-              at: notice.createdAt || 0,
-              notice: notice,
-              request: requestForNotice(notice)
-            };
-          });
-          latestRequests.outgoing.forEach(function (request) {
-            if (request.status !== 'pending') return;
-            entries.push({ at: request.createdAt || 0, outgoing: request });
-          });
-          entries.sort(function (a, b) { return b.at - a.at; });
+          // newest first -- the same list and order the bell uses.
+          var entries = N.entries(latestNotices, latestRequests);
           // With nothing to read there is nothing to mark read.
           noticesSeenButton.hidden = notices.length === 0;
 
@@ -1577,19 +1529,20 @@
             var notice = entry.notice;
             var open = !!expandedNotices[notice.id];
             var when = new Date(notice.createdAt * 1000).toLocaleString();
-            // An unanswered request says so on its own notice, and the pill
-            // goes away once it has been accepted or declined.
-            var waiting = entry.request && entry.request.status === 'pending';
+            // The pill follows the request: Pending until it is answered, then
+            // Granted or Declined, so a row stops claiming to be waiting once
+            // the access it asked for exists.
+            var chip = N.status(notice, latestRequests);
             var row = el('div', {
               class: 'class-settings__friend-row class-settings__notice'
                 + (open ? ' class-settings__notice--open' : ''),
               role: 'button', tabindex: '0', 'aria-expanded': open ? 'true' : 'false'
             }, [
               el('div', { class: 'class-settings__friend-info' }, [
-                el('strong', { text: noticeText(notice) }),
+                el('strong', { text: N.text(notice) }),
                 el('span', { class: 'class-settings__friend-meta', text: when })
               ]),
-              waiting ? pendingBadge() : null,
+              chip ? statusBadge(chip) : null,
               notice.seen ? null : el('span', { class: 'class-settings__badge', text: 'New' })
             ]);
             function toggle() {

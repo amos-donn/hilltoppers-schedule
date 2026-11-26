@@ -67,6 +67,7 @@ function mountPage(options = {}) {
   w.addEventListener('error', (e) => errors.push(String(e.error || e.message)));
   const sources = {
     'schedule-core.js': readFileSync(repoPath('schedule-core.js'), 'utf8'),
+    'notices-core.js': readFileSync(repoPath('notices-core.js'), 'utf8'),
     'social-web.js': readFileSync(repoPath('social-web.js'), 'utf8'),
     'tour.js': readFileSync(repoPath('tour.js'), 'utf8'),
     // A stale deploy can pair fresh HTML with the account.js from before it,
@@ -534,6 +535,14 @@ await test('a request notice offers Accept, and accepting grants access', async 
   assert.ok(db.prepare(
     'SELECT 1 FROM grants WHERE viewer_account_id = ? AND revoked_at IS NULL'
   ).get(await accountIdOf('sub-page-dave-notice')), 'accepting from the notice created a live grant');
+
+  // The row reports the request, so once it is answered it stops saying
+  // Pending and says what the answer was.
+  const answered = [...$('notice-list').querySelectorAll('.class-settings__notice')]
+    .find((r) => /asked for your schedule/i.test(r.textContent));
+  assert.ok(answered, 'the answered notice is still listed');
+  assert.match(answered.textContent, /Granted/, 'and now says Granted');
+  assert.doesNotMatch(answered.textContent, /Pending/, 'the pending pill is gone');
 });
 
 await test('clearing a notice removes just that row', async () => {
@@ -746,7 +755,11 @@ await test('accepting a request puts the granter on the asker\'s card', async ()
 await test('marking notices read clears the new badge', async () => {
   $('notices-seen').dispatchEvent(new window.Event('click'));
   await settle();
-  assert.equal($('notice-list').querySelector('.class-settings__badge'), null);
+  // Only the read marker goes. A pill saying Pending or Granted is the state of
+  // the request, not whether the row has been read, so it stays.
+  const badges = [...$('notice-list').querySelectorAll('.class-settings__badge')];
+  assert.equal(badges.filter((badge) => badge.textContent === 'New').length, 0,
+    'no row still says New');
   assert.equal($('notices-tab-badge').hidden, true, 'the Notices tab marker clears too');
 });
 

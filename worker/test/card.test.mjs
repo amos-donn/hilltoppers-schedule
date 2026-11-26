@@ -77,7 +77,7 @@ function mountPage({ frame = false, seed = null, friendsSource = null } = {}) {
   const w = d.window;
   w.addEventListener('error', (e) => errors.push(String(e.error || e.message)));
 
-  for (const f of ['schedule-core.js', 'account.js', 'schedule-friends.js']) {
+  for (const f of ['notices-core.js', 'schedule-core.js', 'account.js', 'schedule-friends.js']) {
     const s = w.document.createElement('script');
     s.textContent = friendsSource && f === 'schedule-friends.js' ? friendsSource : readFileSync(repoPath(f), 'utf8');
     w.document.head.appendChild(s);
@@ -306,7 +306,7 @@ await test('a clock tick updates the countdown in place instead of rebuilding th
     runScripts: 'dangerously',
   });
   const w = d.window;
-  for (const f of ['schedule-core.js', 'schedule-card.js']) {
+  for (const f of ['notices-core.js', 'schedule-core.js', 'schedule-card.js']) {
     const s = w.document.createElement('script');
     s.textContent = readFileSync(repoPath(f), 'utf8');
     w.document.head.appendChild(s);
@@ -365,7 +365,7 @@ await test('the collapsed primary card shows the period, subject and remaining t
     runScripts: 'dangerously',
   });
   const w = d.window;
-  for (const f of ['schedule-core.js', 'schedule-card.js']) {
+  for (const f of ['notices-core.js', 'schedule-core.js', 'schedule-card.js']) {
     const s = w.document.createElement('script');
     s.textContent = readFileSync(repoPath(f), 'utf8');
     w.document.head.appendChild(s);
@@ -408,7 +408,7 @@ await test('tapping the collapsed primary card expands the whole day', async () 
     runScripts: 'dangerously',
   });
   const w = d.window;
-  for (const f of ['schedule-core.js', 'schedule-card.js']) {
+  for (const f of ['notices-core.js', 'schedule-core.js', 'schedule-card.js']) {
     const s = w.document.createElement('script');
     s.textContent = readFileSync(repoPath(f), 'utf8');
     w.document.head.appendChild(s);
@@ -457,7 +457,7 @@ await test('tapping the settings gear does not fold the primary card', async () 
     runScripts: 'dangerously',
   });
   const w = d.window;
-  for (const f of ['schedule-core.js', 'schedule-card.js']) {
+  for (const f of ['notices-core.js', 'schedule-core.js', 'schedule-card.js']) {
     const s = w.document.createElement('script');
     s.textContent = readFileSync(repoPath(f), 'utf8');
     w.document.head.appendChild(s);
@@ -489,7 +489,7 @@ await test('tapping a lunch-wave block row opens it without folding the day', as
     runScripts: 'dangerously',
   });
   const w = d.window;
-  for (const f of ['schedule-core.js', 'schedule-card.js']) {
+  for (const f of ['notices-core.js', 'schedule-core.js', 'schedule-card.js']) {
     const s = w.document.createElement('script');
     s.textContent = readFileSync(repoPath(f), 'utf8');
     w.document.head.appendChild(s);
@@ -527,7 +527,7 @@ await test("the friends section is one card per friend, expanding to their day",
     runScripts: 'dangerously',
   });
   const w = d.window;
-  for (const f of ['schedule-core.js', 'schedule-card.js']) {
+  for (const f of ['notices-core.js', 'schedule-core.js', 'schedule-card.js']) {
     const s = w.document.createElement('script');
     s.textContent = readFileSync(repoPath(f), 'utf8');
     w.document.head.appendChild(s);
@@ -576,7 +576,7 @@ await test('a clock tick advances every countdown in place, self and friends ali
     runScripts: 'dangerously',
   });
   const w = d.window;
-  for (const f of ['schedule-core.js', 'schedule-card.js']) {
+  for (const f of ['notices-core.js', 'schedule-core.js', 'schedule-card.js']) {
     const s = w.document.createElement('script');
     s.textContent = readFileSync(repoPath(f), 'utf8');
     w.document.head.appendChild(s);
@@ -611,7 +611,7 @@ await test('your own schedule is read from this browser when the page is opened 
     runScripts: 'dangerously',
   });
   const w = d.window;
-  for (const f of ['schedule-core.js', 'schedule-friends.js']) {
+  for (const f of ['notices-core.js', 'schedule-core.js', 'schedule-friends.js']) {
     const s = w.document.createElement('script');
     s.textContent = readFileSync(repoPath(f), 'utf8');
     w.document.head.appendChild(s);
@@ -720,6 +720,83 @@ await test('only the day card bleeds to the frame; the rest of the page keeps it
   // Only the sides: the 14px above and -12px below are the extension's and the
   // bottom edge did not move.
   assert.doesNotMatch(bar[1], /margin-(top|bottom)|margin:\s/, 'vertical margins stay as popup.css set them');
+});
+
+// ---------------------------------------------------------------------------
+// The bell's red dot, and the pill a request row carries.
+// ---------------------------------------------------------------------------
+await test('the bell marks unread notices only, never a waiting request', async () => {
+  // Unread is the one thing the dot means. A request this account sent is
+  // waiting on someone else, not something to read, so it must not paint the
+  // bell red on its own.
+  const page = mountPage({});
+  await page.settle();
+  const w = page.window;
+  const bell = w.document.querySelector('.notices-button');
+  const dot = () => w.document.querySelector('.notices-dot');
+
+  let notices = [{ id: 1, kind: 'access.revoked', actorName: 'Shy Heron', createdAt: 10, seen: true }];
+  const requests = {
+    incoming: [],
+    outgoing: [{ id: 7, status: 'pending', profileId: 'brave-lynx-7777', displayName: 'Brave Lynx', createdAt: 20 }],
+  };
+  w.HTAccount.listNotices = async () => ({ ok: true, data: { notices } });
+  w.HTAccount.listRequests = async () => ({ ok: true, data: requests });
+
+  bell.click();
+  await wait(60);
+  assert.equal(dot().hidden, true, 'a read notice plus a waiting ask leaves the dot off');
+  assert.match(w.document.querySelector('.notices-card').textContent, /Pending/,
+    'the sent request is still listed, it just is not something to read');
+
+  w.document.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Escape' }));
+  notices = [{ id: 2, kind: 'request.received', actorName: 'Calm Otter', createdAt: 30, seen: false }];
+  bell.click();
+  await wait(60);
+  assert.equal(dot().hidden, false, 'one unread notice turns the dot on');
+
+  w.HTAccount.markNoticesSeen = async () => {
+    notices.forEach((notice) => { notice.seen = true; });
+    return { ok: true };
+  };
+  w.document.querySelector('.notices-card__footer button').click();
+  await wait(30);
+  assert.equal(dot().hidden, true, 'reading the list turns it off again');
+});
+
+await test('a request row stops saying Pending and says Granted once access exists', async () => {
+  const page = mountPage({});
+  await page.settle();
+  const w = page.window;
+  const bell = w.document.querySelector('.notices-button');
+  const panel = () => w.document.querySelector('.notices-card');
+
+  const notices = [{
+    id: 3, kind: 'request.received', actorName: 'Calm Otter',
+    payload: { profileId: 'calm-otter-4321' }, actorProfileId: 'calm-otter-4321',
+    createdAt: 30, seen: true,
+  }];
+  let status = 'pending';
+  w.HTAccount.listNotices = async () => ({ ok: true, data: { notices } });
+  w.HTAccount.listRequests = async () => ({
+    ok: true,
+    data: {
+      incoming: [{ id: 9, status, profileId: 'calm-otter-4321', displayName: 'Calm Otter', createdAt: 30 }],
+      outgoing: [],
+    },
+  });
+
+  bell.click();
+  await wait(60);
+  assert.match(panel().textContent, /Pending/, 'an unanswered ask reads Pending');
+
+  // The owner accepts. The notice is the same row; the request behind it moved on.
+  status = 'accepted';
+  w.document.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Escape' }));
+  bell.click();
+  await wait(60);
+  assert.doesNotMatch(panel().textContent, /Pending/, 'the answered row drops Pending');
+  assert.match(panel().textContent, /Granted/, 'and says Granted');
 });
 
 console.log(results.join('\n'));
