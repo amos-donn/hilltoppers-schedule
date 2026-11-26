@@ -830,12 +830,14 @@ button.class-settings__pill {
 
 .class-settings__pill--action {
   background: transparent;
-  color: var(--muted);
+  border-color: rgba(188, 76, 44, 0.4);
+  color: var(--danger);
 }
 
 button.class-settings__pill--action:hover {
-  border-color: var(--accent, #1a7f37);
-  color: var(--text);
+  border-color: var(--danger);
+  background: rgba(188, 76, 44, 0.08);
+  color: var(--danger);
 }
 
 button.class-settings__pill:focus-visible {
