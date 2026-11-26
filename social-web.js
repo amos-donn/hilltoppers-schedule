@@ -21,6 +21,7 @@
       return {
         profileId: profile.profileId,
         displayName: profile.displayName,
+        grade: profile.grade == null ? null : profile.grade,
         nameWidth: labelWidth(profile),
         x: 0, y: 0
       };
@@ -462,6 +463,12 @@
     var node = positions.get(id);
     return node ? node.displayName || node.profileId : id;
   }
+  // The four words a grade has. Spelled here rather than borrowed from the
+  // schedule code so the map still names a grade if that script is absent.
+  var GRADE_NAMES = { 9: 'Freshman', 10: 'Sophomore', 11: 'Junior', 12: 'Senior' };
+  function gradeName(grade) {
+    return GRADE_NAMES[Number(grade)] || ('Grade ' + grade);
+  }
 
   /**
    * Is this person showing their ID in the graph?
@@ -524,7 +531,9 @@
     if (!selected) { detailsBody.textContent = ''; details.hidden = true; return; }
     details.hidden = false;
     var heading = document.createElement('strong');
+    var person = positions.get(selected);
     heading.textContent = label(selected) + (account && selected === account.profileId ? ' (you)' : '')
+      + (person && person.grade != null ? ' · ' + gradeName(person.grade) : '')
       + (showsProfileId(selected) ? ' · ' + selected : '');
     detailsBody.appendChild(heading);
     var giving = graph.edges.filter(function (edge) { return edge.source === selected; })

@@ -1040,6 +1040,9 @@ async function handleSocialWeb(env) {
     nodes: accounts.map((account) => ({
       profileId: account.profile_id,
       displayName: account.is_public ? (account.display_name || account.name || '') : 'Anonymous',
+      // A grade is part of who the person is, so the card that names them can
+      // say it. Choosing "Anonymous" hides this the same way it hides the name.
+      grade: account.is_public ? (Number(account.grade) || null) : null,
     })),
     edges,
   }, 200, { 'Cache-Control': 'no-store' });

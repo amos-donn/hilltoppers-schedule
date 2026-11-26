@@ -571,6 +571,16 @@ await test('the social web now includes everyone, hides private names, and draws
   assert.equal(graph.body.nodes.find((n) => n.profileId === ownerMe.profileId).displayName, 'Owner');
   assert.ok(!graph.text.includes('Viewer') && !graph.text.includes('Hidden'),
     'private names never leave the API');
+
+  // A grade goes with the name it belongs to: shown for a public profile, kept
+  // back for one that chose to be anonymous.
+  await call(socialEnv, '/api/me', { cookie: owner, method: 'PATCH', body: { grade: 11 } });
+  await call(socialEnv, '/api/me', { cookie: viewer, method: 'PATCH', body: { grade: 10 } });
+  graph = await call(socialEnv, '/api/social-web', { cookie: viewer });
+  assert.equal(graph.body.nodes.find((n) => n.profileId === ownerMe.profileId).grade, 11,
+    'a public profile carries its grade');
+  assert.equal(graph.body.nodes.find((n) => n.profileId === viewerMe.profileId).grade, null,
+    'an anonymous profile keeps its grade to itself');
   assert.deepEqual(graph.body.edges, [], 'no sharing relationships yet');
 
   // The owner auto-grants, so both requests become live grants immediately.

@@ -1010,7 +1010,7 @@ await test('the friends search is a card at the top of the page', async () => {
   assert.ok(panel.querySelector('#directory-results'), 'the results list came with it');
 
   const toggle = $('friends-search-toggle');
-  assert.equal(toggle.textContent.trim(), 'Search', 'the closed card says only "Search"');
+  assert.equal(toggle.textContent.trim(), 'Find friends', 'the closed card offers to find friends');
   // Start from the closed state so the toggle is what opens it.
   if ($('friends-search-card').classList.contains('is-open')) toggle.click();
   assert.equal($('friends-search-panel').hidden, true);
@@ -1120,6 +1120,28 @@ await test('the info card is dragged by its grip and stays where it is put', asy
   assert.equal(details.style.getPropertyValue('--details-x'), '60px',
     'the place holds from one person to the next');
   assert.equal(details.style.getPropertyValue('--details-y'), '-30px');
+});
+
+await test('the person card says which grade they are in', async () => {
+  // A grade is part of who someone is, so the card that names and numbers them
+  // says it too: Frank opens Erin's card and reads "Erin · Sophomore".
+  const erinCookie = await signInAs('sub-page-erin', 'erin@example.org', 'Erin');
+  const erin = await accountOf('sub-page-erin');
+  await asOther(erinCookie, () => window.HTAccount.updateProfile({ grade: 10 }));
+  await signInAs('sub-page-frank', 'frank@example.org', 'Frank');
+  await settle();
+
+  $('tab-social-web-btn').click();
+  await settle(2);
+  $('social-web-refresh').click();
+  await settle(3);
+
+  const node = $('social-web-scene').querySelector(`.social-web__node[data-profile-id="${erin.profile_id}"]`);
+  assert.ok(node, 'Erin is on the map');
+  node.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+  const heading = $('social-web-details').querySelector('strong').textContent;
+  assert.match(heading, /Erin/, 'the card names her');
+  assert.match(heading, /Sophomore/, 'and says which grade she is in');
 });
 
 await test('a request waiting on an answer is a dashed edge on the map', async () => {
