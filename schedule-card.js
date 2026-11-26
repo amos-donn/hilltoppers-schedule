@@ -149,129 +149,25 @@
   // them read, the way opening the Notices tab does on the settings page.
   var BELL_SVG = '<svg aria-hidden="true" width="18" height="18" viewBox="0 0 256 256" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M220.8 169.6a8 8 0 0 1-8 6.4H43.2a8 8 0 0 1-6.4-12.8l17.6-23.5V104a73.6 73.6 0 0 1 147.2 0v35.7l17.6 23.5a8 8 0 0 1 1.6 6.4ZM160 200h-64a32 32 0 0 0 64 0Z"/></svg>';
 
+  // The only kinds the bell can say in a sentence. Membership is also the
+  // filter: a row the page cannot render -- an announcement left behind by an
+  // older build, or a kind a newer Worker writes first -- is dropped rather than
+  // printed as its raw ID.
+  var NOTICE_TEXT = {
+    'access.revoked': { with: '%s revoked your access.', alone: 'Your access was revoked.' },
+    'access.granted': { with: '%s can now see your schedule.', alone: 'Someone can now see your schedule.' },
+    'request.received': { with: '%s asked for your schedule.', alone: 'Someone asked for your schedule.' },
+    'request.accepted': { with: '%s accepted your request.', alone: 'Someone accepted your request.' },
+    'request.declined': { with: '%s declined your request.', alone: 'Someone declined your request.' },
+  };
+
   function noticeText(notice) {
+    var text = NOTICE_TEXT[notice.kind];
+    if (!text) return '';
     var who = notice.actorName || notice.actorProfileId || '';
-    var kinds = {
-      'access.revoked': who ? who + ' revoked your access.' : 'Your access was revoked.',
-      'access.granted': who ? who + ' can now see your schedule.' : 'Someone can now see your schedule.',
-      'request.received': who ? who + ' asked for your schedule.' : 'Someone asked for your schedule.',
-      'request.accepted': who ? who + ' accepted your request.' : 'Someone accepted your request.',
-      'request.declined': who ? who + ' declined your request.' : 'Someone declined your request.',
-    };
-    return kinds[notice.kind] || notice.kind;
+    return who ? text.with.replace('%s', who) : text.alone;
   }
 
-
-  // The apology is drawn here rather than posted as a notice: it is not
-  // something to read later and clear, it is a state of the app for a week. The
-  // API says when it is on (/api/me -> announcement); the card renders it above
-  // everything else, and dismissing it only hides this browser's copy.
-  var APOLOGY_TEXT = 'We screwed up. Auto-grant was on by default when the page said it '
-    + 'would be off by default. All of those connections were severed, and each one is '
-    + 'now a request waiting on you to approve.';
-  // Answered in this page. render() builds a new banner every time, so without
-  // this a re-render put the old one straight back and the hide landed on a
-  // detached node -- which is exactly what "it disappears for no time at all"
-  // was.
-  var apologyAnswered = false;
-
-  /**
-   * Answer the apology and take it off the page, whatever asked: the banner's
-   * own buttons, or the restore button in the bell. Nothing here depends on the
-   * network, so a failed request can no longer leave the banner sitting there.
-   */
-  function markApologyAnswered() {
-    if (apologyAnswered) return;
-    apologyAnswered = true;
-    try { window.localStorage.setItem('apologySeen', '1'); } catch (e) { /* private mode */ }
-    var me = typeof state.self === 'object' && state.self ? state.self : null;
-    var kind = me && me.announcement ? me.announcement.kind : 'announcement.auto-grant';
-    // Local flag first: the banner is gone even if the Worker is older than
-    // this page, and the answer is retried on the next /api/me read.
-    if (window.HTAccount && typeof window.HTAccount.answerAnnouncement === 'function') {
-      window.HTAccount.answerAnnouncement(kind);
-    }
-    var shown = root.querySelector('.apology');
-    if (!shown) return;
-    shown.classList.add('is-leaving');
-    setTimeout(function () {
-      if (shown.parentNode) shown.parentNode.removeChild(shown);
-    }, 280);
-  }
-
-  /** A short message that fades out where the banner was, like a toast. */
-  function toast(text) {
-    var box = el('p', { class: 'toast', role: 'status', text: text });
-    root.appendChild(box);
-    setTimeout(function () { box.classList.add('is-gone'); }, 2200);
-    setTimeout(function () { if (box.parentNode) box.parentNode.removeChild(box); }, 2800);
-  }
-
-  function apologyBanner(onRestored) {
-    var banner = el('section', { class: 'apology', role: 'status', 'aria-label': 'About your access requests' });
-    banner.hidden = true;
-    var text = el('p', { class: 'apology__text', text: APOLOGY_TEXT });
-    var restore = el('button', { class: 'apology__restore', type: 'button', text: 'Restore everyone’s access' });
-    var keep = el('button', { class: 'apology__keep', type: 'button', text: 'Leave it to me' });
-    var note = el('p', { class: 'apology__note' });
-    note.hidden = true;
-    banner.append(
-      el('div', { class: 'apology__body' }, [text]),
-      el('div', { class: 'apology__actions' }, [restore, keep]),
-      note
-    );
-
-    /**
-     * Answer the banner for good: hide it here, and record the answer on the
-     * account so it does not come back on another device. Restoring counts as
-     * an answer too -- the thing the banner asks about has been dealt with, so
-     * it should not linger, and the notices list should not carry it either.
-     */
-    function answer(message) {
-      var wasAnswered = apologyAnswered;
-      markApologyAnswered();
-      if (message && !wasAnswered) toast(message);
-    }
-
-    restore.addEventListener('click', function () {
-      restore.disabled = true;
-      // A misspelt or missing helper, a 401, a dropped connection: none of them
-      // may leave the banner behind, because the click already answered it.
-      var pending;
-      try {
-        pending = window.HTAccount.restoreGrants();
-      } catch (e) {
-        pending = Promise.resolve({ ok: false });
-      }
-      Promise.resolve(pending).then(function (result) {
-        var n = result && result.ok ? (result.data ? (result.data.restored || 0) : 0) : -1;
-        answer(n < 0 ? 'Could not restore access. Try again from the bell.'
-          : n === 0 ? 'Nothing was waiting to be restored.'
-            : 'Access restored for ' + n + (n === 1 ? ' person.' : ' people.'));
-        if (onRestored) onRestored();
-      }, function () {
-        answer('Could not restore access. Try again from the bell.');
-        if (onRestored) onRestored();
-      });
-    });
-    keep.addEventListener('click', answer);
-
-    // Shown the moment the page opens: no bell, no tab, nothing to click. The
-    // answer comes from /api/me, which the card already reads.
-    var me = typeof state.self === 'object' && state.self ? state.self : null;
-    // A local answer hides it at once, before the account has heard; the server
-    // catches up on the next /api/me read. Without this, a Worker that predates
-    // the answer field would bring the banner back on every reload.
-    var answered = apologyAnswered;
-    if (!answered) {
-      try { answered = window.localStorage.getItem('apologySeen') === '1'; } catch (e) { answered = false; }
-    }
-    // A Worker that counts the accounts the bug actually reached says so with
-    // `affected`; zero means nothing was ever severed here, so no banner.
-    var untouched = Boolean(me && me.announcement && me.announcement.affected === 0);
-    banner.hidden = !(me && me.announcement) || answered || untouched;
-    return banner;
-  }
 
   function noticesButton() {
     var panel = el('div', { class: 'notices-card', role: 'dialog', 'aria-label': 'Notices' });
@@ -326,10 +222,10 @@
       if (!window.HTAccount || typeof window.HTAccount.listNotices !== 'function') { paint([]); return; }
       window.HTAccount.listNotices().then(function (result) {
         var notices = result && result.ok ? (result.data.notices || []) : [];
-        // An announcement is never a notice, whatever the server was asked:
-        // filtering here too means an old row cannot reappear after a deploy.
+        // Only what the bell can render. The server filters too, but a cached
+        // response from an older Worker may still carry an announcement row.
         notices = notices.filter(function (notice) {
-          return String(notice.kind || '').toLowerCase().indexOf('announcement') === -1;
+          return Object.prototype.hasOwnProperty.call(NOTICE_TEXT, notice.kind);
         });
         dot.hidden = notices.every(function (notice) { return notice.seen; });
         if (!markRead) return;
@@ -356,18 +252,19 @@
     gradeToggle.addEventListener('change', function () {
       window.HTAccount.updateProfile({ autoGrantGradeOnly: gradeToggle.checked });
     });
+    function restoredNote(result) {
+      restore.disabled = false;
+      note.hidden = false;
+      note.textContent = result && result.ok
+        ? 'Access restored for ' + (result.data.restored || 0) + (result.data.restored === 1 ? ' person.' : ' people.')
+        : 'Could not restore access. Try again.';
+    }
+
     restore.addEventListener('click', function () {
       restore.disabled = true;
-      // Restoring from here is the same answer as restoring from the banner, so
-      // the banner goes too rather than outliving the question it asked.
-      markApologyAnswered();
-      window.HTAccount.restoreGrants().then(function (result) {
-        restore.disabled = false;
-        note.hidden = false;
-        note.textContent = result && result.ok
-          ? 'Access restored for ' + (result.data.restored || 0) + (result.data.restored === 1 ? ' person.' : ' people.')
-          : 'Could not restore access. Try again.';
-      });
+      // The button never stays disabled: a dropped connection is the one case
+      // that used to leave it greyed out, looking like a click that did nothing.
+      window.HTAccount.restoreGrants().then(restoredNote, function () { restoredNote(null); });
     });
 
     function close() { panel.hidden = true; button.setAttribute('aria-expanded', 'false'); }
@@ -769,11 +666,6 @@
       }
 
       var main = el('main', { class: 'popup' });
-      // Outside the popup column on purpose: the popup has a 320px floor for
-      // the extension, which is wider than a narrow Topping frame. At the root
-      // the banner takes whatever width the frame actually is.
-      var apology = apologyBanner();
-      if (!apology.hidden) root.appendChild(apology);
 
       if (state.schedule.networkFailed === true && H.gradeFilteredBlocks(state.schedule.blocks, null).length === 0 && !state.schedule.dayType) {
         main.className = 'popup no-network';

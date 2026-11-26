@@ -1497,11 +1497,11 @@
         }
 
         function renderNotices() {
-          // An announcement is shown on the schedule card, never in this list.
-          // Filtered here as well as in the API so a row written by an older
-          // build cannot come back into the page after a deploy.
+          // Only the kinds this page can say in a sentence. Membership is the
+          // filter, so a row written by an older build -- an announcement, say
+          // -- cannot come back into the list after a deploy.
           var notices = latestNotices.filter(function (notice) {
-            return String(notice.kind || '').toLowerCase().indexOf('announcement') === -1;
+            return Object.prototype.hasOwnProperty.call(NOTICE_TEXT, notice.kind);
           });
           noticeList.innerHTML = '';
           var pending = pendingRequests();
@@ -1588,11 +1588,7 @@
           });
         }
 
-        /**
-         * The one-time apology. It waits for the notices to arrive rather than
-         * being its own request, so the dialog and the row it leaves behind
-         * cannot disagree about whether this account has seen it.
-         */
+        /** The signed-in student's notices, newest first. */
         function refreshNotices() {
           if (!A.isSignedIn()) return;
           A.listNotices().then(function (result) {

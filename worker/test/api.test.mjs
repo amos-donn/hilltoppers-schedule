@@ -48,8 +48,7 @@ class Stmt {
   }
   async run() {
     const info = this.db.prepare(this.sql).run(...this.params);
-    // last_row_id is what D1 reports for an INSERT; the page's first-read
-    // announcement row needs it to be listed straight away.
+    // last_row_id is what D1 reports for an INSERT.
     return { success: true, meta: { changes: info.changes, last_row_id: Number(info.lastInsertRowid) } };
   }
 }
@@ -870,74 +869,24 @@ function newestAccountId(env) {
   return row.id;
 }
 
-/** Give an account the one thing the apology is about: access that was cut. */
-function severAccess(env, id, tag) {
-  env.__db.prepare(
-    `INSERT INTO grants (code_hash, owner_account_id, viewer_account_id, created_at, revoked_at)
-     VALUES (?, ?, ?, 1, 1)`
-  ).run('revoked-' + tag, id, id);
-}
-
-await test('nobody whose access was never touched sees the apology', async () => {
+await test('an announcement row left in the table is deleted, never listed', async () => {
   const env = makeEnv();
-  const cookie = await signIn(env, { sub: 'untouched', email: 'untouched@example.com', name: 'Untouched' });
+  const cookie = await signIn(env, { sub: 'stale-announcement', email: 'stale@example.com', name: 'Stale' });
 
-  // Auto-grant was off for this account all along, so nothing was severed --
-  // and there is nothing to apologise for or to restore.
-  const me = await call(env, '/api/me', { cookie });
-  assert.equal(me.body.announcement, null, 'no banner for an account the bug never reached');
-});
-
-await test('an announcement answer sticks to the account and is never a notice', async () => {
-  const env = makeEnv();
-  const cookie = await signIn(env, { sub: 'ack-tester', email: 'ack@example.com', name: 'Ack Tester' });
-  // The account row is made on its first authenticated read, so make it before
-  // giving it severed access to restore.
+  // Exactly what a Worker from before the fix left behind: the apology stored
+  // as a notice row, written again on every read of the list.
   await call(env, '/api/me', { cookie });
-  severAccess(env, newestAccountId(env), 'tester');
-
-  // On until it is answered -- and answered through the profile PATCH the page
-  // already uses, alongside a number the client sends with it.
-  const before = await call(env, '/api/me', { cookie });
-  assert.equal(before.body.announcement && before.body.announcement.kind, 'announcement.auto-grant',
-    'an unanswered apology is on');
-
-  const later = Math.floor(Date.now() / 1000) - 60;
-  const answered = await call(env, '/api/me', {
-    method: 'PATCH',
-    body: { announcement: 'announcement.auto-grant', acknowledgedAt: later },
-    cookie,
-  });
-  assert.equal(answered.status, 200);
-  assert.equal(answered.body.announcement, null, 'the answer comes back in the same response');
-  assert.equal(answered.body.lunchWave, null, 'the timestamp is not read as a profile number');
-
-  const after = await call(env, '/api/me', { cookie });
-  assert.equal(after.body.announcement, null, 'and it stays answered');
-
-  // Answering again with an older timestamp -- what a stale re-send carries --
-  // keeps the newer answer, so a queued answer cannot undo a fresh one.
-  await call(env, '/api/me', {
-    method: 'PATCH',
-    body: { announcement: 'announcement.auto-grant', acknowledgedAt: later - 3600 },
-    cookie,
-  });
-  const row = env.__db.prepare("SELECT answered_at FROM notice_acks WHERE kind = 'announcement.auto-grant'").get();
-  assert.equal(row.answered_at, later, 'the later answer wins');
+  env.__db.prepare(
+    `INSERT INTO notices (account_id, kind, payload, created_at)
+     VALUES (?, 'announcement.auto-grant', '{}', 1)`
+  ).run(newestAccountId(env));
 
   const notices = await call(env, '/api/notices', { cookie });
+  assert.equal(notices.status, 200);
   assert.equal(notices.body.notices.filter((n) => n.kind.startsWith('announcement.')).length, 0,
-    'the answer itself is not a notice');
+    'an announcement is never listed');
   const rows = env.__db.prepare("SELECT COUNT(*) AS n FROM notices WHERE kind LIKE 'announcement.%'").get();
-  assert.equal(rows.n, 0, 'and nothing was written to the notices table at all');
-
-  // A different account has its own answer.
-  const other = await signIn(env, { sub: 'ack-other', email: 'other@example.com', name: 'Other' });
-  await call(env, '/api/me', { cookie: other });
-  severAccess(env, newestAccountId(env), 'other');
-  const theirs = await call(env, '/api/me', { cookie: other });
-  assert.equal(theirs.body.announcement && theirs.body.announcement.kind, 'announcement.auto-grant',
-    'answering is per account');
+  assert.equal(rows.n, 0, 'and the row is gone, so an older page cannot show it either');
 });
 
 await test('deleting an account cascades and notifies viewers', async () => {

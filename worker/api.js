@@ -758,50 +758,6 @@ async function hasLiveGrant(env, ownerAccountId, viewerAccountId) {
 // field by selecting a whole row.
 // ---------------------------------------------------------------------------
 
-/**
- * The account's answer to an announcement: when it was made, by this account.
- * `answered_at` holds 0 while unanswered, so a client that answered offline can
- * carry its own timestamp and let the most recent answer win.
- */
-async function recordAnnouncementAnswer(env, accountId, kind, at) {
-  await env.DB.prepare(
-    `INSERT INTO notice_acks (account_id, kind, answered_at) VALUES (?, ?, ?)
-     ON CONFLICT (account_id, kind)
-     DO UPDATE SET answered_at = MAX(answered_at, excluded.answered_at)`
-  )
-    .bind(accountId, kind, at)
-    .run();
-}
-
-/**
- * The one-time apology, as the card needs it: on inside its window for anyone
- * who has not answered it. The answer is an acknowledgement row, never a notice,
- * so it cannot appear in the bell or on the settings page.
- */
-async function announcementFor(env, account) {
-  const kind = 'announcement.auto-grant';
-  const meta = ANNOUNCEMENTS[kind];
-  const now = nowSeconds();
-  if (now < meta.at || now > meta.until) return null;
-  // Only the accounts the bug reached: it could only cut access that was
-  // granted automatically, so an account with nothing severed has nothing to
-  // apologise for. Someone who had auto-grant off all along sees no banner, and
-  // an account that restores is finished with it without answering anything.
-  const severed = await env.DB.prepare(
-    'SELECT COUNT(*) AS n FROM grants WHERE owner_account_id = ? AND revoked_at IS NOT NULL'
-  )
-    .bind(account.id)
-    .first();
-  const affected = Number(severed && severed.n) || 0;
-  if (!affected) return null;
-  const ack = await env.DB.prepare(
-    'SELECT answered_at FROM notice_acks WHERE account_id = ? AND kind = ?'
-  )
-    .bind(account.id, kind)
-    .first();
-  return ack && Number(ack.answered_at) > 0 ? null : { kind, affected };
-}
-
 function publicSelf(row) {
   return {
     profileId: row.profile_id,
@@ -810,9 +766,6 @@ function publicSelf(row) {
     isPublic: Boolean(row.is_public),
     autoGrant: Boolean(row.auto_grant),
     autoGrantGradeOnly: Boolean(row.auto_grant_grade_only),
-    // When the apology is on screen. The card draws it itself; no notice row.
-    // `acknowledged` is filled in by handleMe, which has the database.
-    announcement: row.announcement || null,
     socialWebOptIn: true, // Everyone participates; kept for older clients.
     timeFormat: row.time_format,
     grade: row.grade,
@@ -1148,24 +1101,10 @@ async function handleSocialWebDiagnostic(request, env, account) {
 }
 
 async function handleMe(request, env, account) {
-  if (request.method === 'GET') {
-    const self = publicSelf(account);
-    self.announcement = await announcementFor(env, account);
-    return json(self);
-  }
+  if (request.method === 'GET') return json(publicSelf(account));
 
   if (request.method === 'PATCH') {
     const body = await request.json().catch(() => ({}));
-
-    // Answering an announcement rides along with this request so the page needs
-    // only one call to start it. `acknowledgedAt` is checked before the numeric
-    // fields below, so it cannot be mistaken for a profile number.
-    if (body.acknowledgedAt && ANNOUNCEMENTS[body.announcement]) {
-      const at = Math.floor(Number(body.acknowledgedAt));
-      if (Number.isFinite(at)) {
-        await recordAnnouncementAnswer(env, account.id, body.announcement, Math.min(at, nowSeconds()));
-      }
-    }
 
     const fields = [];
     const values = [];
@@ -1227,9 +1166,7 @@ async function handleMe(request, env, account) {
     const updated = await env.DB.prepare('SELECT * FROM accounts WHERE id = ?')
       .bind(account.id)
       .first();
-    const self = publicSelf(await decryptAccount(env, updated));
-    self.announcement = await announcementFor(env, account);
-    return json(self);
+    return json(publicSelf(await decryptAccount(env, updated)));
   }
 
   return json({ error: 'method_not_allowed' }, 405);
@@ -1625,19 +1562,30 @@ async function adminRoute(request, env, path, method) {
       }
     }
 
-    // Everyone hears it, not just the people whose access was cut: the
-    // setting was on for accounts that never chose it, so nobody can tell
-    // from the page alone whether theirs was.
-    // Nothing to write for that: see ANNOUNCEMENTS.
+    // Nothing is written for the repair itself. The apology banner is gone, and
+    // a notice about it would only be one more row in the list it used to clog:
+    // the revoked notices and the requests already say what happened.
     return json({ revoked, failed }, 200, { 'Cache-Control': 'no-store' });
   }
 
   return json({ error: 'not_found' }, 404);
 }
 
-async function handleListNotices(env, account) {
-  const now = nowSeconds();
+/**
+ * The kinds of notice the page can render. Anything else -- an announcement row
+ * written by an older build, a kind a future Worker writes before this one knows
+ * it -- is deleted on read rather than listed, so the list only ever holds
+ * something the page can say in a sentence.
+ */
+const NOTICE_KINDS = new Set([
+  'access.revoked',
+  'access.granted',
+  'request.received',
+  'request.accepted',
+  'request.declined',
+]);
 
+async function handleListNotices(env, account) {
   const { results: rows } = await env.DB.prepare(
     `SELECT id, kind, payload, payload_enc, created_at, seen_at
        FROM notices WHERE account_id = ? ORDER BY created_at DESC LIMIT 50`
@@ -1672,10 +1620,17 @@ async function handleListNotices(env, account) {
       .run();
   }
 
-  // An announcement is not a notice: it is always shown on its own, and never
-  // in the list. Rows written by an earlier version are filtered here too.
-  const shown = notices.filter(({ row }) => !ANNOUNCEMENTS[row.kind]
-    && String(row.kind || '').toLowerCase().indexOf('announcement') === -1);
+  // Only the kinds the page can render. An announcement used to be stored here
+  // as a notice, written again on every read; deleting those rows rather than
+  // just filtering them means even a page loaded before this change, whose own
+  // filter may be missing, can no longer list one.
+  const shown = notices.filter(({ row }) => NOTICE_KINDS.has(row.kind));
+  const unknown = notices.filter(({ row }) => !NOTICE_KINDS.has(row.kind));
+  if (unknown.length) {
+    await env.DB.prepare(
+      `DELETE FROM notices WHERE account_id = ? AND id IN (${unknown.map(() => '?').join(', ')})`
+    ).bind(account.id, ...unknown.map(({ row }) => row.id)).run();
+  }
 
   const actors = await accountsByProfileId(env, shown.map((n) => n.payload.profileId));
 
@@ -1696,26 +1651,6 @@ async function handleListNotices(env, account) {
     }),
   });
 }
-
-/**
- * Post a notice to everyone, or to one account.
- *
- * An announcement is all-accounts, so it is not stored per account: one row is
- * written per account only when that person first opens their notices (see
- * handleListNotices), which keeps the notices table the size it already is and
- * makes "has this account seen it" the row that a normal notice already is.
- * The body is fixed here rather than stored, because its one wording is the
- * point: the page renders it from the kind.
- */
-const ANNOUNCEMENTS = {
-  'announcement.auto-grant': {
-    at: 1795651200, // 2026-11-26T00:00:00Z, when the repair was published
-    // A week after the Monday following Thanksgiving (Monday 30 Nov 2026, so
-    // this ends Monday 7 Dec 2026). After this the banner is not shown, and a
-    // row that already exists stops being returned.
-    until: 1796601600,
-  },
-};
 
 async function handleDismissNotice(env, account, noticeId) {
   await env.DB.prepare('DELETE FROM notices WHERE id = ? AND account_id = ?')
@@ -1804,7 +1739,18 @@ export default {
   },
 };
 
+/**
+ * Bumped on every deploy that changes behaviour. Public on purpose: opening
+ * /api/version in a browser is how a deploy is confirmed to have landed,
+ * instead of guessed at from the page's behaviour.
+ */
+const WORKER_BUILD = '2026-11-26-k';
+
 async function route(request, env, url, path, method) {
+  if (path === '/api/version' && method === 'GET') {
+    return json({ version: WORKER_BUILD }, 200, { 'Cache-Control': 'no-store' });
+  }
+
   if (path === '/api/auth/firebase' && method === 'POST') {
     return handleFirebaseSignIn(request, env);
   }
