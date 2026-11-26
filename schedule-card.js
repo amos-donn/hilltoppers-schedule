@@ -175,6 +175,30 @@
   // was.
   var apologyAnswered = false;
 
+  /**
+   * Answer the apology and take it off the page, whatever asked: the banner's
+   * own buttons, or the restore button in the bell. Nothing here depends on the
+   * network, so a failed request can no longer leave the banner sitting there.
+   */
+  function markApologyAnswered() {
+    if (apologyAnswered) return;
+    apologyAnswered = true;
+    try { window.localStorage.setItem('apologySeen', '1'); } catch (e) { /* private mode */ }
+    var me = typeof state.self === 'object' && state.self ? state.self : null;
+    var kind = me && me.announcement ? me.announcement.kind : 'announcement.auto-grant';
+    // Local flag first: the banner is gone even if the Worker is older than
+    // this page, and the answer is retried on the next /api/me read.
+    if (window.HTAccount && typeof window.HTAccount.answerAnnouncement === 'function') {
+      window.HTAccount.answerAnnouncement(kind);
+    }
+    var shown = root.querySelector('.apology');
+    if (!shown) return;
+    shown.classList.add('is-leaving');
+    setTimeout(function () {
+      if (shown.parentNode) shown.parentNode.removeChild(shown);
+    }, 280);
+  }
+
   /** A short message that fades out where the banner was, like a toast. */
   function toast(text) {
     var box = el('p', { class: 'toast', role: 'status', text: text });
@@ -204,39 +228,29 @@
      * it should not linger, and the notices list should not carry it either.
      */
     function answer(message) {
-      if (apologyAnswered) return;
-      apologyAnswered = true;
-      try { window.localStorage.setItem('apologySeen', '1'); } catch (e) { /* private mode */ }
-      var me = typeof state.self === 'object' && state.self ? state.self : null;
-      var kind = me && me.announcement ? me.announcement.kind : 'announcement.auto-grant';
-      // Local flag first: the banner is gone even if the Worker is older than
-      // this page, and the answer is retried on the next /api/me read.
-      if (window.HTAccount && typeof window.HTAccount.answerAnnouncement === 'function') {
-        window.HTAccount.answerAnnouncement(kind);
-      }
-      // Slide off the top the way a toast does, then leave the page.
-      banner.classList.add('is-leaving');
-      setTimeout(function () {
-        if (banner.parentNode) banner.parentNode.removeChild(banner);
-      }, 280);
-      if (message) toast(message);
+      var wasAnswered = apologyAnswered;
+      markApologyAnswered();
+      if (message && !wasAnswered) toast(message);
     }
 
     restore.addEventListener('click', function () {
       restore.disabled = true;
-      window.HTAccount.restoreGrants().then(function (result) {
-        restore.disabled = false;
-        var n = result && result.ok ? (result.data.restored || 0) : -1;
-        if (n < 0) {
-          note.hidden = false;
-          note.textContent = 'Could not restore access. You can try again from the bell.';
-          return;
-        }
-        // Answering and leaving happen together, before onRestored() re-renders
-        // the card -- a re-render would otherwise rebuild the banner and the
-        // click would look like it did nothing.
-        answer(n === 0 ? 'Nothing was waiting to be restored.'
-          : 'Access restored for ' + n + (n === 1 ? ' person.' : ' people.'));
+      // A misspelt or missing helper, a 401, a dropped connection: none of them
+      // may leave the banner behind, because the click already answered it.
+      var pending;
+      try {
+        pending = window.HTAccount.restoreGrants();
+      } catch (e) {
+        pending = Promise.resolve({ ok: false });
+      }
+      Promise.resolve(pending).then(function (result) {
+        var n = result && result.ok ? (result.data ? (result.data.restored || 0) : 0) : -1;
+        answer(n < 0 ? 'Could not restore access. Try again from the bell.'
+          : n === 0 ? 'Nothing was waiting to be restored.'
+            : 'Access restored for ' + n + (n === 1 ? ' person.' : ' people.'));
+        if (onRestored) onRestored();
+      }, function () {
+        answer('Could not restore access. Try again from the bell.');
         if (onRestored) onRestored();
       });
     });
@@ -315,7 +329,7 @@
         // An announcement is never a notice, whatever the server was asked:
         // filtering here too means an old row cannot reappear after a deploy.
         notices = notices.filter(function (notice) {
-          return String(notice.kind || '').indexOf('announcement') !== 0;
+          return String(notice.kind || '').toLowerCase().indexOf('announcement') === -1;
         });
         dot.hidden = notices.every(function (notice) { return notice.seen; });
         if (!markRead) return;
@@ -344,6 +358,9 @@
     });
     restore.addEventListener('click', function () {
       restore.disabled = true;
+      // Restoring from here is the same answer as restoring from the banner, so
+      // the banner goes too rather than outliving the question it asked.
+      markApologyAnswered();
       window.HTAccount.restoreGrants().then(function (result) {
         restore.disabled = false;
         note.hidden = false;

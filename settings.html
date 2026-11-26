@@ -1501,7 +1501,7 @@
           // Filtered here as well as in the API so a row written by an older
           // build cannot come back into the page after a deploy.
           var notices = latestNotices.filter(function (notice) {
-            return String(notice.kind || '').indexOf('announcement') !== 0;
+            return String(notice.kind || '').toLowerCase().indexOf('announcement') === -1;
           });
           noticeList.innerHTML = '';
           var pending = pendingRequests();

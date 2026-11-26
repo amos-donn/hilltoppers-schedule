@@ -1674,7 +1674,8 @@ async function handleListNotices(env, account) {
 
   // An announcement is not a notice: it is always shown on its own, and never
   // in the list. Rows written by an earlier version are filtered here too.
-  const shown = notices.filter(({ row }) => !ANNOUNCEMENTS[row.kind]);
+  const shown = notices.filter(({ row }) => !ANNOUNCEMENTS[row.kind]
+    && String(row.kind || '').toLowerCase().indexOf('announcement') === -1);
 
   const actors = await accountsByProfileId(env, shown.map((n) => n.payload.profileId));
 
