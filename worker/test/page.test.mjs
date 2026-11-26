@@ -1122,6 +1122,53 @@ await test('the info card is dragged by its grip and stays where it is put', asy
   assert.equal(details.style.getPropertyValue('--details-y'), '-30px');
 });
 
+await test('a request waiting on an answer is a dashed edge on the map', async () => {
+  // Pat asks Frank and Frank has not answered. That is part of the story the map
+  // tells: the same two people as a dashed line, the arrow pointing the way the
+  // question went, and the count saying it is waiting rather than a connection.
+  const patCookie = await signInAs('sub-page-pat', 'pat@example.org', 'Pat');
+  const frank = await accountOf('sub-page-frank');
+  const frankCookie = await signInAs('sub-page-frank', 'frank@example.org', 'Frank');
+  await asOther(frankCookie, () => window.HTAccount.updateProfile({ autoGrant: false }));
+  await asOther(patCookie, () => window.HTAccount.askForSchedule(frank.profile_id));
+  await window.HTAccount.refresh();
+  await settle();
+
+  $('tab-social-web-btn').click();
+  await settle(2);
+  $('social-web-refresh').click();
+  await settle(3);
+
+  const waiting = [...$('social-web-scene').querySelectorAll('.social-web__edge.is-pending')];
+  const askedMe = waiting.find((edge) => /Pat asked you for your schedule/.test(edge.textContent));
+  assert.ok(askedMe, 'the waiting request is drawn, dashed, naming who asked');
+  assert.ok(waiting.length >= 1);
+
+  const settled = $('social-web-scene').querySelectorAll('.social-web__edge:not(.is-pending)').length;
+  assert.match($('social-web-count').textContent,
+    new RegExp('\\d+ people · ' + settled + ' connections · ' + waiting.length + ' waiting'),
+    'waiting requests are counted apart from the connections');
+});
+
+await test('hovering a search row lights that person and their lines', async () => {
+  const frank = await accountOf('sub-page-frank');
+  $('tab-social-web-btn').click();
+  await settle(2);
+  const row = [...$('social-web-people-list').querySelectorAll('.search-card__option')]
+    .find((option) => option.getAttribute('data-profile-id') === frank.profile_id);
+  assert.ok(row, 'the signed-in account is in the list');
+  const node = $('social-web-scene').querySelector(`.social-web__node[data-profile-id="${frank.profile_id}"]`);
+
+  row.dispatchEvent(new window.MouseEvent('pointerenter'));
+  assert.match(node.getAttribute('class'), /is-lit/, 'the node lights up');
+  assert.ok($('social-web-scene').querySelector('.social-web__edge.is-lit'),
+    'and so do the lines that touch them');
+
+  row.dispatchEvent(new window.MouseEvent('pointerleave'));
+  assert.doesNotMatch(node.getAttribute('class'), /is-lit/, 'the light goes out again');
+  assert.equal($('social-web-scene').querySelector('.social-web__edge.is-lit'), null, 'lines too');
+});
+
 await test('a reciprocal share is one connection, and a one-way share stays one arrow', async () => {
   const L = window.HTSocialWeb.links;
   // JSON, because the array comes from the page's realm and deepEqual here is

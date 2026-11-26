@@ -279,7 +279,7 @@
   var count = document.getElementById('social-web-count');
   var account = null, generation = 0;
   var graph = { nodes: [], edges: [] }, positions = new Map();
-  var nodeElements = [], edgeElements = [], peopleRows = [], selected = '';
+  var nodeElements = [], edgeElements = [], peopleRows = [], selected = '', litPerson = '';
   var camera = { x: 0, y: 0, scale: 1 }, fitScale = 1;
   var view = { w: 1000, h: 640 };
   var pointers = new Map(), gesture = null, moved = false, pressedNode = '';
@@ -727,6 +727,9 @@
   // open so the controls beside it do not jump.
 
   function clearPeople() {
+    // A row that is removed while lit would otherwise leave its node on the map
+    // lit with nothing pointing at it.
+    if (litPerson) lightPerson(litPerson, false);
     peopleRows = [];
     if (peopleList) peopleList.replaceChildren();
     if (findInput) findInput.value = '';
@@ -739,6 +742,22 @@
     });
   }
 
+  // The list and the drawing are the same people, so hovering (or focusing) a
+  // row lights that person on the map and the lines that touch them. It marks
+  // with `is-lit`, never with the selection's `is-active`, so moving the pointer
+  // away leaves a selection exactly as it was.
+  function lightPerson(id, on) {
+    if (on && litPerson === id) return;
+    if (!on && litPerson !== id) return;
+    nodeElements.forEach(function (item) {
+      if (item.id === id) item.element.classList.toggle('is-lit', on);
+    });
+    edgeElements.forEach(function (item) {
+      if (item.ids[0] === id || item.ids[1] === id) item.element.classList.toggle('is-lit', on);
+    });
+    litPerson = on ? id : '';
+  }
+
   function addPersonRow(profile) {
     if (!peopleList) return;
     var isMe = account && account.profileId === profile.profileId;
@@ -749,6 +768,10 @@
     row.setAttribute('data-profile-id', profile.profileId);
     row.textContent = label(profile.profileId) + (isMe ? ' (you)' : '');
     row.addEventListener('click', function () { choosePerson(profile.profileId); });
+    row.addEventListener('pointerenter', function () { lightPerson(profile.profileId, true); });
+    row.addEventListener('pointerleave', function () { lightPerson(profile.profileId, false); });
+    row.addEventListener('focus', function () { lightPerson(profile.profileId, true); });
+    row.addEventListener('blur', function () { lightPerson(profile.profileId, false); });
     peopleList.appendChild(row);
     peopleRows.push({ id: profile.profileId, name: row.textContent.toLowerCase(), element: row });
   }
@@ -818,6 +841,27 @@
       scene.appendChild(path);
       edgeElements.push({ ids: [link.source, link.target], element: path });
     });
+    // A relationship that has been asked for but not settled belongs on the map
+    // too. It is drawn dashed and after the settled connections rather than into
+    // them, so the layout still answers only to access that exists; the arrow
+    // points the way the question was asked.
+    var settledCount = edgeElements.length;
+    var pendingEdges = data.pending || [];
+    pendingEdges.forEach(function (pending) {
+      var a = positions.get(pending.source), b = positions.get(pending.target);
+      if (!a || !b || a === b) return;
+      var path = element('path', {
+        d: edgePath(a, b, Array.from(positions.values())),
+        class: 'social-web__edge is-pending',
+        'marker-end': 'url(#social-web-arrow)'
+      });
+      var askedByMe = account && pending.source === account.profileId;
+      path.appendChild(element('title', {}, askedByMe
+        ? 'You asked ' + label(pending.target) + ' for their schedule · waiting'
+        : label(pending.source) + ' asked you for your schedule · waiting'));
+      scene.appendChild(path);
+      edgeElements.push({ ids: [pending.source, pending.target], element: path });
+    });
     data.nodes.forEach(function (profile) {
       var node = positions.get(profile.profileId);
       var isMe = account && account.profileId === profile.profileId;
@@ -840,10 +884,44 @@
       scene.appendChild(group); nodeElements.push({ id: node.profileId, element: group });
       addPersonRow(node);
     });
-    count.textContent = data.nodes.length + ' people · ' + edgeElements.length + ' connections';
+    count.textContent = data.nodes.length + ' people · ' + settledCount + ' connections'
+      + (pendingEdges.length ? ' · ' + pendingEdges.length + ' waiting' : '');
     count.hidden = false;
     fit(); select(selected);
   }
+  /**
+   * Requests that are waiting on an answer, as pairs of profile IDs. They are
+   * not connections, so they never reach the layout: render() draws them on
+   * top, dashed. A pair that already shares is left out -- the connection is
+   * the truth there, and a stale request would only cross it with a second line.
+   */
+  async function waitingRequests(edges) {
+    if (typeof window.HTAccount.listRequests !== 'function') return [];
+    var result = await window.HTAccount.listRequests();
+    if (!result || !result.ok || !result.data) return [];
+    var me = account && account.profileId;
+    var settled = {};
+    (edges || []).forEach(function (edge) {
+      settled[edge.source + '>' + edge.target] = true;
+      settled[edge.target + '>' + edge.source] = true;
+    });
+    var pairs = [], seen = {};
+    function add(request, outgoing) {
+      if (!request || request.status !== 'pending' || !request.profileId || request.profileId === me) return;
+      var source = outgoing ? me : request.profileId;
+      var target = outgoing ? request.profileId : me;
+      if (!source || !target || settled[source + '>' + target]) return;
+      // Both ends can have a request out at once. One dashed line says it.
+      var key = [source, target].sort().join('|');
+      if (seen[key]) return;
+      seen[key] = true;
+      pairs.push({ source: source, target: target });
+    }
+    (result.data.outgoing || []).forEach(function (request) { add(request, true); });
+    (result.data.incoming || []).forEach(function (request) { add(request, false); });
+    return pairs;
+  }
+
   async function refresh() {
     var token = ++generation;
     if (!account) return;
@@ -861,7 +939,9 @@
       workspace.hidden = false;
       return;
     }
-    render(result.data);
+    var pending = await waitingRequests(result.data.edges);
+    if (token !== generation || !account) return;
+    render({ nodes: result.data.nodes, edges: result.data.edges, pending: pending });
     workspace.hidden = !result.data.nodes.length;
     status.textContent = !result.data.nodes.length ? 'The web is waiting for its first people.'
       : '';

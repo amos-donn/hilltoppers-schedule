@@ -31,6 +31,13 @@ body.social-web-open #panel-social-web:not([hidden]) { display: block; height: 1
    for it made the same map look like two different kinds of line. */
 .social-web__edge { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-opacity: .6; }
 .social-web__edge.is-active { stroke-width: 2.8; color: #325e3a; stroke-opacity: 1; }
+/* A request waiting on an answer is dashed, in the blue the pending badge uses,
+   and keeps the arrowhead so the direction of the ask still reads. */
+.social-web__edge.is-pending { stroke-dasharray: 4 7; color: #4a90c2; stroke-opacity: .62; }
+/* Hovering (or tabbing to) a search row lights that person and their lines, so
+   the list and the drawing answer the same question at once. */
+.social-web__edge.is-lit { stroke-width: 2.8; stroke-opacity: .95; }
+.social-web__node.is-lit circle { stroke-width: 3; }
 .social-web__node { cursor: pointer; outline: none; }
 .social-web__node circle { fill: #fbfcf8; stroke: #92a881; stroke-width: 2; }
 .social-web__node.is-you circle { fill: #e2ead8; stroke: #385f3c; stroke-width: 3; }
@@ -1273,6 +1280,8 @@ body.social-web-open .dashboard { height: 100dvh; }
   }
   #social-web-svg { color: #5f7b64; }
   .social-web__edge.is-active { color: #91c6a0; }
+  .social-web__edge.is-pending { color: #7cc4f6; stroke-opacity: .58; }
+  .social-web__node.is-lit circle { stroke: #91c6a0; }
   .social-web__node circle { fill: #1b241e; stroke: #55705a; }
   .social-web__node.is-you circle { fill: #2a3d2e; stroke: #91c6a0; }
   .social-web__node.is-selected circle,
