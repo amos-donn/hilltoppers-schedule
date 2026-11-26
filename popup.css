@@ -1693,9 +1693,12 @@ header {
 .card-actions { display: inline-flex; align-items: center; gap: 2px; }
 
 .primary-card > .notices-wrapper {
+  /* Mirrors the gear on the left of the card's top edge, so the two controls
+     sit at opposite corners instead of both crowding the right. */
   position: absolute;
   top: 6px;
-  right: 38px;
+  left: 6px;
+  right: auto;
   z-index: 2;
 }
 

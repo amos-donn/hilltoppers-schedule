@@ -192,6 +192,7 @@
      */
     function answer() {
       banner.hidden = true;
+      try { window.localStorage.setItem('apologySeen', '1'); } catch (e) { /* private mode */ }
       var me = typeof state.self === 'object' && state.self ? state.self : null;
       var kind = me && me.announcement ? me.announcement.kind : 'announcement.auto-grant';
       // Local first, server second: the banner is gone even if the Worker is
@@ -220,7 +221,12 @@
     // Shown the moment the page opens: no bell, no tab, nothing to click. The
     // answer comes from /api/me, which the card already reads.
     var me = typeof state.self === 'object' && state.self ? state.self : null;
-    banner.hidden = !(me && me.announcement);
+    // A local answer hides it at once, before the account has heard; the server
+    // catches up on the next /api/me read. Without this, a Worker that predates
+    // the answer field would bring the banner back on every reload.
+    var answered = false;
+    try { answered = window.localStorage.getItem('apologySeen') === '1'; } catch (e) { answered = false; }
+    banner.hidden = !(me && me.announcement) || answered;
     return banner;
   }
 
@@ -277,6 +283,11 @@
       if (!window.HTAccount || typeof window.HTAccount.listNotices !== 'function') { paint([]); return; }
       window.HTAccount.listNotices().then(function (result) {
         var notices = result && result.ok ? (result.data.notices || []) : [];
+        // An announcement is never a notice, whatever the server was asked:
+        // filtering here too means an old row cannot reappear after a deploy.
+        notices = notices.filter(function (notice) {
+          return String(notice.kind || '').indexOf('announcement') !== 0;
+        });
         dot.hidden = notices.every(function (notice) { return notice.seen; });
         if (!markRead) return;
         paint(notices);

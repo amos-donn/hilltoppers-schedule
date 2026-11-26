@@ -1395,17 +1395,6 @@
           'request.declined': 'Someone declined your request for a schedule.'
         };
 
-        // Said once per browser, when the page opens, and then only in the
-        // notices list.
-        // The notice itself is what makes it once: it is marked read the moment
-        // the dialog is shown, and a dismissed notice is gone for good.
-        var APOLOGY = 'We screwed up. Auto-grant was on by default when the page said it '
-          + 'would be off by default. All of those connections were severed, and each one '
-          + 'is now a request waiting on you to approve.';
-        var APOLOGY_KIND = 'announcement.auto-grant';
-        // The page reloads its account on every sign-in change, and a second
-        // dialog in the same visit would be nagging, not telling.
-
         var latestNotices = [];
         var latestRequests = { incoming: [], outgoing: [] };
         // Open rows survive a re-render, so acting on one does not collapse it.
@@ -1508,7 +1497,12 @@
         }
 
         function renderNotices() {
-          var notices = latestNotices;
+          // An announcement is shown on the schedule card, never in this list.
+          // Filtered here as well as in the API so a row written by an older
+          // build cannot come back into the page after a deploy.
+          var notices = latestNotices.filter(function (notice) {
+            return String(notice.kind || '').indexOf('announcement') !== 0;
+          });
           noticeList.innerHTML = '';
           var pending = pendingRequests();
           var unseen = notices.filter(function (notice) { return !notice.seen; }).length;
