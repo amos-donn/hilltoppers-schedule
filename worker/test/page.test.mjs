@@ -451,6 +451,8 @@ await test('a friend card says who can see whose schedule and can revoke', async
   const bobRow = [...$('friend-rows').querySelectorAll('.class-settings__friend-row')]
     .find((row) => /Bob/.test(row.textContent) && /They can see yours/.test(row.textContent));
   assert.ok(bobRow, 'the viewer has a card that says he can see Alice\'s schedule');
+  assert.ok(bobRow.querySelector('.class-settings__pill--share svg'),
+    'the share icon marks the access Alice gives');
   const revoke = [...bobRow.querySelectorAll('button')].find((b) => b.textContent === 'Revoke');
   assert.ok(revoke, 'a Revoke button is offered');
   revoke.dispatchEvent(new window.Event('click'));
@@ -815,6 +817,8 @@ await test('a friend card shows the access it holds and keeps it across reloads'
     const row = erinRow(p);
     assert.ok(row, 'Erin has a friend card');
     assert.match(row.textContent, /You can see theirs/, 'the card says her schedule is available');
+    assert.ok(row.querySelector('.class-settings__pill--see svg'),
+      'the eye icon marks the access Frank holds');
     assert.doesNotMatch(row.textContent, /No access/, 'and not the empty state');
   };
 

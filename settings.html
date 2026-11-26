@@ -9,11 +9,11 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=20260929a" />
     <!-- The extension's classSettings.css, copied unchanged, so the settings
          page matches the extension's Class & Schedule Settings page. -->
-    <link rel="stylesheet" href="classSettings.css?v=20261126a" />
+    <link rel="stylesheet" href="classSettings.css?v=20261126b" />
     <!-- The Hilltoppers dashboard shell: sidebar tabs, the sage palette,
          and the custom dropdowns. Loaded after classSettings.css, which it
          restyles. -->
-    <link rel="stylesheet" href="dashboard.css?v=20261126c" />
+    <link rel="stylesheet" href="dashboard.css?v=20261126d" />
   </head>
   <!-- The page starts as a skeleton and is told which state it is in once the
        session check answers. Without this class it would paint "not signed in"
@@ -369,6 +369,17 @@
         // fill="currentColor": the dots had no fill of their own, so they
         // painted black whatever the theme -- which on the dark page is black
         // dots on dark green. They take the grip's colour instead.
+        // Two arrows chasing each other around a rectangle: what "they can see
+        // yours" means, access travelling out and back.
+        var ICON_SHARE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"'
+          + ' stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+          + '<path d="M4 19V7a2 2 0 0 1 2-2h13" />'
+          + '<path d="M16 2l3 3-3 3" />'
+          + '<path d="M20 5v12a2 2 0 0 1-2 2H5" />'
+          + '<path d="M8 22l-3-3 3-3" />'
+          + '</svg>';
+        // The one-way look at someone else's schedule.
+        var ICON_EYE = '<svg viewBox="0 0 256 256" fill="currentColor" aria-hidden="true"><path d="M247.31,124.81C222.51,73,181.43,48,128,48S33.49,73,8.69,124.81a16.09,16.09,0,0,0,0,14.38C33.49,191,74.57,216,128,216s94.51-25,119.31-76.81A16.09,16.09,0,0,0,247.31,124.81ZM128,200c-44.54,0-79.8-19.68-102.32-64C48.2,91.68,83.46,72,128,72s79.8,19.68,102.32,64C207.8,180.32,172.54,200,128,200Zm0-96a32,32,0,1,0,32,32A32,32,0,0,0,128,104Zm0,48a16,16,0,1,1,16-16A16,16,0,0,1,128,152Z" /></svg>';
         var ICON_GRIP = '<svg width="20" height="24" viewBox="0 0 20 24" fill="currentColor" aria-hidden="true">'
           + [6, 12, 18].map(function (y) {
             return [7, 13].map(function (x) {
@@ -660,18 +671,18 @@
           if (canSee) {
             var open = el('button', {
               type: 'button',
-              class: 'class-settings__pill class-settings__pill--on',
+              class: 'class-settings__pill class-settings__pill--see',
               title: 'Open their schedule',
-              text: 'You can see theirs'
+              html: ICON_EYE + 'You can see theirs'
             });
             open.addEventListener('click', function () { openSchedule(profileId); });
             pills.appendChild(open);
           }
           if (canBeSeen) {
             pills.appendChild(el('span', {
-              class: 'class-settings__pill class-settings__pill--on',
+              class: 'class-settings__pill class-settings__pill--share',
               title: label + ' can open your schedule',
-              text: 'They can see yours'
+              html: ICON_SHARE + 'They can see yours'
             }));
             var revoke = el('button', {
               type: 'button',
