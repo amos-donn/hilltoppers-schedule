@@ -280,6 +280,9 @@
     /** What this row can do, matched to what it actually reports. */
     function actions(notice, request) {
       var box = el('div', { class: 'notices-card__actions' });
+      // A pending ask is a task, not a message: clearing its row would leave the
+      // request alive with nothing to act on, so Clear waits until it is decided.
+      var awaiting = N.awaiting(notice, requests, grants);
       function add(label, primary, run) {
         var control = el('button', {
           class: 'notices-card__action' + (primary ? ' notices-card__action--primary' : ''),
@@ -291,15 +294,15 @@
         });
         box.appendChild(control);
       }
-      if (notice.kind === 'request.received' && request && request.status === 'pending') {
+      if (awaiting) {
         add('Accept', true, function () { decide(request, 'accept'); });
         add('Decline', false, function () { decide(request, 'decline'); });
       } else if (notice.kind === 'access.restore') {
         add('Restore access', true, function (control) { restore(notice, control); });
-      } else {
+      } else if (notice.kind !== 'request.received') {
         add('Ask for their schedule', false, function (control) { ask(notice, control); });
       }
-      add('Clear', false, function () { clear(notice); });
+      if (!awaiting) add('Clear', false, function () { clear(notice); });
       return box;
     }
 
@@ -332,7 +335,7 @@
       // Notices and the requests this account sent share one list, newest
       // first, exactly as the tab orders them. A sent request makes no notice
       // for the sender, so without its own row it would appear nowhere.
-      var entries = N.entries(notices, requests);
+      var entries = N.entries(notices, requests, grants);
       seen.hidden = notices.length === 0;
 
       if (!entries.length) {

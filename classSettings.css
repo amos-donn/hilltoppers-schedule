@@ -781,12 +781,79 @@ body, html {
 /* A person's two access facts live on their card as pills, instead of in two
    separate lists further down the page. */
 .class-settings__friend-pills {
+  position: relative;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
   gap: 6px;
   flex-shrink: 0;
+}
+
+/* The quiet row menu. It carries card actions only; access changes stay on the
+   named pills beside it. */
+.class-settings__overflow-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.class-settings__overflow {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.class-settings__overflow:hover,
+.class-settings__overflow[aria-expanded='true'] {
+  border-color: var(--border);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.class-settings__overflow:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.class-settings__friend-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 10;
+  min-width: 168px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.14);
+}
+
+.class-settings__menu-item {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.9rem;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.class-settings__menu-item:hover {
+  background: var(--surface-muted);
 }
 
 .class-settings__pill {

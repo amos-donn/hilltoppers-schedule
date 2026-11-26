@@ -799,6 +799,41 @@ await test('a request row stops saying Pending and says Granted once access exis
   assert.match(panel().textContent, /Granted/, 'and says Granted');
 });
 
+await test('a pending request with no notice is still answerable', async () => {
+  // Clearing a request notice used to leave the request pending with nothing
+  // to accept or decline. The request itself now produces a row, so the ask
+  // cannot be orphaned by a missing or cleared notice.
+  const page = mountPage({});
+  await page.settle();
+  const w = page.window;
+  w.HTAccount.listNotices = async () => ({ ok: true, data: { notices: [] } });
+  w.HTAccount.listRequests = async () => ({
+    ok: true,
+    data: {
+      incoming: [{ id: 21, status: 'pending', profileId: 'calm-otter-4321', displayName: 'Calm Otter', createdAt: 30 }],
+      outgoing: [],
+    },
+  });
+  w.HTAccount.listGrants = async () => ({ ok: true, data: { viewers: [], viewing: [] } });
+
+  w.document.querySelector('.notices-button').click();
+  await wait(60);
+  const panel = w.document.querySelector('.notices-card');
+  assert.match(panel.textContent, /Calm Otter/, 'the waiting ask still names who asked');
+  assert.match(panel.textContent, /asked for your schedule/i, 'and still reads as an ask');
+
+  const row = panel.querySelector('.notices-card__row[role="button"]');
+  assert.ok(row, 'the ask has a row to open');
+  row.click();
+  await wait(30);
+  const buttons = [...panel.querySelectorAll('.notices-card__actions button')]
+    .map((button) => button.textContent);
+  assert.ok(buttons.includes('Accept'), 'Accept is offered');
+  assert.ok(buttons.includes('Decline'), 'and Decline');
+  assert.equal(buttons.includes('Clear'), false,
+    'Clear waits until the ask is decided, so it cannot orphan the request');
+});
+
 await test('only a friend-request row carries a state pill', async () => {
   // The pill reports the ask behind the row. An access notice names the same
   // person but is not an ask, so a request in flight must not paint it.

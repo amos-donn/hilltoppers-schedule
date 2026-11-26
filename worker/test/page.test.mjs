@@ -429,8 +429,12 @@ await test('a request from someone else can be accepted in the UI', async () => 
     'an unanswered request is flagged on its notice');
   noticeRow.dispatchEvent(new window.Event('click'));
   await settle();
+  const buttons = [...$('notice-list').querySelectorAll('.class-settings__notice-actions button')]
+    .map((b) => b.textContent);
   const accept = [...$('notice-list').querySelectorAll('button')].find((b) => b.textContent === 'Accept');
   assert.ok(accept, 'an Accept button is offered');
+  assert.equal(buttons.includes('Clear'), false,
+    'a waiting request has no Clear: clearing it would orphan the ask');
   accept.dispatchEvent(new window.Event('click'));
   await settle();
 
@@ -445,6 +449,11 @@ await test('a request from someone else can be accepted in the UI', async () => 
   assert.ok(answered, 'the notice stays after it is answered');
   assert.doesNotMatch(answered.textContent, /Pending/,
     'and stops saying pending once accepted');
+
+  // The row was opened to accept, and stays open through the re-render.
+  assert.equal(answered.getAttribute('aria-expanded'), 'true', 'the answered row stays open');
+  assert.ok([...$('notice-list').querySelectorAll('.class-settings__notice-actions button')]
+    .some((b) => b.textContent === 'Clear'), 'a decided ask can be cleared');
 });
 
 await test('a friend card says who can see whose schedule and can revoke', async () => {
@@ -546,6 +555,42 @@ await test('a request notice offers Accept, and accepting grants access', async 
   assert.doesNotMatch(answered.textContent, /Pending/, 'the pending pill is gone');
 });
 
+await test('a pending request stays answerable after its notice is cleared', async () => {
+  // The notice used to be the request's only row. Clearing it left the request
+  // pending with no Accept or Decline anywhere, which is the orphan this test
+  // rules out: the request itself still produces a row.
+  await signInAs('sub-page-sue-notice', 'sue.notice@example.org', 'Sue Notice');
+  await window.HTAccount.updateProfile({ isPublic: false, autoGrant: false, displayName: 'Sue Notice' });
+  await window.HTAccount.refresh();
+  const ownerProfileId = (await accountOf('sub-page-sue-notice')).profile_id;
+
+  const timCookie = await signInAs('sub-page-tim-notice', 'tim.notice@example.org', 'Tim Notice');
+  await asOther(timCookie, async () => {
+    await window.HTAccount.updateProfile({ displayName: 'Tim Notice' });
+    await window.HTAccount.askForSchedule(ownerProfileId);
+  });
+
+  // Exactly what Clear would have done to the notice, leaving the ask behind.
+  db.prepare('DELETE FROM notices WHERE account_id = ? AND kind = ?')
+    .run(await accountIdOf('sub-page-sue-notice'), 'request.received');
+
+  await signInAs('sub-page-sue-notice', 'sue.notice@example.org', 'Sue Notice');
+  await window.HTAccount.refresh();
+  await settle();
+
+  const row = [...$('notice-list').querySelectorAll('.class-settings__notice')]
+    .find((r) => /asked for your schedule/i.test(r.textContent) && /Tim Notice/.test(r.textContent));
+  assert.ok(row, 'the request still has a row without its notice');
+  assert.match(row.textContent, /Pending/, 'and still reports that it is waiting');
+  row.dispatchEvent(new window.Event('click'));
+  await settle(2);
+  const actions = [...$('notice-list').querySelectorAll('.class-settings__notice-actions button')]
+    .map((b) => b.textContent);
+  assert.ok(actions.includes('Accept'), 'the request offers Accept');
+  assert.ok(actions.includes('Decline'), 'and Decline');
+  assert.equal(actions.includes('Clear'), false, 'but not Clear, which would orphan it again');
+});
+
 await test('clearing a notice removes just that row', async () => {
   await signInAs('sub-page-bob', 'bob@example.org', 'Bob');
   await window.HTAccount.refresh();
@@ -588,6 +633,15 @@ await test('a stale cached account.js does not leave Clear a silent no-op', asyn
     await window.HTAccount.updateProfile({ displayName: 'Stale Dave' });
     await window.HTAccount.askForSchedule(ownerProfileId);
   });
+
+  // Answer the ask first. A waiting request no longer offers Clear (that is
+  // what would orphan it), so this test needs a decided notice to exercise the
+  // stale account.js Clear path it is about.
+  await signInAs('sub-stale-owner-page', 'stale.owner@example.org', 'Stale Owner');
+  await window.HTAccount.refresh();
+  const incoming = await window.HTAccount.listRequests();
+  const pending = incoming.data.incoming.find((request) => request.status === 'pending');
+  await window.HTAccount.decideRequest(pending.id, 'accept');
 
   const stale = mountPage({ accountSource: staleAccount });
   await signInAs('sub-stale-owner-page', 'stale.owner@example.org', 'Stale Owner');
@@ -764,13 +818,54 @@ await test('marking notices read clears the new badge', async () => {
   assert.equal($('notices-tab-badge').hidden, true, 'the Notices tab marker clears too');
 });
 
-await test('the sidebar sign-out returns the page to the signed-out state', async () => {
+await test('the sidebar sign-out returns the page to the signed-out state and takes local data with it', async () => {
+  // Dave's card was filled from Carol's grant. None of it may stay behind in a
+  // shared browser for the next student, who would inherit courses they never
+  // chose.
+  const before = JSON.parse(window.localStorage.getItem('friends') || '[]');
+  assert.ok(before.length > 0, 'the account has local card data to clear');
+
   $('topbar-auth').dispatchEvent(new window.Event('click'));
   await settle();
   assert.equal($('account-signed-out').hidden, false);
   assert.equal($('account-signed-in').hidden, true);
   assert.equal(window.HTAccount.isSignedIn(), false);
   assert.equal($('notices-seen').hidden, true, 'with no notices there is nothing to mark read');
+
+  assert.deepEqual(JSON.parse(window.localStorage.getItem('friends')), [],
+    'the previous account\'s card is gone');
+  assert.deepEqual(JSON.parse(window.localStorage.getItem('identity')), { name: '', email: '' },
+    'and so is the remembered identity');
+  assert.equal(window.localStorage.getItem('selectedFriend'), '',
+    'no friend selection survives the sign-out');
+  const prefs = JSON.parse(window.localStorage.getItem('blockPreferences'));
+  assert.deepEqual(Object.keys(prefs).map((block) => prefs[block].name), ['', '', '', '', ''],
+    'the previous account\'s courses are gone');
+});
+
+await test('a new account does not inherit another account\'s local courses', async () => {
+  // FN-16: with no account-owned courses yet, the page used to upload whatever
+  // was in localStorage. On a shared browser that was the previous student's
+  // timetable. The owner key makes the local copy account-scoped instead.
+  const previous = await accountOf('sub-page-alice');
+  const t = mountPage({ storage: { settingsTourSeen: 1 } });
+  const stolen = t.window.HT.createEmptyPreferences();
+  stolen.A.name = 'Inherited Course';
+  t.window.localStorage.setItem('blockPreferences', JSON.stringify(stolen));
+  t.window.localStorage.setItem('localAccountProfileId', previous.profile_id);
+
+  await signInAs('sub-page-new-student', 'new.student@example.org', 'New Student');
+  await t.window.HTAccount.refresh();
+  await t.settle();
+
+  const newStudent = await accountOf('sub-page-new-student');
+  assert.equal(String(newStudent.block_prefs || '').includes('Inherited Course'), false,
+    'the previous account\'s course was not copied into the new account');
+  assert.equal(t.window.localStorage.getItem('localAccountProfileId'), newStudent.profile_id,
+    'the local copy now belongs to the new account');
+  const local = JSON.parse(t.window.localStorage.getItem('blockPreferences'));
+  assert.equal(local.A.name, '', 'and the inherited local course is gone');
+  t.dom.window.close();
 });
 
 await test('a friend added from the directory carries real course data for the card', async () => {
@@ -846,6 +941,65 @@ await test('a friend card shows the access it holds and keeps it across reloads'
   } finally {
     fresh.dom.window.close();
   }
+});
+
+await test('a card can be quietly removed without changing access, and access can be given up', async () => {
+  // The quiet menu is a card action, not a revocation: removing Erin must
+  // delete the cached courses but leave the access row (and its access) alone.
+  const erinProfileId = (await accountOf('sub-page-erin')).profile_id;
+  const rowFor = () => [...$('friend-rows').querySelectorAll('.class-settings__friend-row')]
+    .find((row) => row.textContent.includes(erinProfileId));
+
+  let row = rowFor();
+  assert.ok(row, 'Erin is on Frank\'s card');
+  row.querySelector('.class-settings__overflow').click();
+  await settle(2);
+  row = rowFor();
+  const remove = [...row.querySelectorAll('.class-settings__menu-item')]
+    .find((item) => item.textContent === 'Remove from card');
+  assert.ok(remove, 'the card offers a quiet Remove from card');
+  remove.click();
+  await settle();
+
+  const friends = JSON.parse(window.localStorage.getItem('friends') || '[]');
+  assert.equal(friends.some((friend) => friend.email === erinProfileId), false,
+    'the card entry and its cached courses are gone');
+  assert.match($('friends-status').textContent, /removed from your card/i,
+    'the result is stated where the action happened');
+
+  // Access is separate and still manageable: the row remains, and it can be
+  // added back to the card or given up from here.
+  row = rowFor();
+  assert.ok(row, 'the access row stays after the card entry is removed');
+  row.querySelector('.class-settings__overflow').click();
+  await settle(2);
+  row = rowFor();
+  assert.ok([...row.querySelectorAll('.class-settings__menu-item')]
+    .some((item) => item.textContent === 'Add to card'), 'the card entry can be restored');
+
+  row.querySelector('.class-settings__overflow').click();
+  await settle(2);
+  row = rowFor();
+  const stop = [...row.querySelectorAll('button')].find((b) => b.textContent === 'Stop seeing');
+  assert.ok(stop, 'the viewer has their own way to give up access');
+  stop.click();
+  await settle();
+
+  const grant = db.prepare(
+    'SELECT revoked_at FROM grants WHERE owner_account_id = ? AND viewer_account_id = ?'
+  ).get(await accountIdOf('sub-page-erin'), await accountIdOf('sub-page-frank'));
+  assert.ok(grant && grant.revoked_at, 'the grant is revoked from the viewer\'s side');
+  assert.equal(rowFor(), undefined, 'and the access row is gone');
+  assert.match($('friends-status').textContent, /no longer see/i,
+    'the page says the access ended');
+  assert.deepEqual(JSON.parse(window.localStorage.getItem('removedFriends')), [],
+    'a tombstone is forgotten once the access it guarded is gone');
+
+  // Later tests use this share as one half of a mutual connection. This test
+  // ended it on purpose, so put the same share back for them. The schema keeps
+  // one grant per pair, so it is the revoked row that is restored.
+  db.prepare('UPDATE grants SET revoked_at = NULL WHERE owner_account_id = ? AND viewer_account_id = ?')
+    .run(await accountIdOf('sub-page-erin'), await accountIdOf('sub-page-frank'));
 });
 
 await test('a private profile in the Social web shows neither name nor ID', async () => {

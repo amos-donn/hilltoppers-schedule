@@ -9,7 +9,7 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=20260929a" />
     <!-- The extension's classSettings.css, copied unchanged, so the settings
          page matches the extension's Class & Schedule Settings page. -->
-    <link rel="stylesheet" href="classSettings.css?v=20261126c" />
+    <link rel="stylesheet" href="classSettings.css?v=20261126d" />
     <!-- The Hilltoppers dashboard shell: sidebar tabs, the sage palette,
          and the custom dropdowns. Loaded after classSettings.css, which it
          restyles. -->
@@ -284,6 +284,7 @@
             </div>
           </div>
 
+          <p class="class-settings__account-status" id="friends-status" hidden></p>
           <div id="friend-rows" class="class-settings__friend-list"></div>
         </section>
 
@@ -352,10 +353,10 @@
       </main>
     </div>
 
-    <script src="notices-core.js?v=20261126b"></script>
+    <script src="notices-core.js?v=20261126c"></script>
     <script src="schedule-core.js?v=20260928h"></script>
     <script src="auth.js?v=20260930a"></script>
-    <script src="account.js?v=20261126d"></script>
+    <script src="account.js?v=20261126e"></script>
     <script src="social-web.js?v=20261126a"></script>
     <script src="tour.js?v=20261125b"></script>
     <script>
@@ -412,6 +413,44 @@
               ? H.gradeFromGraduationYear(state.schedulePrefs.graduationYear) : null,
             lunchWave: state.schedulePrefs.lunchWave != null ? state.schedulePrefs.lunchWave : null
           };
+        }
+
+        // Which account wrote the local copy. It survives a reload, unlike
+        // appliedProfileId, so a cold load can tell that the browser's courses
+        // belong to somebody else even before the first account is rendered.
+        var LOCAL_OWNER_KEY = 'localAccountProfileId';
+
+        function loadLocalOwner() {
+          try { return localStorage.getItem(LOCAL_OWNER_KEY) || ''; } catch (e) { return ''; }
+        }
+
+        function saveLocalOwner(profileId) {
+          try {
+            if (profileId) localStorage.setItem(LOCAL_OWNER_KEY, profileId);
+            else localStorage.removeItem(LOCAL_OWNER_KEY);
+          } catch (e) { /* private mode */ }
+        }
+
+        /**
+         * Local settings belong to the account that wrote them. Signing out, or
+         * a session changing to a different account, must not leave the previous
+         * student's courses, friends or copied schedules for the next person.
+         */
+        function clearLocalAccountData() {
+          state.blockPrefs = H.createEmptyPreferences();
+          state.schedulePrefs = Object.assign({}, H.DEFAULT_SCHEDULE_PREFERENCES);
+          state.friends = [];
+          removedFriends = [];
+          H.saveBlockPrefs(state.blockPrefs);
+          H.saveSchedulePrefs(state.schedulePrefs);
+          H.saveFriends([]);
+          H.saveSelectedFriend('');
+          H.saveIdentity({});
+          saveRemovedFriends([]);
+          saveLocalOwner('');
+          timeFormat.value = state.schedulePrefs.timeFormat;
+          gradeSelect.value = '';
+          lunchSelect.value = '';
         }
 
         function persist() {
@@ -617,6 +656,45 @@
 
         // --- friends ------------------------------------------------------
         var friendRows = document.getElementById('friend-rows');
+        var friendsStatus = document.getElementById('friends-status');
+
+        // A quiet per-card menu: the remove action lives here instead of a
+        // noisy X on every row, and it is worded as a card action, not a
+        // revocation. `openMenu` survives re-renders so the menu stays open
+        // while the row behind it is rebuilt.
+        var openMenu = null;
+        var REMOVED_FRIENDS_KEY = 'removedFriends';
+
+        function loadRemovedFriends() {
+          try {
+            var stored = JSON.parse(localStorage.getItem(REMOVED_FRIENDS_KEY) || '[]');
+            if (!Array.isArray(stored)) return [];
+            return stored.map(function (id) { return H.normalizeEmail(id); }).filter(Boolean);
+          } catch (e) { return []; }
+        }
+
+        function saveRemovedFriends(list) {
+          try { localStorage.setItem(REMOVED_FRIENDS_KEY, JSON.stringify(list || [])); } catch (e) { /* private mode */ }
+        }
+
+        // People removed from the card whose schedule access still exists. They
+        // stay in the tab as access rows (so access can still be managed), but
+        // a grants refresh must not quietly put them back on the card.
+        var removedFriends = loadRemovedFriends();
+
+        function setFriendsStatus(message, kind) {
+          friendsStatus.textContent = message;
+          friendsStatus.className = 'class-settings__account-status'
+            + (kind ? ' class-settings__account-status--' + kind : '');
+          friendsStatus.hidden = !message;
+        }
+
+        /** The live grant for a profile on one side of the graph. */
+        function grantFor(list, profileId) {
+          return (list || []).filter(function (grant) {
+            return grant.profileId === profileId;
+          })[0];
+        }
 
         // Drag to reorder, as on the extension's Toppings page. A plain drag is
         // unreliable on touch, so the grip also takes arrow keys and a click
@@ -635,6 +713,18 @@
           friendDropTarget.classList.remove('is-drop-target');
           friendDropTarget = null;
         }
+
+        document.addEventListener('pointerdown', function (event) {
+          if (!openMenu || event.target.closest('.class-settings__overflow-wrap')) return;
+          openMenu = null;
+          renderFriends();
+        });
+
+        document.addEventListener('keydown', function (event) {
+          if (event.key !== 'Escape' || !openMenu) return;
+          openMenu = null;
+          renderFriends();
+        });
 
         /** Everyone who belongs on this tab: saved friends plus anyone who
          *  holds access in either direction but is not on the card yet. */
@@ -677,6 +767,18 @@
             });
             open.addEventListener('click', function () { openSchedule(profileId); });
             pills.appendChild(open);
+            // Giving up access is a different act from revoking someone's
+            // access to you, so it gets its own named control, not a reuse of
+            // Revoke.
+            var stop = el('button', {
+              type: 'button',
+              class: 'class-settings__pill class-settings__pill--action',
+              'aria-label': 'Stop seeing ' + label + "'s schedule",
+              title: 'Stop seeing their schedule',
+              text: 'Stop seeing'
+            });
+            stop.addEventListener('click', function () { stopViewing(canSee, label); });
+            pills.appendChild(stop);
           }
           if (canBeSeen) {
             pills.appendChild(el('span', {
@@ -694,8 +796,8 @@
             revoke.addEventListener('click', function () {
               if (!window.confirm('Revoke access for ' + label + '? They will be told.')) return;
               A.revokeGrant(canBeSeen.id).then(function (result) {
-                if (!result.ok) { setAccountStatus(friendlyError(result), 'error'); return; }
-                setAccountStatus('Access revoked. They will be told the next time they sign in.', 'success');
+                if (!result.ok) { setFriendsStatus(friendlyError(result), 'error'); return; }
+                setFriendsStatus('Access revoked. They will be told the next time they sign in.', 'success');
                 refreshGrants();
               });
             });
@@ -709,6 +811,100 @@
             }));
           }
           return pills;
+        }
+
+        /**
+         * The quiet per-card overflow. A local friend can be removed from the
+         * card (which deletes the copy in this browser); someone who still has
+         * access but is no longer on the card can be put back on it. The menu
+         * deliberately offers neither Revoke nor Stop seeing: those change
+         * access and live on the pills, where they are named.
+         */
+        function friendMenu(person, label) {
+          var viewingGrant = grantFor(latestGrants.viewing, person.email);
+          if (!person.friend && !viewingGrant) return null;
+          var wrap = el('span', { class: 'class-settings__overflow-wrap' });
+          var isOpen = openMenu === person.email;
+          var button = el('button', {
+            type: 'button',
+            class: 'class-settings__overflow',
+            'aria-label': 'More actions for ' + label,
+            'aria-haspopup': 'menu',
+            'aria-expanded': isOpen ? 'true' : 'false',
+            text: '\u22ef'
+          });
+          button.addEventListener('click', function (event) {
+            event.stopPropagation();
+            openMenu = isOpen ? null : person.email;
+            renderFriends();
+          });
+          wrap.appendChild(button);
+
+          if (!isOpen) return wrap;
+
+          var menu = el('div', { class: 'class-settings__friend-menu', role: 'menu' });
+          var item;
+          if (person.friend) {
+            item = el('button', {
+              type: 'button', class: 'class-settings__menu-item', role: 'menuitem',
+              text: 'Remove from card'
+            });
+            item.addEventListener('click', function () { unfriendPerson(person.friend, label); });
+          } else {
+            item = el('button', {
+              type: 'button', class: 'class-settings__menu-item', role: 'menuitem',
+              text: 'Add to card'
+            });
+            item.addEventListener('click', function () {
+              openMenu = null;
+              addFriendFromProfile(person.grant);
+              setFriendsStatus(label + ' is back on your card.', 'success');
+            });
+          }
+          menu.appendChild(item);
+          wrap.appendChild(menu);
+          return wrap;
+        }
+
+        function unfriendPerson(friend, label) {
+          if (!window.confirm(
+            'Remove ' + label + ' from your card? This deletes the copy of their schedule saved in this browser. '
+            + 'Their access to your schedule is not changed.'
+          )) return;
+          var hadAccess = Boolean(grantFor(latestGrants.viewing, friend.email));
+          state.friends = H.removeFriend(state.friends, friend.email);
+          H.saveFriends(state.friends);
+          if (H.loadSelectedFriend() === friend.email) H.saveSelectedFriend('');
+          // A live grant would otherwise re-adopt them on the next refresh.
+          if (hadAccess && removedFriends.indexOf(friend.email) < 0) {
+            removedFriends.push(friend.email);
+            saveRemovedFriends(removedFriends);
+          }
+          openMenu = null;
+          setFriendsStatus(
+            label + ' was removed from your card.'
+            + (hadAccess ? ' You can still see their schedule until you choose Stop seeing.' : ''),
+            'success'
+          );
+          renderFriends();
+        }
+
+        function stopViewing(grant, label) {
+          if (!window.confirm(
+            'Stop seeing ' + label + "'s schedule? The copy saved in this browser will be deleted. "
+            + 'This does not change who can see your schedule.'
+          )) return;
+          A.stopViewing(grant.id).then(function (result) {
+            if (!result.ok) { setFriendsStatus(friendlyError(result), 'error'); return; }
+            state.friends = H.removeFriend(state.friends, grant.profileId);
+            H.saveFriends(state.friends);
+            if (H.loadSelectedFriend() === grant.profileId) H.saveSelectedFriend('');
+            removedFriends = removedFriends.filter(function (id) { return id !== grant.profileId; });
+            saveRemovedFriends(removedFriends);
+            openMenu = null;
+            setFriendsStatus('You can no longer see ' + label + "'s schedule.", 'success');
+            refreshGrants();
+          });
         }
 
         function renderFriends() {
@@ -757,10 +953,13 @@
               el('strong', { text: label }),
               el('span', { class: 'class-settings__friend-meta', text: meta.join(' \u00b7 ') })
             ]);
+            var pills = friendPills(person.email, label);
+            var menu = friendMenu(person, label);
+            if (menu) pills.appendChild(menu);
             var parts = [];
             if (friend) parts.push(grip);
             parts.push(info);
-            parts.push(friendPills(person.email, label));
+            parts.push(pills);
             var row = el('div', {
               class: 'class-settings__friend-row'
                 + (friend ? ' class-settings__friend-row--sortable' : '')
@@ -870,6 +1069,8 @@
             // they cannot outlive the session that produced them.
             latestNotices = [];
             latestRequests = { incoming: [], outgoing: [] };
+            latestGrants = { viewers: [], viewing: [] };
+            appliedProfileId = null;
             renderNotices();
             return;
           }
@@ -894,6 +1095,23 @@
           // The grade switch narrows automatic approval, so it is only offered
           // while automatic approval is on.
           autoGrantGradeRow.hidden = !autoGrant.checked;
+
+          // A different account in the same browser starts from its own data,
+          // never the previous account's local copy. The owner check also
+          // catches a cold load, where appliedProfileId has no history yet.
+          var localOwner = loadLocalOwner();
+          if ((localOwner && localOwner !== me.profileId)
+            || (appliedProfileId && appliedProfileId !== me.profileId)) {
+            clearLocalAccountData();
+            appliedProfileId = null;
+            latestGrants = { viewers: [], viewing: [] };
+            latestNotices = [];
+            latestRequests = { incoming: [], outgoing: [] };
+            renderRows();
+            renderFriends();
+            renderNotices();
+          }
+          saveLocalOwner(me.profileId);
 
           if (appliedProfileId !== me.profileId) {
             appliedProfileId = me.profileId;
@@ -1113,7 +1331,11 @@
         });
 
         topbarAuth.addEventListener('click', function () {
-          A.signOut().then(function () { window.location.reload(); });
+          A.signOut().then(function () {
+            // This browser is no longer that account's. Take its copy with it.
+            clearLocalAccountData();
+            window.location.reload();
+          });
         });
 
         document.getElementById('copy-profile-id').addEventListener('click', function () {
@@ -1244,6 +1466,8 @@
          * and only costs the course detail.
          */
         function addFriendFromProfile(profile) {
+          removedFriends = removedFriends.filter(function (id) { return id !== profile.profileId; });
+          saveRemovedFriends(removedFriends);
           var base = H.normalizeFriend({ name: profile.displayName || '', email: profile.profileId });
           state.friends = H.upsertFriend(state.friends, base);
           H.saveFriends(state.friends);
@@ -1353,6 +1577,14 @@
           A.listGrants().then(function (result) {
             if (!result.ok) return;
             latestGrants = result.data;
+            // A tombstone only makes sense while the access still exists; once
+            // the grant is gone, forget it so a new grant can adopt normally.
+            var viewingIds = (result.data.viewing || []).map(function (grant) { return grant.profileId; });
+            var kept = removedFriends.filter(function (id) { return viewingIds.indexOf(id) >= 0; });
+            if (kept.length !== removedFriends.length) {
+              removedFriends = kept;
+              saveRemovedFriends(kept);
+            }
             // A grant is the permission; the card's friend list is derived from
             // it. Merging here means someone whose request was accepted appears
             // on the card without having to come back and add them by hand.
@@ -1367,6 +1599,10 @@
         function adoptGrantedFriends(viewing) {
           var before = state.friends.length;
           viewing.forEach(function (grant) {
+            // Removed from the card on purpose. Keep them as an access row in
+            // this tab, but do not put them back on the card behind the user's
+            // back on the next grants refresh.
+            if (removedFriends.indexOf(grant.profileId) >= 0) return;
             var friend = H.normalizeFriend({ name: grant.displayName || '', email: grant.profileId });
             state.friends = H.upsertFriend(state.friends, friend);
           });
@@ -1449,7 +1685,10 @@
         function noticeActions(notice) {
           var actions = el('div', { class: 'class-settings__notice-actions' });
           var request = N.requestFor(notice, latestRequests);
-          if (notice.kind === 'request.received' && request && request.status === 'pending') {
+          // An ask still waiting on this account needs a decision; its row is
+          // not a message that can be cleared away.
+          var awaiting = N.awaiting(notice, latestRequests, latestGrants);
+          if (awaiting) {
             var accept = el('button', { type: 'button', class: 'primary', text: 'Accept' });
             var decline = el('button', { type: 'button', class: 'secondary', text: 'Decline' });
             accept.addEventListener('click', function (e) { e.stopPropagation(); decideNotice(notice, 'accept'); });
@@ -1471,17 +1710,19 @@
               });
             });
             actions.appendChild(restore);
-          } else {
+          } else if (notice.kind !== 'request.received') {
             var ask = el('button', { type: 'button', class: 'secondary', text: 'Ask for their schedule' });
             ask.addEventListener('click', function (e) { e.stopPropagation(); askFromNotice(notice); });
             actions.appendChild(ask);
           }
-          var clear = el('button', { type: 'button', class: 'tertiary', text: 'Clear' });
-          clear.addEventListener('click', function (e) {
-            e.stopPropagation();
-            dismissNotice(notice.id).then(function () { refreshNotices(); });
-          });
-          actions.appendChild(clear);
+          if (!awaiting) {
+            var clear = el('button', { type: 'button', class: 'tertiary', text: 'Clear' });
+            clear.addEventListener('click', function (e) {
+              e.stopPropagation();
+              dismissNotice(notice.id).then(function () { refreshNotices(); });
+            });
+            actions.appendChild(clear);
+          }
           return actions;
         }
 
@@ -1509,7 +1750,7 @@
 
           // Notices and the pending requests this student sent share one list,
           // newest first -- the same list and order the bell uses.
-          var entries = N.entries(latestNotices, latestRequests);
+          var entries = N.entries(latestNotices, latestRequests, latestGrants);
           // With nothing to read there is nothing to mark read.
           noticesSeenButton.hidden = notices.length === 0;
 

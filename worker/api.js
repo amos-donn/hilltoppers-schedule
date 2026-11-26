@@ -38,6 +38,8 @@
  *   POST /api/requests/:id     accept or decline an incoming request
  *   GET  /api/grants           who can see my schedule, and whose I can see
  *   DELETE /api/grants/:id     revoke someone's access
+ *   DELETE /api/grants/viewing/:id
+ *                              give up access to someone else's schedule
  *   GET  /api/notices          my notices (e.g. "your access was revoked")
  *   POST /api/notices/seen     mark notices as read
  *   GET  /api/schedule/:profileId
@@ -1464,6 +1466,28 @@ async function handleRevokeGrant(env, account, grantId) {
 }
 
 /**
+ * The viewer's own side of a grant: stop seeing a schedule someone shared.
+ *
+ * This is deliberately not the owner route. A viewer may end their own access
+ * without touching the owner's list of people who can see *their* schedule,
+ * and the owner is not told because nothing of theirs changed.
+ */
+async function handleRevokeViewingGrant(env, account, grantId) {
+  const row = await env.DB.prepare(
+    'SELECT * FROM grants WHERE id = ? AND viewer_account_id = ?'
+  )
+    .bind(grantId, account.id)
+    .first();
+  if (!row) return json({ error: 'not_found' }, 404);
+  if (row.revoked_at) return json({ ok: true });
+
+  await env.DB.prepare('UPDATE grants SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL')
+    .bind(nowSeconds(), row.id)
+    .run();
+  return json({ ok: true });
+}
+
+/**
  * The grants that were made by auto approval.
  *
  * While an account had `auto_grant` on, a request wrote the grant and returned
@@ -1755,7 +1779,7 @@ export default {
  * /api/version in a browser is how a deploy is confirmed to have landed,
  * instead of guessed at from the page's behaviour.
  */
-const WORKER_BUILD = '2026-11-26-n';
+const WORKER_BUILD = '2026-11-26-o';
 
 async function route(request, env, url, path, method) {
   if (path === '/api/version' && method === 'GET') {
@@ -1802,6 +1826,10 @@ async function route(request, env, url, path, method) {
 
   if (path === '/api/grants' && method === 'GET') return handleListGrants(env, account);
   if (path === '/api/grants/restore' && method === 'POST') return handleRestoreGrants(request, env, account);
+  const viewingMatch = path.match(/^\/api\/grants\/viewing\/(\d+)$/);
+  if (viewingMatch && method === 'DELETE') {
+    return handleRevokeViewingGrant(env, account, Number(viewingMatch[1]));
+  }
   const revokeMatch = path.match(/^\/api\/grants\/(\d+)$/);
   if (revokeMatch && method === 'DELETE') {
     return handleRevokeGrant(env, account, Number(revokeMatch[1]));

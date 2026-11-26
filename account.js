@@ -162,6 +162,11 @@
     return api('/api/grants/' + encodeURIComponent(id), { method: 'DELETE' });
   }
 
+  /** Give up access this account holds to someone else's schedule. */
+  function stopViewing(id) {
+    return api('/api/grants/viewing/' + encodeURIComponent(id), { method: 'DELETE' });
+  }
+
   function listNotices() {
     return api('/api/notices');
   }
@@ -205,6 +210,7 @@
     restoreGrants: restoreGrants,
     getSocialWeb: function () { return api('/api/social-web'); },
     revokeGrant: revokeGrant,
+    stopViewing: stopViewing,
     listNotices: listNotices,
     markNoticesSeen: markNoticesSeen,
     dismissNotice: dismissNotice,

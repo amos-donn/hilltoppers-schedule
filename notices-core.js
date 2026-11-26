@@ -152,17 +152,67 @@
    * Notices and the requests this account sent share one list, newest first. A
    * sent request makes no notice for the sender, so without its own row it
    * would appear nowhere.
+   *
+   * The same is true, more importantly, of a request waiting on *this* account.
+   * Its only row used to be the `request.received` notice: once that was
+   * cleared, pushed off the 50-row page, or missed by a cached list, the
+   * request still existed and still counted as Pending but had nothing left to
+   * accept or decline. So an incoming pending request with no notice gets a
+   * synthetic notice-shaped row here. It reads and acts exactly like the real
+   * one, but it is never written to and cannot be cleared.
    */
-  function entries(notices, requests) {
-    var list = renderable(notices).map(function (notice) {
+  function entries(notices, requests, grants) {
+    var shown = renderable(notices);
+    var list = shown.map(function (notice) {
       return { at: notice.createdAt || 0, notice: notice };
     });
+
+    // A notice covers its ask by naming the same person. Anything already
+    // decided, or already answered by a grant, is not waiting on this account.
+    var covered = {};
+    shown.forEach(function (notice) {
+      if (notice.kind !== 'request.received') return;
+      var profileId = notice.actorProfileId || (notice.payload && notice.payload.profileId);
+      if (profileId) covered[profileId] = true;
+    });
+    ((requests && requests.incoming) || []).forEach(function (request) {
+      if (request.status !== 'pending' || !request.profileId) return;
+      if (covered[request.profileId]) return;
+      if (hasGrant(request.profileId, grants, 'viewers')) return;
+      list.push({
+        at: request.createdAt || 0,
+        notice: {
+          id: 'request-' + request.id,
+          kind: 'request.received',
+          payload: { profileId: request.profileId, displayName: request.displayName || '' },
+          actorProfileId: request.profileId,
+          actorName: request.displayName || '',
+          createdAt: request.createdAt || 0,
+          seen: true,
+          synthetic: true
+        }
+      });
+    });
+
     ((requests && requests.outgoing) || []).forEach(function (request) {
       if (request.status !== 'pending') return;
       list.push({ at: request.createdAt || 0, outgoing: request });
     });
     list.sort(function (a, b) { return b.at - a.at; });
     return list;
+  }
+
+  /**
+   * True for a request notice that still needs this account's decision. A live
+   * grant answers the ask even when the request row was never updated, and a
+   * synthetic row is by construction still waiting.
+   */
+  function awaiting(notice, requests, grants) {
+    if (!notice || notice.kind !== 'request.received') return false;
+    var profileId = notice.actorProfileId || (notice.payload && notice.payload.profileId);
+    if (hasGrant(profileId, grants, 'viewers')) return false;
+    var request = requestFor(notice, requests);
+    return Boolean(request && request.status === 'pending');
   }
 
   /**
@@ -185,6 +235,7 @@
     askedStatus: askedStatus,
     status: status,
     entries: entries,
+    awaiting: awaiting,
     unread: unread
   };
 })();

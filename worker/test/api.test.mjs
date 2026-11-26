@@ -979,6 +979,61 @@ await test('deleting an account cascades and notifies viewers', async () => {
   );
 });
 
+await test('a viewer can give up access without the owner revoking it', async () => {
+  // The owner's Revoke is not the only way out of a share. A viewer must be
+  // able to stop seeing a schedule themselves, and only their own share.
+  const env = makeEnv();
+  const ownerCookie = await signIn(env, { sub: 'give-owner', email: 'give.owner@example.com', name: 'Give Owner' });
+  const owner = (await call(env, '/api/me', { cookie: ownerCookie })).body;
+  const viewerCookie = await signIn(env, { sub: 'give-viewer', email: 'give.viewer@example.com', name: 'Give Viewer' });
+  const viewer = (await call(env, '/api/me', { cookie: viewerCookie })).body;
+
+  const ask = await call(env, '/api/requests', {
+    method: 'POST',
+    cookie: viewerCookie,
+    body: { profileId: owner.profileId },
+  });
+  assert.equal(ask.body.status, 'pending');
+
+  const pending = await call(env, '/api/requests', { cookie: ownerCookie });
+  const requestId = pending.body.incoming[0].id;
+  await call(env, `/api/requests/${requestId}`, {
+    method: 'POST',
+    cookie: ownerCookie,
+    body: { decision: 'accept' },
+  });
+
+  assert.equal((await call(env, `/api/schedule/${owner.profileId}`, { cookie: viewerCookie })).status, 200);
+  const viewing = await call(env, '/api/grants', { cookie: viewerCookie });
+  const grant = viewing.body.viewing.find((entry) => entry.profileId === owner.profileId);
+  assert.ok(grant, 'the viewer holds the share');
+
+  // The owner cannot end it through the viewer endpoint, and neither can
+  // anyone who is not the viewer.
+  const wrongSide = await call(env, `/api/grants/viewing/${grant.id}`, {
+    method: 'DELETE',
+    cookie: ownerCookie,
+  });
+  assert.equal(wrongSide.status, 404, 'only the viewer may give up their own access');
+
+  const stop = await call(env, `/api/grants/viewing/${grant.id}`, {
+    method: 'DELETE',
+    cookie: viewerCookie,
+  });
+  assert.equal(stop.status, 200);
+  assert.equal((await call(env, `/api/schedule/${owner.profileId}`, { cookie: viewerCookie })).status, 403,
+    'access stops immediately');
+
+  const ownerGrants = await call(env, '/api/grants', { cookie: ownerCookie });
+  assert.equal(ownerGrants.body.viewers.length, 0, 'the owner no longer lists a live grant');
+
+  const again = await call(env, `/api/grants/viewing/${grant.id}`, {
+    method: 'DELETE',
+    cookie: viewerCookie,
+  });
+  assert.equal(again.status, 200, 'giving up an already-ended share is harmless');
+});
+
 console.log(results.join('\n'));
 console.log(`\n${passed} passed, ${results.length - passed} failed`);
 process.exit(results.length - passed ? 1 : 0);
