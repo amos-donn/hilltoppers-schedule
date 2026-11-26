@@ -1751,6 +1751,11 @@ header {
 
 .notices-card__row + .notices-card__row { border-top: 1px solid #f0f2f4; }
 .notices-card__row.is-new { background: #f4f8ff; }
+
+/* A row is a button: clicking one dismisses it. */
+.notices-card__row[role="button"] { cursor: pointer; }
+.notices-card__row[role="button"]:hover { background: #eef2f6; }
+.notices-card__row[role="button"]:focus-visible { outline: 2px solid #2f6b3f; outline-offset: 1px; }
 .notices-card__empty { margin: 0; padding: 8px; font-size: 12px; color: #7d8591; }
 
 .notices-card__list { margin-bottom: 6px; }

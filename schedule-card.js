@@ -196,6 +196,11 @@
     var note = el('p', { class: 'notices-card__note' });
     note.hidden = true;
     var footer = el('div', { class: 'notices-card__footer' }, [toggleLabel, gradeLabel, restore, note]);
+    // These controls change an account's settings, so they wait for one: a
+    // signed-out visitor never gave access and has nothing to restore. The
+    // account read below reveals them; a frame that cannot keep a session
+    // never shows them at all.
+    footer.hidden = true;
 
     var wrapper = el('div', { class: 'settings-button-wrapper notices-wrapper' }, [
       button,
@@ -210,11 +215,35 @@
         list.appendChild(el('p', { class: 'notices-card__empty', text: 'Nothing new.' }));
         return;
       }
+      // Each row can be dismissed. Opening the bell used to only mark the list
+      // read, so a row stayed there for good: there was no way to remove one,
+      // and an old one read as something that would not go away.
       notices.slice(0, 8).forEach(function (notice) {
-        list.appendChild(el('p', {
+        var row = el('p', {
           class: 'notices-card__row' + (notice.seen ? '' : ' is-new'),
-          text: noticeText(notice)
-        }));
+          text: noticeText(notice),
+          role: 'button',
+          tabindex: '0',
+          title: 'Dismiss this notice'
+        });
+        function dismiss(event) {
+          if (event) event.stopPropagation();
+          row.remove();
+          if (!list.querySelector('.notices-card__row')) {
+            list.replaceChildren(el('p', { class: 'notices-card__empty', text: 'Nothing new.' }));
+          }
+          // A stale account.js may not carry the export; the row still leaves
+          // the page, and the next read from the server brings it back only if
+          // it truly was not deleted.
+          if (window.HTAccount && typeof window.HTAccount.dismissNotice === 'function') {
+            window.HTAccount.dismissNotice(notice.id);
+          }
+        }
+        row.addEventListener('click', dismiss);
+        row.addEventListener('keydown', function (event) {
+          if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); dismiss(event); }
+        });
+        list.appendChild(row);
       });
     }
 
@@ -237,6 +266,7 @@
       });
       if (typeof window.HTAccount.refresh === 'function') {
         window.HTAccount.refresh().then(function (me) {
+          footer.hidden = !me;
           if (!me) return;
           toggle.checked = me.autoGrant === true;
           gradeToggle.checked = me.autoGrantGradeOnly === true;
@@ -255,8 +285,11 @@
     function restoredNote(result) {
       restore.disabled = false;
       note.hidden = false;
+      var restored = result && result.ok ? (result.data.restored || 0) : 0;
       note.textContent = result && result.ok
-        ? 'Access restored for ' + (result.data.restored || 0) + (result.data.restored === 1 ? ' person.' : ' people.')
+        ? (restored > 0
+            ? 'Access restored for ' + restored + (restored === 1 ? ' person.' : ' people.')
+            : 'Nothing to restore.')
         : 'Could not restore access. Try again.';
     }
 

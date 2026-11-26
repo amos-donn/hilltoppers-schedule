@@ -12,7 +12,7 @@
       standalone so it can be embedded as a Topping. The CSS below is the
       extension's popup.css, copied unchanged, so the card renders identically.
     -->
-    <link rel="stylesheet" href="popup.css?v=20261126f" />
+    <link rel="stylesheet" href="popup.css?v=20261126g" />
     <!--
       In the extension the popup is a 352px window with a 320px card inside it.
       Embedded as a Topping the host picks the width. Only the day card runs to
@@ -149,10 +149,49 @@
     -->
     <div id="root" data-topping-content></div>
 
+    <!--
+      Safety net for a card frame that outlived a deploy.
+
+      An earlier build drew an auto-grant apology into this card ("We screwed
+      up...") with a button to restore everyone's access. It decided whether to
+      draw it from localStorage, which a Topping frame partitions away, so the
+      answer was always "not answered yet" -- and it never checked whether
+      anyone was signed in, so a signed-out visitor got it too, offering to
+      restore access they had never given. That build is gone from the site,
+      but a frame keeps running the script it loaded with, so this runs from the
+      document itself, before the card: the stored answer suppresses the banner
+      outright, and the sweep removes one if a cached script paints it anyway.
+      On a current build both are no-ops -- no flag is read, no such element
+      exists.
+    -->
+    <script>
+      (function () {
+        'use strict';
+        try { window.localStorage.setItem('apologySeen', '1'); } catch (e) { /* partitioned frame */ }
+
+        var STALE = /we screwed up|auto-grant was on by default|restore everyone/i;
+        function sweep() {
+          var nodes = document.querySelectorAll('.apology, .notices-card__row');
+          for (var i = nodes.length - 1; i >= 0; i--) {
+            var node = nodes[i];
+            if (node.classList.contains('apology') || STALE.test(node.textContent || '')) {
+              if (node.parentNode) node.parentNode.removeChild(node);
+            }
+          }
+        }
+        sweep();
+        if (window.MutationObserver) {
+          var observer = new MutationObserver(sweep);
+          observer.observe(document.documentElement, { childList: true, subtree: true });
+          setTimeout(function () { observer.disconnect(); }, 20000);
+        }
+      })();
+    </script>
+
     <script src="schedule-core.js?v=20260928h"></script>
     <script src="account.js?v=20261126c"></script>
     <script src="schedule-friends.js?v=20260928h"></script>
-    <script src="schedule-card.js?v=20261126k"></script>
+    <script src="schedule-card.js?v=20261126m"></script>
     <script src="toppings-resize.js?v=20260928h" defer></script>
     <script>
       (function () {
