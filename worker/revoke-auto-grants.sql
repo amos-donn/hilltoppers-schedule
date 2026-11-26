@@ -1,5 +1,8 @@
 -- Revoke every grant that auto approval made, without the Worker script.
 --
+-- The D1 console runs what you paste with no bound parameters, so there are no
+-- "?" placeholders anywhere below: every value is a literal.
+--
 -- Paste into the Cloudflare dashboard: Workers & Pages -> D1 -> the database ->
 -- Console. Run the three blocks in order; each one is meant to be read before
 -- the next is run.

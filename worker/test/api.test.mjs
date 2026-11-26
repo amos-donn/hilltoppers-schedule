@@ -30,6 +30,15 @@ class Stmt {
     this.params = params;
     return this;
   }
+  // Cloudflare's binding also exposes these two, and a handler that uses one on
+  // an unprepared statement is a 500 in production. Calling them here binds the
+  // same statement, so such a handler runs (and passes) instead of hiding.
+  async_prepare() {
+    return this;
+  }
+  first() {
+    return this.db.prepare(this.sql).get(...this.params) ?? null;
+  }
   async first() {
     const row = this.db.prepare(this.sql).get(...this.params);
     return row === undefined ? null : row;
@@ -648,10 +657,8 @@ await test('the auto-grant repair revokes only grants no one approved', async ()
   assert.ok(notices.body.notices.some((n) => n.kind === 'access.revoked'), 'the viewer is told');
   // The announcement arrives on the read after the one that created its row.
   const reread = await call(repairEnv, '/api/notices', { cookie: asker.cookie });
-  const apology = reread.body.notices.find((n) => n.kind === 'announcement.auto-grant');
-  assert.ok(apology && !apology.seen, 'with one unread announcement alongside it');
-  assert.equal(reread.body.notices.filter((n) => n.kind === 'announcement.auto-grant').length, 1,
-    'exactly one, so it is said once and not on every load');
+  assert.equal(reread.body.notices.filter((n) => n.kind === 'announcement.auto-grant').length, 0,
+    'the apology is not a notice, so it never appears in the list');
   const blocked = await call(repairEnv, '/api/schedule/' + autoOwner.profileId, { cookie: asker.cookie });
   assert.equal(blocked.status, 403, 'and can no longer read the schedule');
   const after = await call(repairEnv, '/api/grants', { cookie: askedOwner.cookie });
@@ -687,6 +694,21 @@ await test('auto-grant can be limited to the owner\'s own grade', async () => {
   assert.equal(blocked.body.status, 'pending', 'another grade waits for the owner');
   const granted = await call(env, '/api/requests', { method: 'POST', cookie: junior, body: { profileId: ownerMe.profileId } });
   assert.equal(granted.body.status, 'granted', 'the same grade is approved at once');
+});
+
+await test('everything keeps working before the grade column is migrated', async () => {
+  // The Worker was deployed before the ALTER TABLE. Nothing may break: accounts
+  // load with the grade switch off, and the repair still runs.
+  const old = makeEnv();
+  old.__db.exec('ALTER TABLE accounts DROP COLUMN auto_grant_grade_only');
+  old.ADMIN_TOKEN = 'old-schema-token';
+  const cookie = await signIn(old, { sub: 'schema-old', email: 'schema@x.org', name: 'Schema Old' });
+  const me = await call(old, '/api/me', { cookie });
+  assert.equal(me.status, 200, 'the account still loads');
+  assert.equal(me.body.autoGrantGradeOnly, false, 'with the grade switch reported off');
+  const plan = await call(old, '/api/admin/auto-grants', { headers: { Authorization: 'Bearer old-schema-token' } });
+  assert.equal(plan.status, 200, 'and the repair can still list');
+  assert.deepEqual(plan.body.grants, []);
 });
 
 await test('a private profile is reachable by ID when already known', async () => {

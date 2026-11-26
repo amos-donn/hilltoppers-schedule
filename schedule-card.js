@@ -28,6 +28,9 @@
         else if (k === 'text') node.textContent = props[k];
         else if (k === 'html') node.innerHTML = props[k];
         else if (k === 'style') Object.assign(node.style, props[k]);
+        // A boolean property on an input (checked, disabled) set as an attribute
+        // does not always take; setProperty makes the box actually show it.
+        else if (k === 'checked' || k === 'disabled') node[k] = !!props[k];
         else if (props[k] !== null && props[k] !== undefined) node.setAttribute(k, props[k]);
       });
     }
@@ -154,9 +157,60 @@
       'request.received': who ? who + ' asked for your schedule.' : 'Someone asked for your schedule.',
       'request.accepted': who ? who + ' accepted your request.' : 'Someone accepted your request.',
       'request.declined': who ? who + ' declined your request.' : 'Someone declined your request.',
-      'announcement.auto-grant': 'We screwed up. Auto-grant was on by default when the page said it would be off by default. All of those connections were severed, and each one is now a request waiting on you to approve.'
     };
     return kinds[notice.kind] || notice.kind;
+  }
+
+
+  // The apology is drawn here rather than posted as a notice: it is not
+  // something to read later and clear, it is a state of the app for a week. The
+  // API says when it is on (/api/me -> announcement); the card renders it above
+  // everything else, and dismissing it only hides this browser's copy.
+  var APOLOGY_TEXT = 'We screwed up. Auto-grant was on by default when the page said it '
+    + 'would be off by default. All of those connections were severed, and each one is '
+    + 'now a request waiting on you to approve.';
+
+  function apologyBanner(onRestored) {
+    var banner = el('section', { class: 'apology', role: 'status', 'aria-label': 'About your access requests' });
+    banner.hidden = true;
+    var text = el('p', { class: 'apology__text', text: APOLOGY_TEXT });
+    var restore = el('button', { class: 'apology__restore', type: 'button', text: 'Restore everyone’s access' });
+    var keep = el('button', { class: 'apology__keep', type: 'button', text: 'Leave it to me' });
+    var note = el('p', { class: 'apology__note' });
+    note.hidden = true;
+    banner.append(
+      el('div', { class: 'apology__body' }, [text]),
+      el('div', { class: 'apology__actions' }, [restore, keep]),
+      note
+    );
+
+    function hide() {
+      banner.hidden = true;
+      try { window.localStorage.setItem('apologySeen', '1'); } catch (e) { /* private mode */ }
+    }
+
+    restore.addEventListener('click', function () {
+      restore.disabled = true;
+      window.HTAccount.restoreGrants().then(function (result) {
+        restore.disabled = false;
+        var n = result && result.ok ? (result.data.restored || 0) : -1;
+        if (n < 0) { note.hidden = false; note.textContent = 'Could not restore access. You can still do it from the bell.'; return; }
+        note.hidden = false;
+        note.textContent = n === 0 ? 'Nothing was waiting to be restored.' : 'Access restored for ' + n + (n === 1 ? ' person.' : ' people.');
+        keep.hidden = true;
+        if (onRestored) onRestored();
+      });
+    });
+    keep.addEventListener('click', function () { hide(); });
+
+    if (window.HTAccount && typeof window.HTAccount.refresh === 'function') {
+      window.HTAccount.refresh().then(function (me) {
+        var seen = false;
+        try { seen = window.localStorage.getItem('apologySeen') === '1'; } catch (e) { seen = false; }
+        banner.hidden = !(me && me.announcement) || seen;
+      });
+    }
+    return banner;
   }
 
   function noticesButton() {
@@ -174,15 +228,15 @@
     // The controls live in the popup, not the settings page: approve
     // automatically, narrow that to your own grade, and put back access this
     // account revoked.
-    var toggle = el('input', { type: 'checkbox', class: 'notices-card__check' });
+    var toggle = el('input', { type: 'checkbox', class: 'notices-card__check', value: 'on', 'aria-label': 'Approve requests automatically' });
     var toggleLabel = el('label', { class: 'notices-card__setting' }, [
       toggle, el('span', { text: 'Approve requests automatically' })
     ]);
-    var gradeToggle = el('input', { type: 'checkbox', class: 'notices-card__check' });
+    var gradeToggle = el('input', { type: 'checkbox', class: 'notices-card__check', value: 'on', 'aria-label': 'Only people in my grade' });
     var gradeLabel = el('label', { class: 'notices-card__setting' }, [
       gradeToggle, el('span', { text: 'Only people in my grade' })
     ]);
-    var restore = el('button', { class: 'notices-card__action', type: 'button', text: 'Restore revoked access' });
+    var restore = el('button', { class: 'notices-card__action notices-card__action--primary', type: 'button', text: 'Restore revoked access' });
     var note = el('p', { class: 'notices-card__note' });
     note.hidden = true;
     var footer = el('div', { class: 'notices-card__footer' }, [toggleLabel, gradeLabel, restore, note]);
@@ -250,13 +304,28 @@
 
     function close() { panel.hidden = true; button.setAttribute('aria-expanded', 'false'); }
 
+    // As a Topping the card sits in a frame a few hundred pixels wide, so the
+    // popup is positioned inside the card rather than floating out of it: it
+    // takes the card's width and starts at its left edge, never past either.
+    function place() {
+      var card = wrapper.closest('.primary-card');
+      if (!card) return;
+      var cardBox = card.getBoundingClientRect();
+      var buttonBox = button.getBoundingClientRect();
+      var width = Math.min(268, Math.max(200, cardBox.width - 8));
+      panel.style.width = width + 'px';
+      panel.style.left = Math.max(0, (buttonBox.left - cardBox.left) + buttonBox.width - width) + 'px';
+      panel.style.right = 'auto';
+    }
+
     button.addEventListener('click', function (event) {
       event.stopPropagation();
       var opening = panel.hidden;
       panel.hidden = !opening;
       button.setAttribute('aria-expanded', opening ? 'true' : 'false');
-      if (opening) { paint([]); load(true); }
+      if (opening) { place(); paint([]); load(true); }
     });
+    window.addEventListener('resize', function () { if (!panel.hidden) place(); });
     document.addEventListener('pointerdown', function (event) {
       if (!panel.hidden && !wrapper.contains(event.target)) close();
     });
@@ -581,7 +650,7 @@
         el('section', { class: 'status' }, [
           el('div', { class: 'status-heading-row' }, [
             el('p', { class: 'friend-heading', text: 'No friends yet' }),
-            el('div', { class: 'card-actions' }, [noticesButton(), settingsButton()])
+            noticesButton(), settingsButton()
           ]),
           el('div', { class: 'status-ended' }, [
             el('h2', { text: 'Get a life.' }),
@@ -628,6 +697,10 @@
       }
 
       var main = el('main', { class: 'popup' });
+
+      // Above the card and the friends: it is about the whole page's access,
+      // and only appears while the API says the window is open.
+      main.appendChild(apologyBanner());
 
       if (state.schedule.networkFailed === true && H.gradeFilteredBlocks(state.schedule.blocks, null).length === 0 && !state.schedule.dayType) {
         main.className = 'popup no-network';

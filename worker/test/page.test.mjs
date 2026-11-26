@@ -1129,44 +1129,6 @@ await test('the info card is dragged by its grip and stays where it is put', asy
   assert.equal(details.style.getPropertyValue('--details-y'), '-30px');
 });
 
-await test('the apology is shown once, and then only sits in the notices list', async () => {
-  // Every account now gets one announcement notice, written by the API on its
-  // first read. The page says it in a dialog the first time it sees it unread,
-  // marks it read, and never interrupts again -- the row stays so the wording
-  // is still findable.
-  //
-  // A brand-new account, so no earlier load has already created and marked the
-  // notice; then the dialog, the mark, and a second cold load of the page.
-  const cookie = await signInAs('sub-apology', 'apology@example.org', 'Apology');
-  await asOther(cookie, async () => {
-    // That read is what writes the row and shows it.
-    // The notices list is drawn and the dialog is decided from the same read.
-    const second = await window.HTAccount.listNotices();
-    assert.ok(second.data.notices.some((n) => n.kind === 'announcement.auto-grant'),
-      'the row arrives on the first read');
-    assert.equal(await window.HTAccount.markNoticesSeen().then(() => 1), 1);
-  });
-  const alerts = [];
-  const fresh = mountPage({ storage: { settingsTourSeen: 1 } });
-  fresh.window.alert = (message) => alerts.push(message);
-  // Poll rather than guess a number of ticks: the dialog waits for the notices
-  // request, and the test needs it to have landed, not to have had time to.
-  for (let i = 0; i < 200 && !alerts.length; i++) await wait(25);
-  assert.equal(alerts.length, 1, 'the dialog is shown on the first load');
-  assert.match(alerts[0], /We screwed up\./);
-  assert.match(alerts[0], /severed/);
-
-  // Marked read by showing it, so a reload is quiet.
-  const again = mountPage({ storage: { settingsTourSeen: 1, apologySeen: 1 } });
-  again.window.alert = (message) => alerts.push(message);
-  for (let i = 0; i < 200; i++) await wait(25);
-  assert.equal(alerts.length, 1, 'and not again on the next load');
-
-  const row = [...again.window.document.querySelectorAll('#notice-list .class-settings__notice')]
-    .find((r) => /Auto-grant was on/.test(r.textContent));
-  assert.ok(row, 'the notice itself stays, so the wording is still there to read');
-});
-
 await test('the person card says which grade they are in', async () => {
   // A grade is part of who someone is, so the card that names and numbers them
   // says it too: Frank opens Erin's card and reads "Erin · Sophomore".

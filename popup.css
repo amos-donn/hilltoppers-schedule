@@ -1718,7 +1718,8 @@ header {
 .notices-card {
   position: absolute;
   top: 36px;
-  right: 0;
+  left: 0;
+  right: auto;
   z-index: 20;
   width: 252px;
   max-height: 264px;
@@ -1747,7 +1748,7 @@ header {
 .notices-card__list { margin-bottom: 6px; }
 .notices-card__footer { border-top: 1px solid #eef0f2; padding-top: 8px; display: grid; gap: 6px; }
 .notices-card__setting { display: flex; align-items: center; gap: 7px; font-size: 12px; color: #2f3338; cursor: pointer; }
-.notices-card__check { margin: 0; }
+.notices-card__check { margin: 0; width: 14px; height: 14px; flex: none; accent-color: #2f6b3f; }
 .notices-card__action {
   border: 1px solid #dfe3e8;
   background: #fff;
@@ -1760,3 +1761,62 @@ header {
 }
 .notices-card__action:hover { background: #f5f7f9; }
 .notices-card__note { margin: 0; font-size: 11px; color: #5a6169; }
+
+/* --- the one-time apology, drawn in the card (not a notice) ---------------- */
+.apology {
+  margin: 0 0 12px;
+  padding: 12px 12px 10px;
+  border: 1px solid #cfe3d4;
+  border-radius: 12px;
+  background: #f1f8f2;
+  color: #1e2a22;
+}
+
+.apology__text {
+  margin: 0 0 10px;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.apology__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.apology__restore {
+  flex: 1 1 auto;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 9px;
+  background: #2f6b3f;
+  color: #ffffff;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.apology__restore:hover { background: #275c35; }
+.apology__restore:disabled { opacity: 0.6; cursor: default; }
+
+.apology__keep {
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid #c6d8ca;
+  border-radius: 9px;
+  background: transparent;
+  color: #2f4a37;
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.apology__keep:hover { background: #e6f1e8; }
+.apology__note { margin: 8px 0 0; font-size: 11.5px; color: #3f5a48; }
+
+/* Restore in the bell is the same action, so it looks like one. */
+.notices-card__action--primary {
+  border-color: #2f6b3f;
+  background: #2f6b3f;
+  color: #ffffff;
+  font-weight: 600;
+}
+.notices-card__action--primary:hover { background: #275c35; }

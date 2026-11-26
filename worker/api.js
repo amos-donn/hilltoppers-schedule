@@ -555,7 +555,9 @@ async function decryptAccount(env, row) {
     id: row.id,
     is_public: row.is_public,
     auto_grant: row.auto_grant,
-    auto_grant_grade_only: row.auto_grant_grade_only,
+    // Tolerated as missing: a Worker can be deployed before the column that
+    // adds it, and an account must still load while that is true.
+    auto_grant_grade_only: row.auto_grant_grade_only == null ? 0 : row.auto_grant_grade_only,
     social_web_opt_in: row.social_web_opt_in,
     created_at: row.created_at,
     updated_at: row.updated_at,
@@ -764,6 +766,12 @@ function publicSelf(row) {
     isPublic: Boolean(row.is_public),
     autoGrant: Boolean(row.auto_grant),
     autoGrantGradeOnly: Boolean(row.auto_grant_grade_only),
+    // When the apology is on screen. The card draws it itself; no notice row.
+    announcement: (() => {
+      const meta = ANNOUNCEMENTS['announcement.auto-grant'];
+      const now = nowSeconds();
+      return now >= meta.at && now <= meta.until ? { kind: 'announcement.auto-grant' } : null;
+    })(),
     socialWebOptIn: true, // Everyone participates; kept for older clients.
     timeFormat: row.time_format,
     grade: row.grade,
@@ -1572,23 +1580,6 @@ async function adminRoute(request, env, path, method) {
 async function handleListNotices(env, account) {
   const now = nowSeconds();
 
-  // Announcements are for everyone, and cost nothing for people who never open
-  // this tab: the row is written the first time their notices are read, which
-  // is also the read that shows it. After the announcement's window closes it
-  // is neither written nor shown, so it disappears for everyone on time.
-  for (const [kind, meta] of Object.entries(ANNOUNCEMENTS)) {
-    if (now < meta.at || now > meta.until) continue;
-    const already = await env.DB.prepare(
-      'SELECT id FROM notices WHERE account_id = ? AND kind = ? LIMIT 1'
-    ).bind(account.id, kind).first();
-    if (already) continue;
-    const payload = await encryptField(env, {}, noticeAad(account.id));
-    await env.DB.prepare(
-      `INSERT INTO notices (account_id, kind, payload, payload_enc, created_at)
-       VALUES (?, ?, '{}', ?, ?)`
-    ).bind(account.id, kind, payload, meta.at).run();
-  }
-
   const { results: rows } = await env.DB.prepare(
     `SELECT id, kind, payload, payload_enc, created_at, seen_at
        FROM notices WHERE account_id = ? ORDER BY created_at DESC LIMIT 50`
@@ -1623,11 +1614,9 @@ async function handleListNotices(env, account) {
       .run();
   }
 
-  // A notice still in the table after its announcement closed is not shown.
-  const shown = notices.filter(({ row }) => {
-    const meta = ANNOUNCEMENTS[row.kind];
-    return !meta || (now >= meta.at && now <= meta.until);
-  });
+  // An announcement is not a notice: it is always shown on its own, and never
+  // in the list. Rows written by an earlier version are filtered here too.
+  const shown = notices.filter(({ row }) => !ANNOUNCEMENTS[row.kind]);
 
   const actors = await accountsByProfileId(env, shown.map((n) => n.payload.profileId));
 
@@ -1736,6 +1725,17 @@ export default {
       return new Response(response.body, { status: response.status, headers });
     };
 
+    // Operator routes, authenticated by a secret rather than a session. They are
+    // answered here, before anything reads the accounts table, so a repair never
+    // depends on a column that is mid-migration being present.
+    if (path === '/api/admin/auto-grants' || path === '/api/admin/auto-grants/repair') {
+      try {
+        return withCors(await adminRoute(request, env, path, method));
+      } catch (err) {
+        return withCors(json({ error: 'server_error', detail: String(err && err.message) }, 500));
+      }
+    }
+
     try {
       const result = await route(request, env, url, path, method);
       return withCors(result);
@@ -1748,14 +1748,6 @@ export default {
 async function route(request, env, url, path, method) {
   if (path === '/api/auth/firebase' && method === 'POST') {
     return handleFirebaseSignIn(request, env);
-  }
-
-  // Operator routes, authenticated by a secret rather than a session, so a
-  // repair can be made without signing in as a student. They are registered
-  // before the session check so a missing secret fails as "off" rather than
-  // as "signed out".
-  if (path === '/api/admin/auto-grants' || path === '/api/admin/auto-grants/repair') {
-    return adminRoute(request, env, path, method);
   }
 
   if (path === '/api/auth/logout' && method === 'POST') {

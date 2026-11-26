@@ -1385,16 +1385,14 @@
           'access.granted': '%s can now see your schedule.',
           'request.received': '%s asked for your schedule.',
           'request.accepted': '%s accepted your request for their schedule.',
-          'request.declined': '%s declined your request for their schedule.',
-          'announcement.auto-grant': 'Auto-grant was on by default when the page said it would be off by default.'
+          'request.declined': '%s declined your request for their schedule.'
         };
         var NOTICE_TEXT_SOMEONE = {
           'access.revoked': 'Your access was revoked.',
           'access.granted': 'Someone can now see your schedule.',
           'request.received': 'Someone asked for your schedule.',
           'request.accepted': 'Someone accepted your request for a schedule.',
-          'request.declined': 'Someone declined your request for a schedule.',
-          'announcement.auto-grant': 'Auto-grant was on by default when the page said it would be off by default.'
+          'request.declined': 'Someone declined your request for a schedule.'
         };
 
         // Said once per browser, when the page opens, and then only in the
@@ -1407,7 +1405,6 @@
         var APOLOGY_KIND = 'announcement.auto-grant';
         // The page reloads its account on every sign-in change, and a second
         // dialog in the same visit would be nagging, not telling.
-        var reportedApology = false;
 
         var latestNotices = [];
         var latestRequests = { incoming: [], outgoing: [] };
@@ -1602,25 +1599,12 @@
          * being its own request, so the dialog and the row it leaves behind
          * cannot disagree about whether this account has seen it.
          */
-        function tellOnce(notices) {
-          var has = notices.some(function (notice) { return notice.kind === APOLOGY_KIND; });
-          if (!has || reportedApology) return;
-          reportedApology = true;
-          try {
-            if (window.localStorage.getItem('apologySeen')) return;
-            window.localStorage.setItem('apologySeen', '1');
-          } catch (e) { /* no storage: once per page is enough */ }
-          window.alert(APOLOGY);
-          if (A.markNoticesSeen) A.markNoticesSeen();
-        }
-
         function refreshNotices() {
           if (!A.isSignedIn()) return;
           A.listNotices().then(function (result) {
             if (!result.ok) return;
             latestNotices = result.data.notices || [];
             renderNotices();
-            if (!reportedApology) tellOnce(latestNotices);
           });
         }
 
