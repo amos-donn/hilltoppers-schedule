@@ -790,8 +790,8 @@ body, html {
   flex-shrink: 0;
 }
 
-/* The quiet row menu. It carries card actions only; access changes stay on the
-   named pills beside it. */
+/* The quiet row menu: card actions and the two access changes, kept off the
+   row so the pills can stay a read-out. */
 .class-settings__overflow-wrap {
   position: relative;
   display: inline-flex;
@@ -893,18 +893,6 @@ button.class-settings__pill {
   border-color: transparent;
   background: rgba(37, 99, 235, 0.12);
   color: #1d4ed8;
-}
-
-.class-settings__pill--action {
-  background: transparent;
-  border-color: rgba(188, 76, 44, 0.4);
-  color: var(--danger);
-}
-
-button.class-settings__pill--action:hover {
-  border-color: var(--danger);
-  background: rgba(188, 76, 44, 0.08);
-  color: var(--danger);
 }
 
 button.class-settings__pill:focus-visible {

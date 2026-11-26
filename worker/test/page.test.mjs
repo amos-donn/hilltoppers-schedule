@@ -462,9 +462,14 @@ await test('a friend card says who can see whose schedule and can revoke', async
   assert.ok(bobRow, 'the viewer has a card that says he can see Alice\'s schedule');
   assert.ok(bobRow.querySelector('.class-settings__pill--share svg'),
     'the share icon marks the access Alice gives');
-  const revoke = [...bobRow.querySelectorAll('button')].find((b) => b.textContent === 'Revoke');
-  assert.ok(revoke, 'a Revoke button is offered');
-  revoke.dispatchEvent(new window.Event('click'));
+  bobRow.querySelector('.class-settings__overflow').click();
+  await settle(2);
+  const bobRowOpen = [...$('friend-rows').querySelectorAll('.class-settings__friend-row')]
+    .find((row) => /Bob/.test(row.textContent) && /They can see yours/.test(row.textContent));
+  const revoke = [...bobRowOpen.querySelectorAll('.class-settings__menu-item')]
+    .find((item) => item.textContent === 'Revoke access');
+  assert.ok(revoke, 'the row menu offers Revoke access');
+  revoke.click();
   await settle();
   const grant = db.prepare(
     'SELECT revoked_at FROM grants WHERE owner_account_id = ?'
@@ -1018,10 +1023,8 @@ await test('a card can be quietly removed without changing access, and access ca
   assert.ok([...row.querySelectorAll('.class-settings__menu-item')]
     .some((item) => item.textContent === 'Add to card'), 'the card entry can be restored');
 
-  row.querySelector('.class-settings__overflow').click();
-  await settle(2);
-  row = rowFor();
-  const stop = [...row.querySelectorAll('button')].find((b) => b.textContent === 'Stop seeing');
+  const stop = [...row.querySelectorAll('.class-settings__menu-item')]
+    .find((item) => item.textContent === 'Stop seeing');
   assert.ok(stop, 'the viewer has their own way to give up access');
   stop.click();
   await settle();

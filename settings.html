@@ -9,7 +9,7 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=20260929a" />
     <!-- The extension's classSettings.css, copied unchanged, so the settings
          page matches the extension's Class & Schedule Settings page. -->
-    <link rel="stylesheet" href="classSettings.css?v=20261126d" />
+    <link rel="stylesheet" href="classSettings.css?v=20261126e" />
     <!-- The Hilltoppers dashboard shell: sidebar tabs, the sage palette,
          and the custom dropdowns. Loaded after classSettings.css, which it
          restyles. -->
@@ -748,8 +748,9 @@
 
         /**
          * The two access facts about a person, as pills on their card. A pill
-         * reading "You can see theirs" opens that schedule; the Revoke beside
-         * "They can see yours" is the way to take access back.
+         * reading "You can see theirs" opens that schedule. The actions that
+         * change access — Stop seeing and Revoke access — live in the row's
+         * overflow menu, so the pills stay a read-out of what access exists.
          */
         function friendPills(profileId, label) {
           var canSee = (latestGrants.viewing || []).filter(function (grant) {
@@ -768,18 +769,6 @@
             });
             open.addEventListener('click', function () { openSchedule(profileId); });
             pills.appendChild(open);
-            // Giving up access is a different act from revoking someone's
-            // access to you, so it gets its own named control, not a reuse of
-            // Revoke.
-            var stop = el('button', {
-              type: 'button',
-              class: 'class-settings__pill class-settings__pill--action',
-              'aria-label': 'Stop seeing ' + label + "'s schedule",
-              title: 'Stop seeing their schedule',
-              text: 'Stop seeing'
-            });
-            stop.addEventListener('click', function () { stopViewing(canSee, label); });
-            pills.appendChild(stop);
           }
           if (canBeSeen) {
             pills.appendChild(el('span', {
@@ -787,22 +776,6 @@
               title: label + ' can open your schedule',
               html: ICON_SHARE + 'They can see yours'
             }));
-            var revoke = el('button', {
-              type: 'button',
-              class: 'class-settings__pill class-settings__pill--action',
-              'aria-label': 'Revoke access for ' + label,
-              title: 'Take their access away',
-              text: 'Revoke'
-            });
-            revoke.addEventListener('click', function () {
-              if (!window.confirm('Revoke access for ' + label + '? They will be told.')) return;
-              A.revokeGrant(canBeSeen.id).then(function (result) {
-                if (!result.ok) { setFriendsStatus(friendlyError(result), 'error'); return; }
-                setFriendsStatus('Access revoked. They will be told the next time they sign in.', 'success');
-                refreshGrants();
-              });
-            });
-            pills.appendChild(revoke);
           }
           if (!canSee && !canBeSeen) {
             pills.appendChild(el('span', {
@@ -817,13 +790,14 @@
         /**
          * The quiet per-card overflow. A local friend can be removed from the
          * card (which deletes the copy in this browser); someone who still has
-         * access but is no longer on the card can be put back on it. The menu
-         * deliberately offers neither Revoke nor Stop seeing: those change
-         * access and live on the pills, where they are named.
+         * access but is no longer on the card can be put back on it. The two
+         * access actions live here too: Stop seeing gives up access this
+         * account holds, Revoke access takes away access someone else holds.
          */
         function friendMenu(person, label) {
           var viewingGrant = grantFor(latestGrants.viewing, person.email);
-          if (!person.friend && !viewingGrant) return null;
+          var viewerGrant = grantFor(latestGrants.viewers, person.email);
+          if (!person.friend && !viewingGrant && !viewerGrant) return null;
           var wrap = el('span', { class: 'class-settings__overflow-wrap' });
           var isOpen = openMenu === person.email;
           var button = el('button', {
@@ -863,6 +837,24 @@
             });
           }
           menu.appendChild(item);
+
+          if (viewingGrant) {
+            item = el('button', {
+              type: 'button', class: 'class-settings__menu-item', role: 'menuitem',
+              text: 'Stop seeing'
+            });
+            item.addEventListener('click', function () { stopViewing(viewingGrant, label); });
+            menu.appendChild(item);
+          }
+          if (viewerGrant) {
+            item = el('button', {
+              type: 'button', class: 'class-settings__menu-item', role: 'menuitem',
+              text: 'Revoke access'
+            });
+            item.addEventListener('click', function () { revokeAccess(viewerGrant, label); });
+            menu.appendChild(item);
+          }
+
           wrap.appendChild(menu);
           return wrap;
         }
@@ -888,6 +880,16 @@
             'success'
           );
           renderFriends();
+        }
+
+        function revokeAccess(grant, label) {
+          if (!window.confirm('Revoke access for ' + label + '? They will be told.')) return;
+          A.revokeGrant(grant.id).then(function (result) {
+            if (!result.ok) { setFriendsStatus(friendlyError(result), 'error'); return; }
+            openMenu = null;
+            setFriendsStatus('Access revoked. They will be told the next time they sign in.', 'success');
+            refreshGrants();
+          });
         }
 
         function stopViewing(grant, label) {
