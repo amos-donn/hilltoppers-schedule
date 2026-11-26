@@ -252,7 +252,10 @@
     if (!answered) {
       try { answered = window.localStorage.getItem('apologySeen') === '1'; } catch (e) { answered = false; }
     }
-    banner.hidden = !(me && me.announcement) || answered;
+    // A Worker that counts the accounts the bug actually reached says so with
+    // `affected`; zero means nothing was ever severed here, so no banner.
+    var untouched = Boolean(me && me.announcement && me.announcement.affected === 0);
+    banner.hidden = !(me && me.announcement) || answered || untouched;
     return banner;
   }
 

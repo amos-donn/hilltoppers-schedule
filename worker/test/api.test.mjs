@@ -863,9 +863,38 @@ await test('CORS is limited to the site origin and allows credentials', async ()
   assert.equal(res.headers.get('Access-Control-Allow-Credentials'), 'true');
 });
 
+/** The account just signed in: identifiers are encrypted, so it is the newest. */
+function newestAccountId(env) {
+  const row = env.__db.prepare('SELECT id FROM accounts ORDER BY id DESC LIMIT 1').get();
+  assert.ok(row, 'the account exists');
+  return row.id;
+}
+
+/** Give an account the one thing the apology is about: access that was cut. */
+function severAccess(env, id, tag) {
+  env.__db.prepare(
+    `INSERT INTO grants (code_hash, owner_account_id, viewer_account_id, created_at, revoked_at)
+     VALUES (?, ?, ?, 1, 1)`
+  ).run('revoked-' + tag, id, id);
+}
+
+await test('nobody whose access was never touched sees the apology', async () => {
+  const env = makeEnv();
+  const cookie = await signIn(env, { sub: 'untouched', email: 'untouched@example.com', name: 'Untouched' });
+
+  // Auto-grant was off for this account all along, so nothing was severed --
+  // and there is nothing to apologise for or to restore.
+  const me = await call(env, '/api/me', { cookie });
+  assert.equal(me.body.announcement, null, 'no banner for an account the bug never reached');
+});
+
 await test('an announcement answer sticks to the account and is never a notice', async () => {
   const env = makeEnv();
   const cookie = await signIn(env, { sub: 'ack-tester', email: 'ack@example.com', name: 'Ack Tester' });
+  // The account row is made on its first authenticated read, so make it before
+  // giving it severed access to restore.
+  await call(env, '/api/me', { cookie });
+  severAccess(env, newestAccountId(env), 'tester');
 
   // On until it is answered -- and answered through the profile PATCH the page
   // already uses, alongside a number the client sends with it.
@@ -904,6 +933,8 @@ await test('an announcement answer sticks to the account and is never a notice',
 
   // A different account has its own answer.
   const other = await signIn(env, { sub: 'ack-other', email: 'other@example.com', name: 'Other' });
+  await call(env, '/api/me', { cookie: other });
+  severAccess(env, newestAccountId(env), 'other');
   const theirs = await call(env, '/api/me', { cookie: other });
   assert.equal(theirs.body.announcement && theirs.body.announcement.kind, 'announcement.auto-grant',
     'answering is per account');

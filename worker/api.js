@@ -783,12 +783,23 @@ async function announcementFor(env, account) {
   const meta = ANNOUNCEMENTS[kind];
   const now = nowSeconds();
   if (now < meta.at || now > meta.until) return null;
+  // Only the accounts the bug reached: it could only cut access that was
+  // granted automatically, so an account with nothing severed has nothing to
+  // apologise for. Someone who had auto-grant off all along sees no banner, and
+  // an account that restores is finished with it without answering anything.
+  const severed = await env.DB.prepare(
+    'SELECT COUNT(*) AS n FROM grants WHERE owner_account_id = ? AND revoked_at IS NOT NULL'
+  )
+    .bind(account.id)
+    .first();
+  const affected = Number(severed && severed.n) || 0;
+  if (!affected) return null;
   const ack = await env.DB.prepare(
     'SELECT answered_at FROM notice_acks WHERE account_id = ? AND kind = ?'
   )
     .bind(account.id, kind)
     .first();
-  return ack && Number(ack.answered_at) > 0 ? null : { kind };
+  return ack && Number(ack.answered_at) > 0 ? null : { kind, affected };
 }
 
 function publicSelf(row) {
