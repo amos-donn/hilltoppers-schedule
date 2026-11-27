@@ -107,6 +107,12 @@ export function getCookieJar() { return cookieJar; }
 
 export async function routerFetch(input, init = {}) {
   const url = typeof input === 'string' ? input : input.url;
+  let parsedUrl = null;
+  try {
+    parsedUrl = new URL(url);
+  } catch {
+    parsedUrl = null;
+  }
 
   // The path is "jwk", singular. The plural form is a 404, which would look
   // exactly like a token that failed to verify.
@@ -114,7 +120,7 @@ export async function routerFetch(input, init = {}) {
     return new Response(JSON.stringify({ keys: [publicJwk] }), { status: 200 });
   }
 
-  if (url.startsWith(API_ORIGIN)) {
+  if (parsedUrl && parsedUrl.origin === API_ORIGIN) {
     // A real browser holds several cookies at once and sends them together, so
     // merge rather than overwrite, or a second sign-in can drop a cookie that
     // is still live.
